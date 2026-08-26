@@ -38,7 +38,7 @@ PRODUCTS = [
         "name": "Shaxsiy portret haykalcha",
         "description": "Sizning rasmingiz asosida shaxsiylashtirilgan haykalcha, 12 sm",
         "price": 180000,
-        "photos": [],
+        "photos": [https://www.google.com/imgres?q=dragon%20images&imgurl=https%3A%2F%2Fmedia.istockphoto.com%2Fid%2F1159980027%2Fvector%2Fdragon-head-on-stone-background.jpg%3Fs%3D612x612%26w%3D0%26k%3D20%26c%3DdV6D2ifebCoue-wrZyYNYQV9xaXB6fAg0eSze246dZ0%3D&imgrefurl=https%3A%2F%2Fwww.istockphoto.com%2Fphotos%2Fdragon-face&docid=SAa7AXsubzfmHM&tbnid=VoeBz6-13OalGM&vet=12ahUKEwixo5idqr6WAxWY0QIHHY19GLsQnPAOegQINhAA..i&w=459&h=612&hcb=2&ved=2ahUKEwixo5idqr6WAxWY0QIHHY19GLsQnPAOegQINhAA],
         "video": None,
     },
     {
