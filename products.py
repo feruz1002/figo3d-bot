@@ -56,7 +56,7 @@ PRODUCTS = [
         "name": "To'y uchun figurka (kelin-kuyov)",
         "description": "To'y stoli uchun maxsus buyurtma, 20 sm",
         "price": 250000,
-        "photos": [],
+        "photos": [64745],
         "video": None,
     },
     {
