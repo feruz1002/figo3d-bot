@@ -29,7 +29,7 @@ PRODUCTS = [
         "name": "Anime qahramon haykalchasi",
         "description": "15 sm balandlik, PLA plastik, qo'lda bo'yaladi",
         "price": 120000,
-        "photos": [],
+        "photos": ["AgACAgQAAxkBAAOmao7mpQABRZ2rQE1tInW2cAsAAV5afwACuQxrGzpHRFPXSfUQC8VjdgEAAwIAA3gAAz0E"],
         "video": None,
     },
     {
@@ -56,7 +56,7 @@ PRODUCTS = [
         "name": "To'y uchun figurka (kelin-kuyov)",
         "description": "To'y stoli uchun maxsus buyurtma, 20 sm",
         "price": 250000,
-        "photos": [],
+        "photos": ["AgACAgQAAxkBAAOmao7mpQABRZ2rQE1tInW2cAsAAV5afwACuQxrGzpHRFPXSfUQC8VjdgEAAwIAA3gAAz0E"],
         "video": None,
     },
     {
