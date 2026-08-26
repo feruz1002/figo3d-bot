@@ -4,8 +4,9 @@ Bu bot mijozlarga 3D-print qilingan haykalcha, kalitcha va sovg'a buyumlarini
 katalogdan tanlab, buyurtma berish imkonini beradi. Buyurtma qabul qilingach,
 sizga (adminga) avtomatik xabar keladi.
 
-**Hozircha ishlaydigan qism:** katalog, savat, buyurtma rasmiylashtirish, admin
-xabarnomasi.
+**Hozircha ishlaydigan qism:** katalog (ko'p rasm/video bilan), savat, buyurtma
+rasmiylashtirish, promo-kod/chegirma, mijoz sharhlari va reytingi, shaxsiy
+(o'z rasmidan) buyurtma so'rovi, admin xabarnomasi.
 **Keyingi bosqichda qo'shiladi:** Payme/Click orqali avtomatik to'lov (hozircha
 buyurtma "kutilmoqda" holatida qoladi, to'lovni operator sifatida siz qo'lda
 kelishasiz).
@@ -81,12 +82,63 @@ bosqichida muammo emas).
 
 ---
 
-## Keyinroq nima qilish mumkin
+## Yangi imkoniyatlar qanday ishlatiladi
 
-- **Rasm qo'shish:** `products.py` faylidagi har bir mahsulotning `"photo"`
-  qatoriga rasm havolasini yozib qo'ysangiz bo'ldi
-- **Yangi mahsulot qo'shish:** `products.py`dagi ro'yxatga yangi qator
-  qo'shish kifoya (namunalarga o'xshatib)
-- **To'lov qo'shish:** Payme/Click API kalitlarini olganingizdan so'ng,
-  `handlers/checkout.py`dagi buyurtma tasdiqlash qismiga to'lov havolasi
-  yaratish kodi qo'shiladi — bu keyingi bosqich
+### Bir nechta rasm va video
+
+`products.py` faylida har bir mahsulotning `"photos"` qatoriga bir nechta
+rasm havolasini ro'yxat sifatida yozing (masalan
+`"photos": ["https://.../old.jpg", "https://.../orqa.jpg"]`), `"video"`
+qatoriga esa aylanish videosi/GIF havolasini qo'yishingiz mumkin. 2 tadan
+ortiq rasm/video bo'lsa, bot ularni avtomatik "albom" ko'rinishida yuboradi.
+
+### Mijoz sharhlari
+
+Mijozlar mahsulot sahifasida "⭐ Baho berish" tugmasi orqali 1-5 yulduz va
+ixtiyoriy izoh qoldirishlari mumkin. O'rtacha baho va sharhlar soni mahsulot
+sahifasida avtomatik ko'rinadi, qo'shimcha sozlash shart emas.
+
+### Promo-kod (chegirma) yaratish
+
+Faqat siz (admin) botga quyidagi buyruqni yozib, yangi chegirma kodi
+yaratishingiz mumkin:
+
+```
+/promo YANGI10 10 50
+```
+
+Bu yerda `YANGI10` — kod nomi (mijozlar shu so'zni yozadi), `10` — chegirma
+foizi, `50` — kod necha marta ishlatilishi mumkinligi (bu qismni
+o'chirib qoldirsangiz, kod cheklovsiz ishlatiladi: `/promo YANGI10 10`).
+Mijozlar buyurtma berayotganda manzildan keyin promo-kodni kiritish
+imkoniyatiga ega bo'ladi.
+
+### Shaxsiy buyurtma (o'z rasmidan)
+
+Mijoz bosh menyudagi "🎨 Shaxsiy buyurtma" tugmasini bosib, o'z rasmini
+yuboradi va nima xohlashini yozadi. Bu maxsus buyurtma bo'lgani uchun narx
+oldindan belgilanmaydi — so'rov to'g'ridan-to'g'ri sizga (fotosurat bilan
+birga) keladi, narxni mijoz bilan siz shaxsan kelishasiz.
+
+### Yangi mahsulot qo'shish
+
+`products.py`dagi ro'yxatga yangi qator qo'shish kifoya (namunalarga
+o'xshatib).
+
+### To'lov qo'shish (keyingi bosqich)
+
+Payme/Click API kalitlarini olganingizdan so'ng, `handlers/checkout.py`dagi
+buyurtma tasdiqlash qismiga to'lov havolasi yaratish kodi qo'shiladi.
+
+---
+
+## Muhim eslatma: ma'lumotlar bazasi haqida
+
+Render'ning **bepul** tarifida disk "doimiy" emas — bot qayta ishga
+tushganda (masalan, GitHub'ga yangi kod yuklaganingizda) `figo3d.db` fayli
+(demak barcha buyurtmalar, sharhlar, promo-kodlar) tozalanib ketishi mumkin.
+Bu sinov bosqichida muammo emas, lekin real mijozlar va buyurtmalar
+ko'paygach, buni albatta hal qilish kerak bo'ladi — masalan Render'ning
+pullik "Persistent Disk" xizmatiga yoki tashqi bazaga (masalan bepul
+Postgres taklif qiluvchi xizmatlarga) o'tish orqali. Tayyor bo'lganingizda
+shu masalani birga hal qilamiz.

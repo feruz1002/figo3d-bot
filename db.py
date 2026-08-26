@@ -4,9 +4,17 @@ Ma'lumotlar bazasi (SQLite) bilan ishlash funksiyalari.
 SQLite - bu alohida server talab qilmaydigan, oddiy fayl ko'rinishidagi baza
 (figo3d.db). Kichik va o'rta hajmdagi botlar uchun juda mos, o'rnatish shart emas.
 
-Bu yerda ikkita jadval bor:
-  cart_items - har bir foydalanuvchining savatidagi mahsulotlar
-  orders     - rasmiylashtirilgan buyurtmalar
+DIQQAT: Render'ning bepul tarifida disk "doimiy" emas - bot qayta ishga
+tushganda (masalan yangi kod joylanganda) shu fayl tozalanishi mumkin. Bu
+sinov bosqichida muammo emas, lekin real buyurtmalar/sharhlar ko'payganda
+doimiy saqlanadigan baza (masalan tashqi Postgres) ga o'tish tavsiya etiladi.
+
+Bu yerda beshta jadval bor:
+  cart_items   - har bir foydalanuvchining savatidagi mahsulotlar
+  orders       - rasmiylashtirilgan buyurtmalar
+  reviews      - mahsulotlarga qoldirilgan baho/izohlar
+  promo_codes  - chegirma kodlari
+  custom_orders - mijozning o'z rasmi asosidagi shaxsiy buyurtmalari
 """
 import json
 from datetime import datetime, timezone
@@ -33,9 +41,54 @@ CREATE TABLE IF NOT EXISTS orders (
     items_json TEXT NOT NULL,
     total_price INTEGER NOT NULL,
     status TEXT NOT NULL DEFAULT 'yangi',
+    created_at TEXT NOT NULL,
+    promo_code TEXT,
+    discount_amount INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    user_name TEXT,
+    rating INTEGER NOT NULL,
+    comment TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS promo_codes (
+    code TEXT PRIMARY KEY,
+    discount_percent INTEGER NOT NULL,
+    max_uses INTEGER,
+    used_count INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS custom_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    photo_file_id TEXT NOT NULL,
+    description TEXT,
+    full_name TEXT,
+    phone TEXT,
+    address TEXT,
+    status TEXT NOT NULL DEFAULT 'yangi',
     created_at TEXT NOT NULL
 );
 """
+
+
+async def _add_column_if_missing(conn, table: str, column_def: str):
+    """Eski (oldin yaratilgan) bazaga yangi ustun qo'shadi, agar hali yo'q bo'lsa.
+    SQLite'da "ADD COLUMN IF NOT EXISTS" yo'q, shuning uchun xatoni o'zimiz tutamiz."""
+    column_name = column_def.split()[0]
+    try:
+        await conn.execute(f"ALTER TABLE {table} ADD COLUMN {column_def}")
+        await conn.commit()
+    except Exception as exc:
+        if "duplicate column name" not in str(exc).lower():
+            raise
+    _ = column_name  # faqat o'qish uchun, xato xabarida foydali bo'lsin deb saqlandi
 
 
 async def init_db():
@@ -43,6 +96,9 @@ async def init_db():
     async with aiosqlite.connect(DB_PATH) as conn:
         await conn.executescript(CREATE_TABLES_SQL)
         await conn.commit()
+        # Eski (promo qo'shilishidan oldin yaratilgan) orders jadvali bo'lsa ham ishlashi uchun:
+        await _add_column_if_missing(conn, "orders", "promo_code TEXT")
+        await _add_column_if_missing(conn, "orders", "discount_amount INTEGER NOT NULL DEFAULT 0")
 
 
 # ---------- SAVAT (CART) ----------
@@ -106,11 +162,19 @@ async def remove_from_cart(user_id: int, product_id: int):
 
 # ---------- BUYURTMALAR (ORDERS) ----------
 
-async def create_order(user_id: int, full_name: str, phone: str, address: str) -> int:
+async def create_order(
+    user_id: int,
+    full_name: str,
+    phone: str,
+    address: str,
+    promo_code: str | None = None,
+    discount_amount: int = 0,
+) -> int:
     """Savatdagi mahsulotlar asosida buyurtma yaratadi va savatni tozalaydi.
     Yaratilgan buyurtma ID raqamini qaytaradi."""
     cart = await get_cart(user_id)
-    total_price = sum(item["product"]["price"] * item["quantity"] for item in cart)
+    subtotal = sum(item["product"]["price"] * item["quantity"] for item in cart)
+    total_price = max(subtotal - discount_amount, 0)
     items_snapshot = [
         {
             "name": item["product"]["name"],
@@ -123,8 +187,9 @@ async def create_order(user_id: int, full_name: str, phone: str, address: str) -
     async with aiosqlite.connect(DB_PATH) as conn:
         cursor = await conn.execute(
             """INSERT INTO orders
-               (user_id, full_name, phone, address, items_json, total_price, status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'yangi', ?)""",
+               (user_id, full_name, phone, address, items_json, total_price, status,
+                created_at, promo_code, discount_amount)
+               VALUES (?, ?, ?, ?, ?, ?, 'yangi', ?, ?, ?)""",
             (
                 user_id,
                 full_name,
@@ -133,10 +198,15 @@ async def create_order(user_id: int, full_name: str, phone: str, address: str) -
                 json.dumps(items_snapshot, ensure_ascii=False),
                 total_price,
                 datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                promo_code,
+                discount_amount,
             ),
         )
         await conn.commit()
         order_id = cursor.lastrowid
+
+    if promo_code:
+        await increment_promo_usage(promo_code)
 
     await clear_cart(user_id)
     return order_id
@@ -167,3 +237,118 @@ async def get_user_orders(user_id: int, limit: int = 10):
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
+
+
+# ---------- SHARHLAR (REVIEWS) ----------
+
+async def add_review(product_id: int, user_id: int, user_name: str, rating: int, comment: str | None):
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            """INSERT INTO reviews (product_id, user_id, user_name, rating, comment, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                product_id,
+                user_id,
+                user_name,
+                rating,
+                comment,
+                datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            ),
+        )
+        await conn.commit()
+
+
+async def get_product_rating(product_id: int) -> tuple[float, int]:
+    """(o'rtacha_baho, sharhlar_soni) qaytaradi. Sharh bo'lmasa (0.0, 0)."""
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cursor = await conn.execute(
+            "SELECT AVG(rating), COUNT(*) FROM reviews WHERE product_id = ?", (product_id,)
+        )
+        avg_rating, count = await cursor.fetchone()
+        return (round(avg_rating, 1) if avg_rating else 0.0, count or 0)
+
+
+async def get_reviews(product_id: int, limit: int = 5):
+    async with aiosqlite.connect(DB_PATH) as conn:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute(
+            "SELECT * FROM reviews WHERE product_id = ? ORDER BY id DESC LIMIT ?",
+            (product_id, limit),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+# ---------- PROMO-KODLAR ----------
+
+async def create_promo(code: str, discount_percent: int, max_uses: int | None = None):
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            """INSERT INTO promo_codes (code, discount_percent, max_uses, used_count, active)
+               VALUES (?, ?, ?, 0, 1)
+               ON CONFLICT(code) DO UPDATE SET
+                   discount_percent = excluded.discount_percent,
+                   max_uses = excluded.max_uses,
+                   active = 1""",
+            (code.upper(), discount_percent, max_uses),
+        )
+        await conn.commit()
+
+
+async def get_promo(code: str):
+    async with aiosqlite.connect(DB_PATH) as conn:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute(
+            "SELECT * FROM promo_codes WHERE code = ? AND active = 1", (code.upper(),)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def increment_promo_usage(code: str):
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            "UPDATE promo_codes SET used_count = used_count + 1 WHERE code = ?",
+            (code.upper(),),
+        )
+        await conn.commit()
+
+
+# ---------- SHAXSIY (CUSTOM) BUYURTMALAR ----------
+
+async def create_custom_order(
+    user_id: int, photo_file_id: str, description: str, full_name: str, phone: str, address: str
+) -> int:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cursor = await conn.execute(
+            """INSERT INTO custom_orders
+               (user_id, photo_file_id, description, full_name, phone, address, status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'yangi', ?)""",
+            (
+                user_id,
+                photo_file_id,
+                description,
+                full_name,
+                phone,
+                address,
+                datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            ),
+        )
+        await conn.commit()
+        return cursor.lastrowid
+
+
+async def get_custom_order(order_id: int):
+    async with aiosqlite.connect(DB_PATH) as conn:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute("SELECT * FROM custom_orders WHERE id = ?", (order_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def update_custom_order_status(order_id: int, status: str):
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            "UPDATE custom_orders SET status = ? WHERE id = ?", (status, order_id)
+        )
+        await conn.commit()

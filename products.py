@@ -10,10 +10,16 @@ Har bir mahsulot quyidagi maydonlarga ega:
   name        - mahsulot nomi
   description - qisqacha tavsif
   price       - narxi (so'mda, oddiy son)
-  photo       - mahsulot rasmi. Hozircha None (rasmsiz matn ko'rinishida chiqadi).
+  photos      - rasmlar RO'YXATI (0 tadan 10 tagacha). Mijoz mahsulotni turli
+                burchaklardan ko'rishi uchun 2-3 ta rasm qo'shish tavsiya etiladi.
+                Bo'sh ro'yxat [] - rasmsiz, matn ko'rinishida chiqadi.
                 Rasm qo'shish uchun: rasmni Telegram'da botga yuboring, botdan
                 qaytgan "file_id"ni shu yerga yozing, YOKI internetdagi rasm
                 havolasini (https://...) shu yerga qo'ying.
+                Masalan: "photos": ["https://.../old.jpg", "https://.../orqa.jpg"]
+  video       - (ixtiyoriy) mahsulotni aylantirib olingan qisqa video/GIF.
+                file_id yoki havola. Yo'q bo'lsa None qoldiring.
+                Bu "3D his" beradi - mijoz buyumni har tomondan ko'radi.
 """
 
 PRODUCTS = [
@@ -23,7 +29,8 @@ PRODUCTS = [
         "name": "Anime qahramon haykalchasi",
         "description": "15 sm balandlik, PLA plastik, qo'lda bo'yaladi",
         "price": 120000,
-        "photo": None,
+        "photos": [],
+        "video": None,
     },
     {
         "id": 2,
@@ -31,7 +38,8 @@ PRODUCTS = [
         "name": "Shaxsiy portret haykalcha",
         "description": "Sizning rasmingiz asosida shaxsiylashtirilgan haykalcha, 12 sm",
         "price": 180000,
-        "photo": None,
+        "photos": [],
+        "video": None,
     },
     {
         "id": 3,
@@ -39,7 +47,8 @@ PRODUCTS = [
         "name": "Ismli kalitcha",
         "description": "Istalgan ism yoki so'z bilan, rangli plastik",
         "price": 35000,
-        "photo": None,
+        "photos": [],
+        "video": None,
     },
     {
         "id": 4,
@@ -47,7 +56,8 @@ PRODUCTS = [
         "name": "To'y uchun figurka (kelin-kuyov)",
         "description": "To'y stoli uchun maxsus buyurtma, 20 sm",
         "price": 250000,
-        "photo": None,
+        "photos": [],
+        "video": None,
     },
     {
         "id": 5,
@@ -55,7 +65,8 @@ PRODUCTS = [
         "name": "Tug'ilgan kun sovg'a to'plami",
         "description": "Kichik haykalcha + ismli kalitcha to'plami",
         "price": 140000,
-        "photo": None,
+        "photos": [],
+        "video": None,
     },
     {
         "id": 6,
@@ -63,7 +74,8 @@ PRODUCTS = [
         "name": "Lampa asosi (geometrik)",
         "description": "Zamonaviy dizayndagi stol lampasi asosi",
         "price": 95000,
-        "photo": None,
+        "photos": [],
+        "video": None,
     },
 ]
 
