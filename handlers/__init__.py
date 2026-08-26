@@ -5,6 +5,7 @@ u foydalanuvchi jarayon o'rtasida menyu tugmasini bossa, holatni to'g'ri
 tozalab, keyingi routerlarga o'tkazib beradi (handlers/menu_guard.py'dagi
 izohga qarang)."""
 from handlers.menu_guard import menu_guard_router
+from handlers.admin_tools import admin_tools_router
 from handlers.start import start_router
 from handlers.catalog import catalog_router
 from handlers.cart import cart_router
@@ -17,6 +18,7 @@ from handlers.admin import admin_router
 
 all_routers = [
     menu_guard_router,
+    admin_tools_router,
     start_router,
     catalog_router,
     cart_router,
