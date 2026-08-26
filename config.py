@@ -41,3 +41,11 @@ PAYMENT_INFO = os.getenv(
     "Variables bo'limida PAYMENT_INFO nomi bilan qo'shing (masalan: "
     "\"Karta: 8600 1234 5678 9012 - F. Familiya\").",
 )
+
+# Telegram to'lov tizimi (Click/Payme) uchun "provider token".
+# @BotFather -> /mybots -> Figo 3D -> Payments bo'limidan Click (yoki Payme)'ni
+# ulaganingizdan so'ng oladigan tokenni shu yerga (Render Environment
+# Variables'ga PAYMENT_PROVIDER_TOKEN nomi bilan) qo'yasiz. Token yo'q ekan -
+# muammo emas: "Karta orqali to'lash" tugmasi shunchaki ko'rinmaydi, mijozlar
+# avvalgidek hamyon yoki naqd/karta (operator bilan) orqali to'laydi.
+PAYMENT_PROVIDER_TOKEN = os.getenv("PAYMENT_PROVIDER_TOKEN", "").strip() or None

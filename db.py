@@ -10,6 +10,9 @@ sinov bosqichida muammo emas, lekin real buyurtmalar/sharhlar ko'payganda
 doimiy saqlanadigan baza (masalan tashqi Postgres) ga o'tish tavsiya etiladi.
 
 Bu yerda jadvallar:
+  products        - katalogdagi mahsulotlar (endi products.py emas, shu yerda
+                     saqlanadi - admin /admin buyrug'i orqali qo'shadi/o'chiradi)
+  product_photos  - har bir mahsulotning rasmlari (bir nechta bo'lishi mumkin)
   cart_items      - har bir foydalanuvchining savatidagi mahsulotlar
   orders          - rasmiylashtirilgan buyurtmalar
   reviews         - mahsulotlarga qoldirilgan baho/izohlar
@@ -24,9 +27,27 @@ from datetime import datetime, timezone
 import aiosqlite
 
 from config import DB_PATH
-from products import get_product_by_id
+from products import SEED_PRODUCTS
 
 CREATE_TABLES_SQL = """
+CREATE TABLE IF NOT EXISTS products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    price INTEGER NOT NULL,
+    video_file_id TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS product_photos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL,
+    file_id TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS cart_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -120,6 +141,125 @@ async def init_db():
         await _add_column_if_missing(conn, "orders", "promo_code TEXT")
         await _add_column_if_missing(conn, "orders", "discount_amount INTEGER NOT NULL DEFAULT 0")
 
+        # Baza bo'sh bo'lsa (bot birinchi marta ishga tushganda) - namuna
+        # mahsulotlar bilan to'ldiramiz, shunda katalog darhol bo'sh bo'lib
+        # qolmaydi. Bundan keyingi barcha mahsulotlar /admin orqali qo'shiladi.
+        cursor = await conn.execute("SELECT COUNT(*) FROM products")
+        (count,) = await cursor.fetchone()
+        if count == 0:
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            for p in SEED_PRODUCTS:
+                await conn.execute(
+                    """INSERT INTO products (category, name, description, price, active, created_at)
+                       VALUES (?, ?, ?, ?, 1, ?)""",
+                    (p["category"], p["name"], p["description"], p["price"], now),
+                )
+            await conn.commit()
+
+
+# ---------- MAHSULOTLAR (PRODUCTS) ----------
+
+async def _row_to_product(conn, row) -> dict:
+    """DB qatorini eski (products.py'dagi) dict ko'rinishiga o'giradi, shu bilan
+    keyboards.py/handlers kodlari o'zgarishsiz product['photos'] va h.k. dan
+    foydalanishda davom etaveradi."""
+    cursor = await conn.execute(
+        "SELECT file_id FROM product_photos WHERE product_id = ? ORDER BY position, id",
+        (row["id"],),
+    )
+    photo_rows = await cursor.fetchall()
+    return {
+        "id": row["id"],
+        "category": row["category"],
+        "name": row["name"],
+        "description": row["description"] or "",
+        "price": row["price"],
+        "photos": [r[0] for r in photo_rows],
+        "video": row["video_file_id"],
+    }
+
+
+async def get_categories() -> list:
+    """Barcha faol bo'limlar ro'yxatini qaytaradi (birinchi qo'shilgan mahsulot
+    tartibida)."""
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cursor = await conn.execute(
+            "SELECT category FROM products WHERE active = 1 GROUP BY category ORDER BY MIN(id)"
+        )
+        rows = await cursor.fetchall()
+        return [r[0] for r in rows]
+
+
+async def get_products_by_category(category: str) -> list:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute(
+            "SELECT * FROM products WHERE category = ? AND active = 1 ORDER BY id", (category,)
+        )
+        rows = await cursor.fetchall()
+        return [await _row_to_product(conn, row) for row in rows]
+
+
+async def get_product_by_id(product_id: int):
+    async with aiosqlite.connect(DB_PATH) as conn:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute(
+            "SELECT * FROM products WHERE id = ? AND active = 1", (product_id,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return await _row_to_product(conn, row)
+
+
+async def list_active_products() -> list:
+    """Admin uchun: barcha faol mahsulotlar ro'yxati (rasmsiz, ro'yxat/o'chirish
+    ko'rinishi uchun)."""
+    async with aiosqlite.connect(DB_PATH) as conn:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute(
+            "SELECT * FROM products WHERE active = 1 ORDER BY category, id"
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def create_product(category: str, name: str, description: str, price: int) -> int:
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cursor = await conn.execute(
+            """INSERT INTO products (category, name, description, price, active, created_at)
+               VALUES (?, ?, ?, ?, 1, ?)""",
+            (category, name, description, price, now),
+        )
+        await conn.commit()
+        return cursor.lastrowid
+
+
+async def add_product_photo(product_id: int, file_id: str, position: int = 0):
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            "INSERT INTO product_photos (product_id, file_id, position) VALUES (?, ?, ?)",
+            (product_id, file_id, position),
+        )
+        await conn.commit()
+
+
+async def set_product_video(product_id: int, file_id: str):
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            "UPDATE products SET video_file_id = ? WHERE id = ?", (file_id, product_id)
+        )
+        await conn.commit()
+
+
+async def deactivate_product(product_id: int):
+    """Mahsulotni butunlay o'chirmaydi (eski buyurtmalar/sharhlar uzilib
+    qolmasligi uchun) - faqat katalogdan yashiradi."""
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute("UPDATE products SET active = 0 WHERE id = ?", (product_id,))
+        await conn.commit()
+
 
 # ---------- SAVAT (CART) ----------
 
@@ -154,7 +294,7 @@ async def get_cart(user_id: int):
 
     cart = []
     for product_id, quantity in rows:
-        product = get_product_by_id(product_id)
+        product = await get_product_by_id(product_id)
         if product:  # mahsulot katalogdan o'chirilgan bo'lishi ham mumkin
             cart.append({"product": product, "quantity": quantity})
     return cart

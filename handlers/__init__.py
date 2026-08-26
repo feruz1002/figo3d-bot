@@ -16,6 +16,7 @@ from handlers.orders_history import orders_router
 from handlers.profile import profile_router
 from handlers.contact import contact_router
 from handlers.admin import admin_router
+from handlers.admin_products import admin_products_router
 
 all_routers = [
     menu_guard_router,
@@ -30,4 +31,5 @@ all_routers = [
     profile_router,
     contact_router,
     admin_router,
+    admin_products_router,
 ]

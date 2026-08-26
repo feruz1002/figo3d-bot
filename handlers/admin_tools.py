@@ -32,7 +32,8 @@ async def send_file_id(message: Message, state: FSMContext):
     await message.answer(
         "📎 Ushbu rasmning file_id'si:\n\n"
         f"<code>{file_id}</code>\n\n"
-        "Ustiga bosib nusxalang (copy), so'ng <code>products.py</code> faylida "
-        "kerakli mahsulotning <code>\"photos\"</code> ro'yxatiga shu qatorni "
-        "qo'shing (tirnoqlar bilan)."
+        "Eslatma: mahsulot qo'shish uchun endi buni qo'lda hech qayerga "
+        "yozish shart emas — <b>/admin</b> buyrug'ini yozib, \"➕ Yangi mahsulot "
+        "qo'shish\" orqali rasmni to'g'ridan-to'g'ri shu yerga yuborsangiz "
+        "kifoya, bot o'zi saqlab oladi."
     )

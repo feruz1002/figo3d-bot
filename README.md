@@ -4,19 +4,18 @@ Bu bot mijozlarga 3D-print qilingan haykalcha, kalitcha va sovg'a buyumlarini
 katalogdan tanlab, buyurtma berish imkonini beradi. Buyurtma qabul qilingach,
 sizga (adminga) avtomatik xabar keladi.
 
-**Hozircha ishlaydigan qism:** katalog (ko'p rasm/video bilan), savat
-(miqdorni ➕/➖ qilish bilan), buyurtma rasmiylashtirish, promo-kod/chegirma,
-mijoz sharhlari va reytingi, shaxsiy (o'z rasmidan) buyurtma so'rovi, shaxsiy
-profil (ism/telefon/manzilni saqlash va qayta ishlatish), ichki hamyon
-(balans) — hisobni to'ldirish so'rovi orqali (admin tasdiqlagach hamyonga
-tushadi, keyin xohlagan buyurtmani hamyondan to'lash mumkin), admin
-xabarnomasi.
+**Hozircha ishlaydigan qism:** katalog (ko'p rasm/video bilan, endi to'liq
+**bot orqali** boshqariladi — /admin), savat (miqdorni ➕/➖ qilish bilan),
+buyurtma rasmiylashtirish, promo-kod/chegirma, mijoz sharhlari va reytingi,
+shaxsiy (o'z rasmidan) buyurtma so'rovi, shaxsiy profil (ism/telefon/manzilni
+saqlash va qayta ishlatish), ichki hamyon (balans), Telegram ichida karta
+orqali to'lov (Click/Payme ulangach), admin xabarnomasi.
 
-**Keyingi bosqichda qo'shiladi:** Payme/Click API orqali hisobni **avtomatik**
-to'ldirish (hozircha mijoz to'lov qilib, chekining skrinshotini yuboradi, siz
-admin sifatida uni ko'rib "✅ Tasdiqlash" tugmasini bosasiz — shundan keyingina
-mablag' mijozning hamyoniga qo'shiladi. Bu real to'lov API'siga qadar
-ishlatiladigan vaqtinchalik, lekin ishonchli usul).
+**Keyingi bosqichda qo'shiladi:** hozircha hisobni to'ldirish (hamyon)
+qo'lda admin tasdig'i bilan ishlaydi (mijoz to'lov qilib, chekining
+skrinshotini yuboradi, siz "✅ Tasdiqlash" bosasiz). Click provider tokeningiz
+kelgach, buyurtmani Telegram ichida to'g'ridan-to'g'ri karta bilan to'lash
+ham yoqiladi (4-qadamdagi `PAYMENT_PROVIDER_TOKEN` bo'limiga qarang).
 
 ---
 
@@ -71,6 +70,10 @@ akkaunt va repository (loyiha "papkasi") kerak.
    - `PAYMENT_INFO` = mijozlarga ko'rsatiladigan to'lov rekvizitlaringiz
      (masalan: `Karta: 8600 1234 5678 9012 - F. Familiya (Payme/Click ham shu
      kartaga)`) — bu hisobni to'ldirish so'rovida mijozga ko'rsatiladi
+   - `PAYMENT_PROVIDER_TOKEN` = **hozircha bo'sh qoldiring.** Click'dan API
+     tokenini olganingizda shu nom bilan qo'shasiz (pastda "Click/Payme
+     to'lovini ulash" bo'limiga qarang) — token yo'qligida bot avvalgidek
+     hamyon/naqd usullari bilan ishlayveradi, hech narsa buzilmaydi
 6. **Create Web Service** tugmasini bosing
 
 Render avtomatik ravishda kodni yuklab oladi, kerakli kutubxonalarni
@@ -90,6 +93,10 @@ orqali) yangi buyurtma haqida xabar kelishi kerak.
 qo'yadi" — keyingi xabarga javob ~30-60 soniya kechikishi mumkin (bu MVP
 bosqichida muammo emas).
 
+Shundan so'ng, botga **`/admin`** deb yozib, o'zingizning haqiqiy
+mahsulotlaringizni (rasmlari bilan) qo'shishni boshlashingiz mumkin — pastda
+"Mahsulot qo'shish/o'chirish" bo'limiga qarang.
+
 ---
 
 ## Yangi imkoniyatlar qanday ishlatiladi
@@ -107,12 +114,12 @@ o'chadi). Butunlay o'chirish uchun bir necha marta ➖ bosish kifoya, yoki
 
 ### Tugmalar
 
-Bosh menyudagi tugmalar endi har biri alohida qatorda (bittadan) joylashgan
-— shu bilan Telegram ularni avtomatik ravishda kengroq va kattaroq qilib
-ko'rsatadi (tugma shrifti/piksel o'lchamini bot dasturi orqali to'g'ridan-
-to'g'ri o'zgartirib bo'lmaydi — bu faqat Telegram ilovasining o'zi
-belgilaydigan narsa, lekin joylashuvni shunday qilish orqali amalda
-"kattaroq" ko'rinishga erishildi).
+Bosh menyudagi 6 ta tugma endi 2 tadan qilib, 3 qatorga tekis joylashtirilgan
+(Katalog/Savat, Buyurtmalarim/Profil, Shaxsiy buyurtma/Aloqa) — bir ustunga
+tizilgan avvalgi ko'rinishdan ko'ra ancha ixcham va ko'zga yoqimli
+(eslatma: tugma shrifti/piksel o'lchamini bot dasturi orqali o'zgartirib
+bo'lmaydi — bu faqat Telegram ilovasining o'zi belgilaydi, bot faqat
+tugmalarning necha ustunga joylashishini belgilay oladi).
 
 ### Shaxsiy profil va o'zim/sovg'a tanlovi
 
@@ -140,13 +147,39 @@ bilan)" orqali davom etadi. Bu — Payme/Click API ulanmaguncha ishlatiladigan
 ichki to'lov tizimi; API ulangach, "Hisobni to'ldirish" qismini avtomatik
 to'lovga almashtirish mumkin bo'ladi.
 
-### Bir nechta rasm va video
+### Mahsulot qo'shish/o'chirish — endi kod bilan ishlash SHART EMAS
 
-`products.py` faylida har bir mahsulotning `"photos"` qatoriga bir nechta
-rasm havolasini ro'yxat sifatida yozing (masalan
-`"photos": ["https://.../old.jpg", "https://.../orqa.jpg"]`), `"video"`
-qatoriga esa aylanish videosi/GIF havolasini qo'yishingiz mumkin. 2 tadan
-ortiq rasm/video bo'lsa, bot ularni avtomatik "albom" ko'rinishida yuboradi.
+**Bu eng muhim o'zgarish.** Avval mahsulot va rasmlarni qo'shish uchun
+`products.py` faylini qo'lda tahrirlab, GitHub'ga yuklab, qayta deploy
+qilish kerak edi — va aynan shu jarayon sizning "rasmlar har safar
+yangilaganimda o'chib ketyapti" degan muammoingizning sababi edi: men har
+safar yangi tuzatish yuborganimda, arxivdagi `products.py` doim bo'sh
+(namunaviy) rasmlar bilan qaytadan yaratilar edi — va siz butun arxivni
+qayta yuklaganingizda, bu sizning avval qo'shgan real rasmlaringizni
+tasodifan ustidan bosib, o'chirib qo'yardi. Kodning o'zi yoki Render'ning
+aybi emas edi — muammo shu "har safar hammasini qayta yuklash" jarayonida
+edi.
+
+Endi mahsulotlar (nomi, narxi, rasmlari, videosi) kodda emas, botning
+bazasida saqlanadi — bundan buyon men yuboradigan yangilanishlar
+mahsulotlaringizga umuman tegmaydi. Qo'shish uchun:
+
+1. Botga **`/admin`** buyrug'ini yozing (faqat siz — `ADMIN_CHAT_ID` — buni
+   ko'rasiz va ishlata olasiz)
+2. **"➕ Yangi mahsulot qo'shish"** tugmasini bosing
+3. Bo'lim (mavjudidan tanlang yoki yangisini yozing) → nomi → tavsifi →
+   narxi → rasmlarni birma-bir yuboring (tugagach "✅ Rasmlar tayyor") →
+   xohlasangiz aylanish videosi → "✅ Saqlash"
+4. Tayyor — mahsulot **darhol** katalogda ko'rinadi, hech qanday GitHub yoki
+   Render bilan ishlash shart emas
+
+Mahsulotni o'chirish uchun `/admin` → **"📋 Mahsulotlar ro'yxati"** →
+kerakli mahsulot ostidagi **"🗑 O'chirish"** tugmasi (bosgach, "✅ Ha,
+o'chirish" bilan tasdiqlaysiz).
+
+Rasm sifatida yuborilgan har qanday fotosurat, video uchun esa video fayl
+(GIF emas) qabul qilinadi. 2 tadan ortiq rasm/video bo'lsa, bot mijozga
+ularni avtomatik "albom" ko'rinishida ko'rsatadi.
 
 ### Mijoz sharhlari
 
@@ -176,15 +209,29 @@ yuboradi va nima xohlashini yozadi. Bu maxsus buyurtma bo'lgani uchun narx
 oldindan belgilanmaydi — so'rov to'g'ridan-to'g'ri sizga (fotosurat bilan
 birga) keladi, narxni mijoz bilan siz shaxsan kelishasiz.
 
-### Yangi mahsulot qo'shish
+### Click/Payme to'lovini ulash (Telegram ichida karta bilan to'lash)
 
-`products.py`dagi ro'yxatga yangi qator qo'shish kifoya (namunalarga
-o'xshatib).
+Click'dan API (provider) tokenini olganingizda, buyurtmani Telegram ichida
+to'g'ridan-to'g'ri karta bilan to'lash imkoniyatini yoqish uchun:
 
-### To'lov qo'shish (keyingi bosqich)
+1. **@BotFather** ga yozing → `/mybots` → **Figo 3D** → **Payments**
+2. Ro'yxatdan **Click** (yoki Payme, ikkalasi ham qo'llab-quvvatlanadi)ni
+   tanlab, ular bergan sozlash bo'yicha ulaning — oxirida BotFather sizga
+   uzun bir **provider token** beradi
+3. Shu tokenni nusxalab, Render'ning Environment Variables bo'limiga
+   `PAYMENT_PROVIDER_TOKEN` nomi bilan qo'shing → **Save Changes**
+   (Render avtomatik qayta ishga tushiradi)
 
-Payme/Click API kalitlarini olganingizdan so'ng, `handlers/checkout.py`dagi
-buyurtma tasdiqlash qismiga to'lov havolasi yaratish kodi qo'shiladi.
+Shundan so'ng, buyurtma tasdiqlash bosqichida mijozlarga avtomatik ravishda
+yangi **"💳 Karta orqali (Click/Payme)"** tugmasi ham chiqadi — bosilganda
+Telegram'ning o'z to'lov oynasi ochiladi, mijoz karta orqali to'laydi, va
+to'lov muvaffaqiyatli bo'lishi bilan buyurtma avtomatik yaratilib, sizga
+xabar keladi (hech qanday qo'lda tasdiqlash shart emas — bu hamyonni
+to'ldirish jarayonidan farqli o'laroq, to'liq avtomatik).
+
+Token hali yo'q bo'lsa — hech narsa qilish shart emas, bu tugma shunchaki
+ko'rinmay turadi, mijozlar hamyon yoki naqd/karta (operator bilan)
+usullaridan foydalanaveradi.
 
 ---
 
@@ -193,13 +240,19 @@ buyurtma tasdiqlash qismiga to'lov havolasi yaratish kodi qo'shiladi.
 Render'ning **bepul** tarifida disk "doimiy" emas — bot qayta ishga
 tushganda (masalan, GitHub'ga yangi kod yuklaganingizda) `figo3d.db` fayli
 (demak barcha buyurtmalar, sharhlar, promo-kodlar, **mijozlarning hamyon
-balanslari va saqlangan profillari ham**) tozalanib ketishi mumkin.
+balanslari, saqlangan profillari va ENDI mahsulotlar/rasmlar ham**)
+tozalanib ketishi mumkin.
 
-⚠️ Endi bot ichida "pul" (hamyon balansi) saqlanayotgani uchun bu masala
-avvalgidan ham muhimroq: agar Render qayta ishga tushganda baza tozalansa,
-mijozlar hisobiga tasdiqlangan mablag'lar ham yo'qolib qolishi mumkin. Sinov
-bosqichida (hozircha) muammo emas, lekin real mijozlar pul kiritishni
-boshlashidan OLDIN, buni albatta hal qilish kerak — masalan Render'ning
-pullik "Persistent Disk" xizmatiga yoki tashqi bazaga (masalan bepul
-Postgres taklif qiluvchi xizmatlarga) o'tish orqali. Tayyor bo'lganingizda
-shu masalani birga hal qilamiz.
+⚠️ Mahsulotlar endi (avvalgi products.py fayli o'rniga) shu bazada
+saqlanayotgani va bot ichida "pul" (hamyon balansi) ham borligi uchun bu
+masala avvalgidan ham muhimroq. Amalda: oddiy kodni yangilash/qayta deploy
+qilish (masalan men yuborgan tuzatishlarni joylashtirish) odatda bazaga
+tegmaydi — sizning "rasmlar yo'qolib turishi" muammoingiz aslida shundan
+emas, balki `products.py` faylini har safar to'liq qayta yuklashdan kelib
+chiqqan edi (yuqorida tushuntirilgan), va bu endi butunlay bartaraf etildi.
+Lekin Render ba'zan (masalan uzoq vaqt servis to'xtab qolgach, yoki texnik
+sabablarga ko'ra) diskni to'liq tozalashi ham mumkin — shuning uchun real
+mijozlar pul kiritishni boshlashidan OLDIN, buni albatta hal qilish kerak —
+masalan Render'ning pullik "Persistent Disk" xizmatiga yoki tashqi bazaga
+(masalan bepul Postgres taklif qiluvchi xizmatlarga) o'tish orqali. Tayyor
+bo'lganingizda shu masalani birga hal qilamiz.

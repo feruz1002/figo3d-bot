@@ -31,3 +31,14 @@ class ProfileEditStates(StatesGroup):
 class TopupStates(StatesGroup):
     waiting_amount = State()
     waiting_proof = State()
+
+
+class AdminProductStates(StatesGroup):
+    """Admin /admin buyrug'i orqali yangi mahsulot qo'shayotgandagi bosqichlar."""
+    waiting_category = State()
+    waiting_name = State()
+    waiting_description = State()
+    waiting_price = State()
+    waiting_photos = State()
+    waiting_video = State()
+    confirming = State()

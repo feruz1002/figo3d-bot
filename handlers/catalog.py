@@ -9,7 +9,6 @@ from keyboards import (
     products_keyboard,
     product_detail_keyboard,
 )
-from products import get_products_by_category, get_product_by_id
 
 catalog_router = Router()
 
@@ -33,24 +32,29 @@ async def _safe_edit(callback: CallbackQuery, text: str, kb):
 
 @catalog_router.message(F.text == BTN_CATALOG)
 async def show_categories(message: Message):
-    await message.answer("Qaysi bo'limni ko'rmoqchisiz?", reply_markup=categories_keyboard())
+    categories = await db.get_categories()
+    if not categories:
+        await message.answer("Hozircha katalogda mahsulot yo'q. Tez orada qo'shiladi!")
+        return
+    await message.answer("Qaysi bo'limni ko'rmoqchisiz?", reply_markup=categories_keyboard(categories))
 
 
 @catalog_router.callback_query(F.data == "back_categories")
 async def back_to_categories(callback: CallbackQuery):
-    await _safe_edit(callback, "Qaysi bo'limni ko'rmoqchisiz?", categories_keyboard())
+    categories = await db.get_categories()
+    await _safe_edit(callback, "Qaysi bo'limni ko'rmoqchisiz?", categories_keyboard(categories))
     await callback.answer()
 
 
 @catalog_router.callback_query(F.data.startswith("cat:"))
 async def show_products(callback: CallbackQuery):
     category = callback.data.split(":", 1)[1]
-    products = get_products_by_category(category)
+    products = await db.get_products_by_category(category)
     if not products:
         await callback.answer("Bu bo'limda hozircha mahsulot yo'q", show_alert=True)
         return
     await _safe_edit(
-        callback, f"<b>{category}</b>\n\nMahsulotni tanlang:", products_keyboard(category)
+        callback, f"<b>{category}</b>\n\nMahsulotni tanlang:", products_keyboard(category, products)
     )
     await callback.answer()
 
@@ -65,7 +69,7 @@ def _rating_line(avg_rating: float, review_count: int) -> str:
 @catalog_router.callback_query(F.data.startswith("prod:"))
 async def show_product(callback: CallbackQuery, bot: Bot):
     product_id = int(callback.data.split(":", 1)[1])
-    product = get_product_by_id(product_id)
+    product = await db.get_product_by_id(product_id)
     if not product:
         await callback.answer("Mahsulot topilmadi", show_alert=True)
         return
@@ -118,7 +122,7 @@ async def show_product(callback: CallbackQuery, bot: Bot):
 @catalog_router.callback_query(F.data.startswith("add:"))
 async def add_to_cart_handler(callback: CallbackQuery):
     product_id = int(callback.data.split(":", 1)[1])
-    product = get_product_by_id(product_id)
+    product = await db.get_product_by_id(product_id)
     if not product:
         await callback.answer("Mahsulot topilmadi", show_alert=True)
         return

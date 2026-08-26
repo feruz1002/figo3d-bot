@@ -2,9 +2,9 @@
 
 DIQQAT (tugma o'lchami haqida): Telegram bot tugmalarining shrift/piksel
 o'lchamini bot dasturi orqali o'zgartirib bo'lmaydi - bu Telegram ilovasining
-o'zi tomonidan belgilanadi. Lekin bitta qatorga kamroq tugma joylashtirish
-orqali (masalan 1 tadan) ularni kengroq va shu bilan "kattaroq" ko'rinishga
-keltirish mumkin - shu usul quyida qo'llanilgan.
+o'zi tomonidan belgilanadi. Bot faqat tugmalarning QATORLARGA JOYLASHUVINI
+belgilay oladi - shuning uchun bosh menyu 2 tadan qilib, ko'zga chiroyliroq
+va tekis (kvadratsimon) ko'rinadigan qilib joylashtirilgan.
 """
 from aiogram.types import (
     ReplyKeyboardMarkup,
@@ -13,8 +13,6 @@ from aiogram.types import (
     InlineKeyboardButton,
 )
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
-
-from products import get_categories, get_products_by_category
 
 # ---------- Asosiy menyu (pastdagi doimiy tugmalar) ----------
 
@@ -31,14 +29,12 @@ BTN_SKIP_PROOF = "📎 Skrinshotsiz yuborish"
 
 
 def main_menu_keyboard() -> ReplyKeyboardMarkup:
-    # Har bir tugma alohida qatorda - shu bilan kengroq (kattaroq) ko'rinadi
+    # 2 tadan qatorga - tekis, ko'zga yoqimli va baribir yetarlicha katta
+    # (resize_keyboard=True Telegram'ga mavjud joyni to'liq egallashni aytadi)
     builder = ReplyKeyboardBuilder()
-    builder.row(KeyboardButton(text=BTN_CATALOG))
-    builder.row(KeyboardButton(text=BTN_CART))
-    builder.row(KeyboardButton(text=BTN_ORDERS))
-    builder.row(KeyboardButton(text=BTN_PROFILE))
-    builder.row(KeyboardButton(text=BTN_CUSTOM))
-    builder.row(KeyboardButton(text=BTN_CONTACT))
+    builder.row(KeyboardButton(text=BTN_CATALOG), KeyboardButton(text=BTN_CART))
+    builder.row(KeyboardButton(text=BTN_ORDERS), KeyboardButton(text=BTN_PROFILE))
+    builder.row(KeyboardButton(text=BTN_CUSTOM), KeyboardButton(text=BTN_CONTACT))
     return builder.as_markup(resize_keyboard=True)
 
 
@@ -73,17 +69,17 @@ def skip_proof_keyboard() -> ReplyKeyboardMarkup:
 
 # ---------- Katalog uchun inline tugmalar ----------
 
-def categories_keyboard() -> InlineKeyboardMarkup:
+def categories_keyboard(categories: list) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for category in get_categories():
+    for category in categories:
         builder.button(text=category, callback_data=f"cat:{category}")
     builder.adjust(1)
     return builder.as_markup()
 
 
-def products_keyboard(category: str) -> InlineKeyboardMarkup:
+def products_keyboard(category: str, products: list) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for product in get_products_by_category(category):
+    for product in products:
         price_fmt = f"{product['price']:,}".replace(",", " ")
         builder.button(
             text=f"{product['name']} — {price_fmt} so'm",
@@ -146,11 +142,14 @@ def cart_keyboard(cart_items: list) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def payment_choice_keyboard(balance: int, total: int) -> InlineKeyboardMarkup:
-    """Buyurtmani qanday to'lash: hamyondan (agar yetarli bo'lsa) yoki operator bilan."""
+def payment_choice_keyboard(balance: int, total: int, card_enabled: bool = False) -> InlineKeyboardMarkup:
+    """Buyurtmani qanday to'lash: hamyondan (agar yetarli bo'lsa), Telegram
+    ichida karta orqali (Click/Payme ulangan bo'lsa) yoki operator bilan."""
     builder = InlineKeyboardBuilder()
     if balance >= total and total > 0:
         builder.button(text="💰 Hamyondan to'lash", callback_data="confirm_balance")
+    if card_enabled and total > 0:
+        builder.button(text="💳 Karta orqali (Click/Payme)", callback_data="confirm_card")
     builder.button(text="💵 Naqd/karta (operator bilan)", callback_data="confirm_cash")
     builder.button(text="❌ Bekor qilish", callback_data="cancel_order")
     builder.adjust(1)
