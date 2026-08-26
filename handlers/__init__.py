@@ -13,6 +13,7 @@ from handlers.checkout import checkout_router
 from handlers.reviews import reviews_router
 from handlers.custom_order import custom_router
 from handlers.orders_history import orders_router
+from handlers.profile import profile_router
 from handlers.contact import contact_router
 from handlers.admin import admin_router
 
@@ -26,6 +27,7 @@ all_routers = [
     reviews_router,
     custom_router,
     orders_router,
+    profile_router,
     contact_router,
     admin_router,
 ]

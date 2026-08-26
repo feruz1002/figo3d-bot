@@ -71,13 +71,16 @@ async def show_product(callback: CallbackQuery, bot: Bot):
         return
 
     avg_rating, review_count = await db.get_product_rating(product_id)
+    cart_qty = await db.get_cart_item_quantity(callback.from_user.id, product_id)
     text = (
         f"<b>{product['name']}</b>\n\n"
         f"{product['description']}\n\n"
         f"💰 Narxi: {format_price(product['price'])} so'm\n"
         f"{_rating_line(avg_rating, review_count)}"
     )
-    kb = product_detail_keyboard(product_id, product["category"], has_reviews=review_count > 0)
+    kb = product_detail_keyboard(
+        product_id, product["category"], has_reviews=review_count > 0, cart_qty=cart_qty
+    )
 
     photos = product.get("photos") or []
     video = product.get("video")
@@ -115,5 +118,23 @@ async def show_product(callback: CallbackQuery, bot: Bot):
 @catalog_router.callback_query(F.data.startswith("add:"))
 async def add_to_cart_handler(callback: CallbackQuery):
     product_id = int(callback.data.split(":", 1)[1])
+    product = get_product_by_id(product_id)
+    if not product:
+        await callback.answer("Mahsulot topilmadi", show_alert=True)
+        return
+
     await db.add_to_cart(callback.from_user.id, product_id)
-    await callback.answer("✅ Savatga qo'shildi!")
+    new_qty = await db.get_cart_item_quantity(callback.from_user.id, product_id)
+
+    # Tugmani darhol yangilaymiz - shu bilan foydalanuvchi savatga qo'shilganini
+    # yozuv o'zgarganidan darrov ko'radi (masalan "savatda: 2 ta" bo'lib qoladi).
+    _, review_count = await db.get_product_rating(product_id)
+    kb = product_detail_keyboard(
+        product_id, product["category"], has_reviews=review_count > 0, cart_qty=new_qty
+    )
+    try:
+        await callback.message.edit_reply_markup(reply_markup=kb)
+    except Exception:
+        pass
+
+    await callback.answer(f"✅ Savatga qo'shildi! Savatda: {new_qty} ta")

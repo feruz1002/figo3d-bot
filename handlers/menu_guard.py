@@ -14,11 +14,11 @@ from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
-from keyboards import BTN_CATALOG, BTN_CART, BTN_ORDERS, BTN_CONTACT, BTN_CUSTOM
+from keyboards import BTN_CATALOG, BTN_CART, BTN_ORDERS, BTN_PROFILE, BTN_CONTACT, BTN_CUSTOM
 
 menu_guard_router = Router()
 
-_MENU_BUTTON_TEXTS = {BTN_CATALOG, BTN_CART, BTN_ORDERS, BTN_CONTACT, BTN_CUSTOM}
+_MENU_BUTTON_TEXTS = {BTN_CATALOG, BTN_CART, BTN_ORDERS, BTN_PROFILE, BTN_CONTACT, BTN_CUSTOM}
 
 
 @menu_guard_router.message(F.text.in_(_MENU_BUTTON_TEXTS))

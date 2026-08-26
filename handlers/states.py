@@ -20,3 +20,14 @@ class CustomOrderStates(StatesGroup):
     waiting_name = State()
     waiting_phone = State()
     waiting_address = State()
+
+
+class ProfileEditStates(StatesGroup):
+    waiting_name = State()
+    waiting_phone = State()
+    waiting_address = State()
+
+
+class TopupStates(StatesGroup):
+    waiting_amount = State()
+    waiting_proof = State()

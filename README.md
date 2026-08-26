@@ -4,12 +4,19 @@ Bu bot mijozlarga 3D-print qilingan haykalcha, kalitcha va sovg'a buyumlarini
 katalogdan tanlab, buyurtma berish imkonini beradi. Buyurtma qabul qilingach,
 sizga (adminga) avtomatik xabar keladi.
 
-**Hozircha ishlaydigan qism:** katalog (ko'p rasm/video bilan), savat, buyurtma
-rasmiylashtirish, promo-kod/chegirma, mijoz sharhlari va reytingi, shaxsiy
-(o'z rasmidan) buyurtma so'rovi, admin xabarnomasi.
-**Keyingi bosqichda qo'shiladi:** Payme/Click orqali avtomatik to'lov (hozircha
-buyurtma "kutilmoqda" holatida qoladi, to'lovni operator sifatida siz qo'lda
-kelishasiz).
+**Hozircha ishlaydigan qism:** katalog (ko'p rasm/video bilan), savat
+(miqdorni ➕/➖ qilish bilan), buyurtma rasmiylashtirish, promo-kod/chegirma,
+mijoz sharhlari va reytingi, shaxsiy (o'z rasmidan) buyurtma so'rovi, shaxsiy
+profil (ism/telefon/manzilni saqlash va qayta ishlatish), ichki hamyon
+(balans) — hisobni to'ldirish so'rovi orqali (admin tasdiqlagach hamyonga
+tushadi, keyin xohlagan buyurtmani hamyondan to'lash mumkin), admin
+xabarnomasi.
+
+**Keyingi bosqichda qo'shiladi:** Payme/Click API orqali hisobni **avtomatik**
+to'ldirish (hozircha mijoz to'lov qilib, chekining skrinshotini yuboradi, siz
+admin sifatida uni ko'rib "✅ Tasdiqlash" tugmasini bosasiz — shundan keyingina
+mablag' mijozning hamyoniga qo'shiladi. Bu real to'lov API'siga qadar
+ishlatiladigan vaqtinchalik, lekin ishonchli usul).
 
 ---
 
@@ -61,6 +68,9 @@ akkaunt va repository (loyiha "papkasi") kerak.
 5. Pastroqda **Environment Variables** bo'limini toping va qo'shing:
    - `BOT_TOKEN` = 1-qadamda olgan tokeningiz
    - `ADMIN_CHAT_ID` = 2-qadamda olgan ID raqamingiz
+   - `PAYMENT_INFO` = mijozlarga ko'rsatiladigan to'lov rekvizitlaringiz
+     (masalan: `Karta: 8600 1234 5678 9012 - F. Familiya (Payme/Click ham shu
+     kartaga)`) — bu hisobni to'ldirish so'rovida mijozga ko'rsatiladi
 6. **Create Web Service** tugmasini bosing
 
 Render avtomatik ravishda kodni yuklab oladi, kerakli kutubxonalarni
@@ -83,6 +93,52 @@ bosqichida muammo emas).
 ---
 
 ## Yangi imkoniyatlar qanday ishlatiladi
+
+### Savat: miqdorni ➕/➖ qilish
+
+Endi "Savatga qo'shish" tugmasi bosilganda mahsulot sahifasidagi tugma
+darhol o'zgarib, savatda nechta borligini ko'rsatadi (masalan "➕ Yana
+qo'shish (savatda: 2 ta)"), va yuqorida qisqa xabar ham chiqadi — shu bilan
+qo'shilgani sezilarli bo'ladi. Savat sahifasida ("🛒 Savat" tugmasi) har bir
+mahsulot qatorida ➖ va ➕ tugmalari bor — ular orqali miqdorni birma-bir
+kamaytirish yoki oshirish mumkin (0 ga tushsa, mahsulot savatdan butunlay
+o'chadi). Butunlay o'chirish uchun bir necha marta ➖ bosish kifoya, yoki
+"🗑 Savatni tozalash" bilan hammasini bir yo'la tozalash mumkin.
+
+### Tugmalar
+
+Bosh menyudagi tugmalar endi har biri alohida qatorda (bittadan) joylashgan
+— shu bilan Telegram ularni avtomatik ravishda kengroq va kattaroq qilib
+ko'rsatadi (tugma shrifti/piksel o'lchamini bot dasturi orqali to'g'ridan-
+to'g'ri o'zgartirib bo'lmaydi — bu faqat Telegram ilovasining o'zi
+belgilaydigan narsa, lekin joylashuvni shunday qilish orqali amalda
+"kattaroq" ko'rinishga erishildi).
+
+### Shaxsiy profil va o'zim/sovg'a tanlovi
+
+"👤 Profil" tugmasi orqali mijoz o'z ism-familiyasi, telefon raqami va
+manzilini bir marta kiritib saqlab qo'yishi mumkin ("✏️ Ma'lumotlarni
+yangilash" orqali). Keyingi safar buyurtma berayotganda, agar saqlangan
+ma'lumot bo'lsa, bot avtomatik so'raydi: "🙋 O'zim uchun (saqlangan
+ma'lumot)" — shu tugma bilan qayta yozmasdan davom etadi, yoki "🎁 Sovg'a /
+boshqa manzil" — shu holda ism/telefon/manzilni har safargidek qo'lda
+kiritadi (masalan do'stiga sovg'a yuborayotganda). Har bir muvaffaqiyatli
+buyurtmadan so'ng eng oxirgi kiritilgan ma'lumot profilga saqlanib qoladi.
+
+### Ichki hamyon (balans) tizimi
+
+Profil sahifasida mijoz joriy balansini ko'radi. "💰 Hisobni to'ldirish"
+tugmasi orqali: qancha to'ldirmoqchiligini yozadi → botning `PAYMENT_INFO`
+rekvizitlarini ko'radi → to'lov qilgach, chekning skrinshotini yuboradi
+(yoki skrinshotsiz ham davom etishi mumkin). So'rov sizga (admin) darhol
+skrinshot va "✅ Tasdiqlash" / "❌ Rad etish" tugmalari bilan keladi.
+**Tasdiqlaganingizda** — va faqat shundagina — mablag' mijozning hamyoniga
+qo'shiladi. Keyingi buyurtmalarda, agar hamyonda yetarli mablag' bo'lsa,
+mijoz "💰 Hamyondan to'lash" tugmasi bilan darhol to'lashi mumkin (operator
+bilan alohida kelishmasdan) — bo'lmasa, avvalgidek "💵 Naqd/karta (operator
+bilan)" orqali davom etadi. Bu — Payme/Click API ulanmaguncha ishlatiladigan
+ichki to'lov tizimi; API ulangach, "Hisobni to'ldirish" qismini avtomatik
+to'lovga almashtirish mumkin bo'ladi.
 
 ### Bir nechta rasm va video
 
@@ -136,9 +192,14 @@ buyurtma tasdiqlash qismiga to'lov havolasi yaratish kodi qo'shiladi.
 
 Render'ning **bepul** tarifida disk "doimiy" emas — bot qayta ishga
 tushganda (masalan, GitHub'ga yangi kod yuklaganingizda) `figo3d.db` fayli
-(demak barcha buyurtmalar, sharhlar, promo-kodlar) tozalanib ketishi mumkin.
-Bu sinov bosqichida muammo emas, lekin real mijozlar va buyurtmalar
-ko'paygach, buni albatta hal qilish kerak bo'ladi — masalan Render'ning
+(demak barcha buyurtmalar, sharhlar, promo-kodlar, **mijozlarning hamyon
+balanslari va saqlangan profillari ham**) tozalanib ketishi mumkin.
+
+⚠️ Endi bot ichida "pul" (hamyon balansi) saqlanayotgani uchun bu masala
+avvalgidan ham muhimroq: agar Render qayta ishga tushganda baza tozalansa,
+mijozlar hisobiga tasdiqlangan mablag'lar ham yo'qolib qolishi mumkin. Sinov
+bosqichida (hozircha) muammo emas, lekin real mijozlar pul kiritishni
+boshlashidan OLDIN, buni albatta hal qilish kerak — masalan Render'ning
 pullik "Persistent Disk" xizmatiga yoki tashqi bazaga (masalan bepul
 Postgres taklif qiluvchi xizmatlarga) o'tish orqali. Tayyor bo'lganingizda
 shu masalani birga hal qilamiz.

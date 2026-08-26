@@ -9,6 +9,7 @@ from aiogram.types import CallbackQuery, Message
 
 import db
 from config import ADMIN_CHAT_ID
+from handlers.catalog import format_price
 
 admin_router = Router()
 
@@ -58,6 +59,78 @@ async def custom_order_contacted(callback: CallbackQuery):
     old_caption = callback.message.caption or ""
     await callback.message.edit_caption(caption=old_caption + "\n\n✅ Bog'lanildi")
     await callback.answer("Belgilandi")
+
+
+@admin_router.callback_query(F.data.startswith("topup_approve:"))
+async def topup_approve(callback: CallbackQuery, bot: Bot):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+
+    request_id = int(callback.data.split(":", 1)[1])
+    req = await db.get_topup_request(request_id)
+    if not req:
+        await callback.answer("So'rov topilmadi", show_alert=True)
+        return
+    if req["status"] != "kutilmoqda":
+        await callback.answer("Bu so'rov allaqachon ko'rib chiqilgan", show_alert=True)
+        return
+
+    new_balance = await db.adjust_balance(req["user_id"], req["amount"])
+    await db.update_topup_status(request_id, "tasdiqlandi")
+
+    if callback.message.photo:
+        old_caption = callback.message.caption or ""
+        await callback.message.edit_caption(caption=old_caption + "\n\n✅ Tasdiqlandi")
+    else:
+        old_text = callback.message.html_text or ""
+        await callback.message.edit_text(old_text + "\n\n✅ Tasdiqlandi")
+
+    try:
+        await bot.send_message(
+            req["user_id"],
+            f"✅ Hisobingiz {format_price(req['amount'])} so'mga to'ldirildi!\n"
+            f"💰 Joriy balans: {format_price(new_balance)} so'm",
+        )
+    except Exception:
+        pass
+
+    await callback.answer("Tasdiqlandi")
+
+
+@admin_router.callback_query(F.data.startswith("topup_reject:"))
+async def topup_reject(callback: CallbackQuery, bot: Bot):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+
+    request_id = int(callback.data.split(":", 1)[1])
+    req = await db.get_topup_request(request_id)
+    if not req:
+        await callback.answer("So'rov topilmadi", show_alert=True)
+        return
+    if req["status"] != "kutilmoqda":
+        await callback.answer("Bu so'rov allaqachon ko'rib chiqilgan", show_alert=True)
+        return
+
+    await db.update_topup_status(request_id, "rad etildi")
+
+    if callback.message.photo:
+        old_caption = callback.message.caption or ""
+        await callback.message.edit_caption(caption=old_caption + "\n\n❌ Rad etildi")
+    else:
+        old_text = callback.message.html_text or ""
+        await callback.message.edit_text(old_text + "\n\n❌ Rad etildi")
+
+    try:
+        await bot.send_message(
+            req["user_id"],
+            "❌ Hisobni to'ldirish so'rovingiz rad etildi. Savol bo'lsa, operator bilan bog'laning.",
+        )
+    except Exception:
+        pass
+
+    await callback.answer("Rad etildi")
 
 
 @admin_router.message(Command("promo"))

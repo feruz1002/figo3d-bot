@@ -1,4 +1,11 @@
-"""Bot tugmalari (klaviaturalar) shu yerda yig'ilgan."""
+"""Bot tugmalari (klaviaturalar) shu yerda yig'ilgan.
+
+DIQQAT (tugma o'lchami haqida): Telegram bot tugmalarining shrift/piksel
+o'lchamini bot dasturi orqali o'zgartirib bo'lmaydi - bu Telegram ilovasining
+o'zi tomonidan belgilanadi. Lekin bitta qatorga kamroq tugma joylashtirish
+orqali (masalan 1 tadan) ularni kengroq va shu bilan "kattaroq" ko'rinishga
+keltirish mumkin - shu usul quyida qo'llanilgan.
+"""
 from aiogram.types import (
     ReplyKeyboardMarkup,
     KeyboardButton,
@@ -14,18 +21,24 @@ from products import get_categories, get_products_by_category
 BTN_CATALOG = "🗂 Katalog"
 BTN_CART = "🛒 Savat"
 BTN_ORDERS = "📦 Buyurtmalarim"
+BTN_PROFILE = "👤 Profil"
 BTN_CONTACT = "☎️ Aloqa"
 BTN_CUSTOM = "🎨 Shaxsiy buyurtma"
 
 BTN_SKIP_PROMO = "➡️ O'tkazib yuborish"
 BTN_CANCEL = "❌ Bekor qilish"
+BTN_SKIP_PROOF = "📎 Skrinshotsiz yuborish"
 
 
 def main_menu_keyboard() -> ReplyKeyboardMarkup:
+    # Har bir tugma alohida qatorda - shu bilan kengroq (kattaroq) ko'rinadi
     builder = ReplyKeyboardBuilder()
-    builder.row(KeyboardButton(text=BTN_CATALOG), KeyboardButton(text=BTN_CART))
-    builder.row(KeyboardButton(text=BTN_ORDERS), KeyboardButton(text=BTN_CONTACT))
+    builder.row(KeyboardButton(text=BTN_CATALOG))
+    builder.row(KeyboardButton(text=BTN_CART))
+    builder.row(KeyboardButton(text=BTN_ORDERS))
+    builder.row(KeyboardButton(text=BTN_PROFILE))
     builder.row(KeyboardButton(text=BTN_CUSTOM))
+    builder.row(KeyboardButton(text=BTN_CONTACT))
     return builder.as_markup(resize_keyboard=True)
 
 
@@ -51,13 +64,20 @@ def skip_promo_keyboard() -> ReplyKeyboardMarkup:
     return builder.as_markup(resize_keyboard=True)
 
 
+def skip_proof_keyboard() -> ReplyKeyboardMarkup:
+    builder = ReplyKeyboardBuilder()
+    builder.row(KeyboardButton(text=BTN_SKIP_PROOF))
+    builder.row(KeyboardButton(text=BTN_CANCEL))
+    return builder.as_markup(resize_keyboard=True)
+
+
 # ---------- Katalog uchun inline tugmalar ----------
 
 def categories_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for category in get_categories():
         builder.button(text=category, callback_data=f"cat:{category}")
-    builder.adjust(2)
+    builder.adjust(1)
     return builder.as_markup()
 
 
@@ -75,10 +95,11 @@ def products_keyboard(category: str) -> InlineKeyboardMarkup:
 
 
 def product_detail_keyboard(
-    product_id: int, category: str, has_reviews: bool = False
+    product_id: int, category: str, has_reviews: bool = False, cart_qty: int = 0
 ) -> InlineKeyboardMarkup:
+    add_text = "➕ Savatga qo'shish" if cart_qty == 0 else f"➕ Yana qo'shish (savatda: {cart_qty} ta)"
     builder = InlineKeyboardBuilder()
-    builder.button(text="➕ Savatga qo'shish", callback_data=f"add:{product_id}")
+    builder.button(text=add_text, callback_data=f"add:{product_id}")
     builder.button(text="⭐ Baho berish", callback_data=f"review:{product_id}")
     if has_reviews:
         builder.button(text="💬 Sharhlarni ko'rish", callback_data=f"viewreviews:{product_id}")
@@ -110,20 +131,27 @@ def cart_keyboard(cart_items: list) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for item in cart_items:
         product = item["product"]
-        builder.button(
-            text=f"❌ {product['name']} ({item['quantity']} dona)",
-            callback_data=f"remove:{product['id']}",
+        pid = product["id"]
+        # Har bir mahsulot uchun: [➖] [N dona - nomi] [➕] bitta qatorda
+        builder.row(
+            InlineKeyboardButton(text="➖", callback_data=f"dec:{pid}"),
+            InlineKeyboardButton(
+                text=f"{item['quantity']} ta — {product['name']}", callback_data="noop"
+            ),
+            InlineKeyboardButton(text="➕", callback_data=f"inc:{pid}"),
         )
     if cart_items:
-        builder.button(text="✅ Buyurtma berish", callback_data="checkout")
-        builder.button(text="🗑 Savatni tozalash", callback_data="clear_cart")
-    builder.adjust(1)
+        builder.row(InlineKeyboardButton(text="✅ Buyurtma berish", callback_data="checkout"))
+        builder.row(InlineKeyboardButton(text="🗑 Savatni tozalash", callback_data="clear_cart"))
     return builder.as_markup()
 
 
-def confirm_order_keyboard() -> InlineKeyboardMarkup:
+def payment_choice_keyboard(balance: int, total: int) -> InlineKeyboardMarkup:
+    """Buyurtmani qanday to'lash: hamyondan (agar yetarli bo'lsa) yoki operator bilan."""
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Tasdiqlash va yuborish", callback_data="confirm_order")
+    if balance >= total and total > 0:
+        builder.button(text="💰 Hamyondan to'lash", callback_data="confirm_balance")
+    builder.button(text="💵 Naqd/karta (operator bilan)", callback_data="confirm_cash")
     builder.button(text="❌ Bekor qilish", callback_data="cancel_order")
     builder.adjust(1)
     return builder.as_markup()
@@ -144,4 +172,31 @@ def custom_admin_keyboard(custom_order_id: int) -> InlineKeyboardMarkup:
         text="✅ Mijoz bilan bog'landim", callback_data=f"custom_contacted:{custom_order_id}"
     )
     builder.adjust(1)
+    return builder.as_markup()
+
+
+# ---------- Profil va hamyon uchun tugmalar ----------
+
+def profile_choice_keyboard() -> InlineKeyboardMarkup:
+    """Checkout boshida: o'zi uchunmi (saqlangan ma'lumot) yoki sovg'a/boshqa manzilgami."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🙋 O'zim uchun (saqlangan ma'lumot)", callback_data="use_saved_profile")
+    builder.button(text="🎁 Sovg'a / boshqa manzil", callback_data="new_manual_profile")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def profile_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="💰 Hisobni to'ldirish", callback_data="topup_start")
+    builder.button(text="✏️ Ma'lumotlarni yangilash", callback_data="edit_profile")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def topup_admin_keyboard(request_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Tasdiqlash", callback_data=f"topup_approve:{request_id}")
+    builder.button(text="❌ Rad etish", callback_data=f"topup_reject:{request_id}")
+    builder.adjust(2)
     return builder.as_markup()

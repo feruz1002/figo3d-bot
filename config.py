@@ -31,3 +31,13 @@ PORT = int(os.getenv("PORT", "8080"))
 
 # Ma'lumotlar bazasi fayli (savat va buyurtmalar shu yerda saqlanadi)
 DB_PATH = os.getenv("DB_PATH", "figo3d.db")
+
+# Hisobni to'ldirish (hamyon) uchun mijozga ko'rsatiladigan to'lov rekvizitlari
+# (masalan karta raqamingiz). Render'ning Environment Variables bo'limida
+# PAYMENT_INFO nomi bilan qo'shing - aks holda quyidagi standart matn ko'rsatiladi.
+PAYMENT_INFO = os.getenv(
+    "PAYMENT_INFO",
+    "To'lov rekvizitlari hali sozlanmagan. Admin: buni Render'ning Environment "
+    "Variables bo'limida PAYMENT_INFO nomi bilan qo'shing (masalan: "
+    "\"Karta: 8600 1234 5678 9012 - F. Familiya\").",
+)

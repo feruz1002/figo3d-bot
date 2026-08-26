@@ -9,12 +9,14 @@ tushganda (masalan yangi kod joylanganda) shu fayl tozalanishi mumkin. Bu
 sinov bosqichida muammo emas, lekin real buyurtmalar/sharhlar ko'payganda
 doimiy saqlanadigan baza (masalan tashqi Postgres) ga o'tish tavsiya etiladi.
 
-Bu yerda beshta jadval bor:
-  cart_items   - har bir foydalanuvchining savatidagi mahsulotlar
-  orders       - rasmiylashtirilgan buyurtmalar
-  reviews      - mahsulotlarga qoldirilgan baho/izohlar
-  promo_codes  - chegirma kodlari
-  custom_orders - mijozning o'z rasmi asosidagi shaxsiy buyurtmalari
+Bu yerda jadvallar:
+  cart_items      - har bir foydalanuvchining savatidagi mahsulotlar
+  orders          - rasmiylashtirilgan buyurtmalar
+  reviews         - mahsulotlarga qoldirilgan baho/izohlar
+  promo_codes     - chegirma kodlari
+  custom_orders   - mijozning o'z rasmi asosidagi shaxsiy buyurtmalari
+  users           - mijoz profili (ism/telefon/manzil) va hamyon balansi
+  topup_requests  - hamyonni to'ldirish so'rovlari (admin tasdig'i kutiladi)
 """
 import json
 from datetime import datetime, timezone
@@ -73,6 +75,24 @@ CREATE TABLE IF NOT EXISTS custom_orders (
     phone TEXT,
     address TEXT,
     status TEXT NOT NULL DEFAULT 'yangi',
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY,
+    full_name TEXT,
+    phone TEXT,
+    address TEXT,
+    balance INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS topup_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    screenshot_file_id TEXT,
+    status TEXT NOT NULL DEFAULT 'kutilmoqda',
     created_at TEXT NOT NULL
 );
 """
@@ -158,6 +178,37 @@ async def remove_from_cart(user_id: int, product_id: int):
             (user_id, product_id),
         )
         await conn.commit()
+
+
+async def get_cart_item_quantity(user_id: int, product_id: int) -> int:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cursor = await conn.execute(
+            "SELECT quantity FROM cart_items WHERE user_id = ? AND product_id = ?",
+            (user_id, product_id),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else 0
+
+
+async def decrease_cart_item(user_id: int, product_id: int, amount: int = 1) -> int:
+    """Miqdorni 'amount' ga kamaytiradi; 0 yoki kamiga tushsa, butunlay o'chiradi.
+    Qolgan (yangi) miqdorni qaytaradi (0 = savatda qolmadi)."""
+    current = await get_cart_item_quantity(user_id, product_id)
+    new_qty = current - amount
+    async with aiosqlite.connect(DB_PATH) as conn:
+        if new_qty <= 0:
+            await conn.execute(
+                "DELETE FROM cart_items WHERE user_id = ? AND product_id = ?",
+                (user_id, product_id),
+            )
+            new_qty = 0
+        else:
+            await conn.execute(
+                "UPDATE cart_items SET quantity = ? WHERE user_id = ? AND product_id = ?",
+                (new_qty, user_id, product_id),
+            )
+        await conn.commit()
+    return new_qty
 
 
 # ---------- BUYURTMALAR (ORDERS) ----------
@@ -350,5 +401,84 @@ async def update_custom_order_status(order_id: int, status: str):
     async with aiosqlite.connect(DB_PATH) as conn:
         await conn.execute(
             "UPDATE custom_orders SET status = ? WHERE id = ?", (status, order_id)
+        )
+        await conn.commit()
+
+
+# ---------- FOYDALANUVCHI PROFILI (ism/telefon/manzil + hamyon) ----------
+
+async def get_user_profile(user_id: int):
+    async with aiosqlite.connect(DB_PATH) as conn:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def upsert_user_profile(
+    user_id: int, full_name: str | None = None, phone: str | None = None, address: str | None = None
+):
+    """Profilni yaratadi (agar yo'q bo'lsa) yoki yangilaydi. Faqat berilgan
+    (None bo'lmagan) maydonlar o'zgaradi - boshqalari eskicha qoladi.
+    Balansga tegmaydi."""
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            """INSERT INTO users (user_id, full_name, phone, address, balance, updated_at)
+               VALUES (?, ?, ?, ?, 0, ?)
+               ON CONFLICT(user_id) DO UPDATE SET
+                   full_name = COALESCE(?, users.full_name),
+                   phone = COALESCE(?, users.phone),
+                   address = COALESCE(?, users.address),
+                   updated_at = ?""",
+            (user_id, full_name, phone, address, now, full_name, phone, address, now),
+        )
+        await conn.commit()
+
+
+async def get_balance(user_id: int) -> int:
+    profile = await get_user_profile(user_id)
+    return profile["balance"] if profile else 0
+
+
+async def adjust_balance(user_id: int, delta: int) -> int:
+    """Balansni delta ga o'zgartiradi (manfiy son - kamaytirish uchun).
+    Yangilangan balansni qaytaradi."""
+    await upsert_user_profile(user_id)  # profil hali yo'q bo'lsa, yaratib qo'yadi
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            "UPDATE users SET balance = balance + ? WHERE user_id = ?", (delta, user_id)
+        )
+        await conn.commit()
+        cursor = await conn.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
+        row = await cursor.fetchone()
+        return row[0]
+
+
+# ---------- HISOBNI TO'LDIRISH SO'ROVLARI ----------
+
+async def create_topup_request(user_id: int, amount: int, screenshot_file_id: str | None) -> int:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cursor = await conn.execute(
+            """INSERT INTO topup_requests (user_id, amount, screenshot_file_id, status, created_at)
+               VALUES (?, ?, ?, 'kutilmoqda', ?)""",
+            (user_id, amount, screenshot_file_id, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+        )
+        await conn.commit()
+        return cursor.lastrowid
+
+
+async def get_topup_request(request_id: int):
+    async with aiosqlite.connect(DB_PATH) as conn:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute("SELECT * FROM topup_requests WHERE id = ?", (request_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def update_topup_status(request_id: int, status: str):
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            "UPDATE topup_requests SET status = ? WHERE id = ?", (status, request_id)
         )
         await conn.commit()
