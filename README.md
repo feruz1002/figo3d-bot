@@ -408,3 +408,17 @@ avtomatik bekor bo'lishi mumkin. Tuzatish:
 
 Bu davrda ham (token tuzatilmagunicha) bot mijozlar uchun to'liq ishlayveradi
 — faqat ma'lumotlar Turso'ga emas, mahalliy faylga saqlanadi.
+
+#### ✅ Tuzatildi: "savat/buyurtma berish yo'qolib qolishi" (`ValueError: file is not a database`)
+
+Agar avval Logs'da `ValueError: file is not a database` degan xato bilan
+birga savatga mahsulot qo'shish yoki "✅ Buyurtma berish" ishlamay qolgan
+bo'lsa — sababi topildi va tuzatildi: fondagi davriy Turso sinxronlash
+vazifasi (`start_periodic_sync`, har 25 soniyada ishlaydi) mijozning
+so'rovi (masalan `/api/cart`) bilan **bir vaqtning o'zida**, bir-biridan
+himoyalanmagan holda, bitta bazaga ulanishga tegishi mumkin edi — bu esa
+vaqti-vaqti bilan mahalliy baza faylini buzib qo'yardi. Endi bu ikkalasi
+hech qachon bir vaqtda ishlamaydi (bir xil qulf — "lock" orqali
+navbat bilan ishlaydi). Bu narsa avtomatik tuzatilgan, sizdan hech qanday
+qo'shimcha sozlash talab qilinmaydi — shu zip'ni GitHub'ga yuklab, Render
+qayta deploy bo'lishini kutsangiz bas.

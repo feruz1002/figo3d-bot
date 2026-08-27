@@ -187,7 +187,19 @@ async def start_periodic_sync(interval_seconds: int = 25):
     bo'lsa, yoki dastlabki ulanish allaqachon muvaffaqiyatsiz tugagan bo'lsa
     (masalan noto'g'ri token - qayta urinib, loglarni "ifloslashning" hojati
     yo'q, chunki token faqat qayta deploy qilingandagina o'qib olinadi),
-    hech narsa qilmaydi."""
+    hech narsa qilmaydi.
+
+    MUHIM (xato tuzatildi): bu funksiya ILGARI `_lock`ni OLMASDAN to'g'ridan-
+    to'g'ri `conn.sync()` chaqirar edi. Shu payt aynan shu `_conn` obyekti
+    ustida (boshqa oqimda) bir vaqtning o'zida `execute`/`fetchall`/`commit`
+    ishlab turgan bo'lishi mumkin edi (masalan mijoz "/api/cart" so'rovi
+    yuborgan payt) - `libsql`/SQLite ulanishi bir nechta OS-thread'dan BIR
+    VAQTDA ishlatilishi xavfsiz emas va mahalliy replika faylini buzib
+    qo'yishi mumkin edi (production'da aynan shu sabab bilan
+    `ValueError: file is not a database` xatosi chiqqan va savat/checkout
+    "qotib qolgan" edi). Endi `_ConnCtx` bilan bir xil `_lock` orqali
+    himoyalanadi - shu bilan sinxronlash va so'rovlar hech qachon bir vaqtda
+    bitta ulanishga tegmaydi."""
     if not _TURSO_ENABLED:
         return
     while True:
@@ -195,7 +207,8 @@ async def start_periodic_sync(interval_seconds: int = 25):
         if _turso_broken:
             continue
         try:
-            conn = await _ensure_conn()
-            await asyncio.to_thread(conn.sync)
+            async with _lock:
+                conn = await _ensure_conn()
+                await asyncio.to_thread(conn.sync)
         except Exception:
             logger.exception("Davriy Turso sinxronlashda xatolik.")
