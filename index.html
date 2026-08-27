@@ -505,25 +505,58 @@
     if (mainBtnBusy) return;
     mainBtnBusy = true;
     if (tg) tg.MainButton.showProgress(true);
-    Promise.resolve(fn()).then(function () {
-      mainBtnBusy = false;
-      if (tg) tg.MainButton.hideProgress();
-    });
+    // DIQQAT (muhim tuzatish): agar `fn()` ichida kutilmagan xato chiqsa
+    // (masalan biror DOM elementi topilmasa) va u avvalgidek `.catch()`siz
+    // qolsa - Promise "rad etiladi" (rejected), pastdagi `.then()` HECH
+    // QACHON ishlamay qoladi, demak `mainBtnBusy` abadiy `true` bo'lib
+    // qolib, ENDI tugma umuman bosilmay qo'yadi (har qanday keyingi bosish
+    // "band" deb hisoblanib, hatto xato ham chiqarmasdan, e'tiborsiz
+    // qoldiriladi) - xuddi "tugma ishlamayapti" degan shikoyatga sabab
+    // bo'lgan holat shu edi. `fn()`ning o'zi HAM (promise qaytarishdan oldin)
+    // SINXRON xato berishi mumkinligi uchun (masalan DOM o'qishda), uni ham
+    // try/catch bilan o'raymiz - aks holda o'sha holatda `Promise.resolve(...)`
+    // qatoriga yetib ham bormay, `mainBtnBusy` baribir abadiy band qolar edi.
+    var result;
+    try {
+      result = fn();
+    } catch (err) {
+      result = Promise.reject(err);
+    }
+    Promise.resolve(result)
+      .catch(function (err) {
+        console.error("withMainButtonProgress xatolik:", err);
+        showToast("Kutilmagan xatolik yuz berdi. Qaytadan urinib ko'ring.");
+      })
+      .then(function () {
+        mainBtnBusy = false;
+        if (tg) tg.MainButton.hideProgress();
+      });
   }
 
   if (tg) {
     tg.MainButton.onClick(function () {
-      var view = currentView();
-      if (mainBtnBusy) return;
-      if (view === "detail" && state.detailProduct) { changeQty(state.detailProduct.id, 1); }
-      else if (view === "cart") { withMainButtonProgress(beginCheckout); }
-      else if (view === "checkout_form") { submitCheckoutForm(); }
-      else if (view === "checkout_promo") { withMainButtonProgress(submitPromoStep); }
-      else if (view === "checkout_success") { resetToGrid(); }
-      else if (view === "topup_form") { withMainButtonProgress(submitTopupForm); }
-      else if (view === "grid" && state.mainTab === "katalog") { pushView("cart"); }
-      else if (view === "grid" && state.mainTab === "custom") { withMainButtonProgress(submitCustomOrderForm); }
-      else if (view === "grid" && state.mainTab === "profile") { withMainButtonProgress(submitProfileForm); }
+      // Bu yerda ham himoya qatlami: quyidagi funksiyalarning ba'zilari
+      // (masalan submitCheckoutForm) sinxron ishlaydi va DOM'dan
+      // to'g'ridan-to'g'ri o'qiydi - agar kutilmagan sabab bilan xato
+      // chiqsa, avval bu butunlay "jim" qolib ketardi (hech narsa
+      // bosilmagandek tuyulardi). Endi bunday holatda ham foydalanuvchiga
+      // kamida bitta tushunarli xabar chiqadi.
+      try {
+        var view = currentView();
+        if (mainBtnBusy) return;
+        if (view === "detail" && state.detailProduct) { changeQty(state.detailProduct.id, 1); }
+        else if (view === "cart") { withMainButtonProgress(beginCheckout); }
+        else if (view === "checkout_form") { submitCheckoutForm(); }
+        else if (view === "checkout_promo") { withMainButtonProgress(submitPromoStep); }
+        else if (view === "checkout_success") { resetToGrid(); }
+        else if (view === "topup_form") { withMainButtonProgress(submitTopupForm); }
+        else if (view === "grid" && state.mainTab === "katalog") { pushView("cart"); }
+        else if (view === "grid" && state.mainTab === "custom") { withMainButtonProgress(submitCustomOrderForm); }
+        else if (view === "grid" && state.mainTab === "profile") { withMainButtonProgress(submitProfileForm); }
+      } catch (err) {
+        console.error("MainButton bosilganda kutilmagan xatolik:", err);
+        showToast("Kutilmagan xatolik yuz berdi. Qaytadan urinib ko'ring.");
+      }
     });
   }
 
@@ -596,45 +629,36 @@
     });
   };
 
-  // ---------- Checkout: profil tanlovi ----------
+  // ---------- Checkout: forma ----------
+  // MUHIM (foydalanuvchi so'rovi bilan tuzatildi): avval, agar profilda
+  // saqlangan ism/telefon/manzil bo'lsa, bot "🙋 O'zim uchun / 🎁 Sovg'a"
+  // degan tanlov ekranini ko'rsatib, "O'zim uchun" bosilganda manzilni
+  // QAYTA SO'RAMASDAN darhol keyingi bosqichga o'tardi - bu ba'zi
+  // foydalanuvchilarga "manzil so'ramadi" bo'lib tuyuldi. Endi bu oraliq
+  // ekran OLIB TASHLANDI: buyurtma berishda HAR DOIM ism/telefon/manzil
+  // formasi ko'rsatiladi - agar profilda saqlangan ma'lumot bo'lsa, faqat
+  // maydonlar OLDINDAN TO'LDIRILGAN holda chiqadi (xohlasa o'zgartiradi,
+  // xohlasa shundayligicha "Davom etish" bosadi) - bu ancha tushunarli va
+  // manzil har doim ko'rinadigan/tekshirib bo'ladigan qilib beradi.
   function beginCheckout() {
     if (cartCount() === 0) return Promise.resolve();
-    state.checkout = { full_name: "", phone: "", address: "", promo_code: null, discount_percent: 0, discount_amount: 0 };
     return loadProfile().then(function () {
-      var pr = state.profile;
-      var hasSaved = pr && pr.full_name && pr.phone && pr.address;
-      if (hasSaved) pushView("checkout_profile");
-      else pushView("checkout_form");
+      var pr = state.profile || {};
+      state.checkout = {
+        full_name: pr.full_name || "", phone: pr.phone || "", address: pr.address || "",
+        promo_code: null, discount_percent: 0, discount_amount: 0,
+      };
+      pushView("checkout_form");
     });
   }
 
-  VIEW_RENDERERS.checkout_profile = function (el) {
-    var pr = state.profile || {};
-    el.innerHTML =
-      '<div class="screen">' +
-        '<div class="screen-title">Buyurtma kimga?</div>' +
-        '<button class="option-btn" id="opt-saved">🙋 O\'zim uchun' +
-          '<span class="sub">' + escapeHtml(pr.full_name || "") + ' · ' + escapeHtml(pr.phone || "") + ' · ' + escapeHtml(pr.address || "") + '</span>' +
-        '</button>' +
-        '<button class="option-btn" id="opt-new">🎁 Sovg\'a / boshqa manzil' +
-          '<span class="sub">Ism, telefon va manzilni qo\'lda kiritaman</span>' +
-        '</button>' +
-      '</div>';
-    el.querySelector("#opt-saved").onclick = function () {
-      state.checkout.full_name = pr.full_name;
-      state.checkout.phone = pr.phone;
-      state.checkout.address = pr.address;
-      pushView("checkout_promo");
-    };
-    el.querySelector("#opt-new").onclick = function () { pushView("checkout_form"); };
-  };
-
-  // ---------- Checkout: forma ----------
   VIEW_RENDERERS.checkout_form = function (el) {
     var c = state.checkout;
+    var hasSaved = c.full_name && c.phone && c.address;
     el.innerHTML =
       '<div class="screen">' +
         '<div class="screen-title">Ma\'lumotlaringiz</div>' +
+        (hasSaved ? '<p style="color:var(--hint);font-size:12.5px;margin:-8px 0 14px">Saqlangan ma\'lumotlaringiz avtomatik to\'ldirildi - xohlasangiz o\'zgartiring.</p>' : '') +
         '<div class="form-group"><label class="form-label">Ism-familiya</label>' +
           '<input class="form-input" id="f-name" value="' + escapeHtml(c.full_name) + '" placeholder="Ism Familiya"></div>' +
         '<div class="form-group"><label class="form-label">Telefon raqam</label>' +
