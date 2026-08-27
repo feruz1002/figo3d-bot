@@ -351,6 +351,34 @@ async def decrease_cart_item(user_id: int, product_id: int, amount: int = 1) -> 
     return new_qty
 
 
+async def set_cart_item_quantity(user_id: int, product_id: int, quantity: int) -> int:
+    """Miqdorni to'g'ridan-to'g'ri berilgan songa o'rnatadi (masalan veb-do'kondagi
+    ➖/➕ bosqichlari uchun qulay). 0 yoki kamiga o'rnatilsa, butunlay o'chiradi.
+    Yakuniy (haqiqiy) miqdorni qaytaradi."""
+    async with aiosqlite.connect(DB_PATH) as conn:
+        if quantity <= 0:
+            await conn.execute(
+                "DELETE FROM cart_items WHERE user_id = ? AND product_id = ?",
+                (user_id, product_id),
+            )
+            await conn.commit()
+            return 0
+        cursor = await conn.execute(
+            "SELECT id FROM cart_items WHERE user_id = ? AND product_id = ?",
+            (user_id, product_id),
+        )
+        row = await cursor.fetchone()
+        if row:
+            await conn.execute("UPDATE cart_items SET quantity = ? WHERE id = ?", (quantity, row[0]))
+        else:
+            await conn.execute(
+                "INSERT INTO cart_items (user_id, product_id, quantity) VALUES (?, ?, ?)",
+                (user_id, product_id, quantity),
+            )
+        await conn.commit()
+        return quantity
+
+
 # ---------- BUYURTMALAR (ORDERS) ----------
 
 async def create_order(

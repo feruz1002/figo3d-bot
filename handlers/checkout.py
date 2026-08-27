@@ -31,16 +31,17 @@ def _has_complete_profile(profile: dict | None) -> bool:
     return bool(profile and profile.get("full_name") and profile.get("phone") and profile.get("address"))
 
 
-@checkout_router.callback_query(F.data == "checkout")
-async def start_checkout(callback: CallbackQuery, state: FSMContext):
-    cart = await db.get_cart(callback.from_user.id)
+async def _begin_checkout(chat: Message, user_id: int, state: FSMContext) -> bool:
+    """Checkout jarayonini boshlaydi (profil bor-yo'qligini tekshirib, mos
+    savol beradi). Savat bo'sh bo'lsa False qaytaradi - chaqiruvchi o'zi xabar
+    berishi kerak (callback bo'lsa alert, oddiy xabar bo'lsa oddiy matn)."""
+    cart = await db.get_cart(user_id)
     if not cart:
-        await callback.answer("Savatingiz bo'sh", show_alert=True)
-        return
+        return False
 
-    profile = await db.get_user_profile(callback.from_user.id)
+    profile = await db.get_user_profile(user_id)
     if _has_complete_profile(profile):
-        await callback.message.answer(
+        await chat.answer(
             "Saqlangan ma'lumotlaringiz bor:\n\n"
             f"👤 {profile['full_name']}\n"
             f"📱 {profile['phone']}\n"
@@ -50,11 +51,37 @@ async def start_checkout(callback: CallbackQuery, state: FSMContext):
         )
     else:
         await state.set_state(OrderStates.waiting_name)
-        await callback.message.answer(
+        await chat.answer(
             "Buyurtmani rasmiylashtirish uchun ism-familiyangizni yozib yuboring:",
             reply_markup=cancel_only_keyboard(),
         )
+    return True
+
+
+@checkout_router.callback_query(F.data == "checkout")
+async def start_checkout(callback: CallbackQuery, state: FSMContext):
+    started = await _begin_checkout(callback.message, callback.from_user.id, state)
+    if not started:
+        await callback.answer("Savatingiz bo'sh", show_alert=True)
+        return
     await callback.answer()
+
+
+@checkout_router.message(F.web_app_data)
+async def handle_webapp_checkout(message: Message, state: FSMContext):
+    """Veb-do'kon (Mini App)dagi "✅ Buyurtma berish" tugmasi bosilganda
+    Telegram shu yerga signal yuboradi - checkout jarayonini xuddi
+    "✅ Buyurtma berish" inline tugmasi bosilgandek boshlaymiz."""
+    try:
+        payload = json.loads(message.web_app_data.data)
+    except Exception:
+        payload = {}
+    if payload.get("action") != "checkout":
+        return
+
+    started = await _begin_checkout(message, message.from_user.id, state)
+    if not started:
+        await message.answer("Savatingiz bo'sh.")
 
 
 @checkout_router.callback_query(F.data == "use_saved_profile")

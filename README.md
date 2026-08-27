@@ -4,7 +4,9 @@ Bu bot mijozlarga 3D-print qilingan haykalcha, kalitcha va sovg'a buyumlarini
 katalogdan tanlab, buyurtma berish imkonini beradi. Buyurtma qabul qilingach,
 sizga (adminga) avtomatik xabar keladi.
 
-**Hozircha ishlaydigan qism:** katalog (ko'p rasm/video bilan, endi to'liq
+**Hozircha ishlaydigan qism:** **veb-do'kon (Mini App)** — "🗂 Katalog"
+tugmasi endi zamonaviy, rasmli-kartochkali veb-sahifa ko'rinishida ochiladi
+(eski tugmali menyu emas); katalog (ko'p rasm/video bilan, endi to'liq
 **bot orqali** boshqariladi — /admin), savat (miqdorni ➕/➖ qilish bilan),
 buyurtma rasmiylashtirish, promo-kod/chegirma, mijoz sharhlari va reytingi,
 shaxsiy (o'z rasmidan) buyurtma so'rovi, shaxsiy profil (ism/telefon/manzilni
@@ -100,6 +102,29 @@ mahsulotlaringizni (rasmlari bilan) qo'shishni boshlashingiz mumkin — pastda
 ---
 
 ## Yangi imkoniyatlar qanday ishlatiladi
+
+### 🛍 Veb-do'kon (Mini App) — yangi, qulay katalog ko'rinishi
+
+Endi "🗂 Katalog" tugmasi eski tugma-menyu o'rniga haqiqiy **veb-sahifa**
+sifatida ochiladi (Telegram buni "Mini App" deb ataydi) — rasm-kartochkalar
+2 ustunli to'r ko'rinishida, bo'limlar tepada tab (yorliq) sifatida, mahsulot
+ustiga bosilganda katta rasm + bir necha rasm bo'lsa suriladigan galereya,
+va Telegram'ning o'z pastki tugmasi (masalan "🛒 Savat — 3 ta, 450 000 so'm")
+orqali savatni ko'rish va "✅ Buyurtma berish" bilan davom etish. Bundan
+tashqari, xabar yozish maydoni yonida doimiy **"🛍 Do'kon"** tugmasi ham
+paydo bo'ladi — istalgan vaqtda shu orqali ham ochish mumkin.
+
+Buyurtma berish (ism/telefon/manzil, promo-kod, to'lov usuli) hozirgidek
+oddiy suhbat orqali davom etadi — Mini App ichidagi "✅ Buyurtma berish"
+tugmasi shu suhbatni avtomatik boshlab beradi, qayta "🛒 Savat" tugmasini
+bosish shart emas.
+
+**Muhim:** bu faqat Render'da (haqiqiy https manzil bilan) ishlaydi —
+mahalliy kompyuteringizda sinaganingizda (https yo'q joyda) bot avvalgi
+tugmali katalog ko'rinishiga avtomatik tushib qoladi, hech narsa buzilmaydi.
+Deploy qilgach ishlamay qolsa, ehtimol @BotFather'da `/setdomain` orqali
+domeningizni tasdiqlash kerak bo'lishi mumkin — shunday bo'lsa menga
+xabar bering, birga hal qilamiz.
 
 ### Savat: miqdorni ➕/➖ qilish
 
@@ -256,3 +281,9 @@ mijozlar pul kiritishni boshlashidan OLDIN, buni albatta hal qilish kerak —
 masalan Render'ning pullik "Persistent Disk" xizmatiga yoki tashqi bazaga
 (masalan bepul Postgres taklif qiluvchi xizmatlarga) o'tish orqali. Tayyor
 bo'lganingizda shu masalani birga hal qilamiz.
+
+**Eslatma:** hozircha shu holida qoldirishga qaror qilgandik — demak
+mahsulot/rasm qo'shgandan keyin, agar bot uzoq vaqt (masalan bir kechada)
+ishlatilmay qolsa, ba'zan qayta qo'shishga to'g'ri kelishi mumkin. Fikringiz
+o'zgarsa yoki real mijozlar bilan ishlay boshlasangiz, menga ayting — bepul
+tashqi bazaga (Turso) ko'chirib, bu muammoni butunlay yo'q qilib beraman.

@@ -26,6 +26,12 @@ ADMIN_CHAT_ID = int(_admin_raw) if _admin_raw else None
 # Mahalliy kompyuterda bu bo'sh bo'ladi -> bot polling rejimida ishlaydi.
 RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL", "").strip()
 
+# Veb-do'kon (Telegram Mini App) manzili. Faqat Render'da (webhook rejimida,
+# ya'ni haqiqiy https manzil mavjud bo'lganda) ishlaydi - Telegram Mini App
+# tugmasi https talab qiladi. Mahalliy sinovda bu None bo'ladi va bot
+# avvalgi (tugmali) katalog ko'rinishiga tushadi.
+WEBAPP_URL = (RENDER_EXTERNAL_URL.rstrip("/") + "/webapp") if RENDER_EXTERNAL_URL else None
+
 # Render har doim shu portni beradi; mahalliy sinovda ishlatilmaydi
 PORT = int(os.getenv("PORT", "8080"))
 

@@ -11,8 +11,11 @@ from aiogram.types import (
     KeyboardButton,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    WebAppInfo,
 )
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
+
+from config import WEBAPP_URL
 
 # ---------- Asosiy menyu (pastdagi doimiy tugmalar) ----------
 
@@ -32,7 +35,17 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
     # 2 tadan qatorga - tekis, ko'zga yoqimli va baribir yetarlicha katta
     # (resize_keyboard=True Telegram'ga mavjud joyni to'liq egallashni aytadi)
     builder = ReplyKeyboardBuilder()
-    builder.row(KeyboardButton(text=BTN_CATALOG), KeyboardButton(text=BTN_CART))
+    if WEBAPP_URL:
+        # Production'da (Render, https mavjud) "Katalog" haqiqiy veb-do'kon
+        # (Mini App) sifatida ochiladi - rasm-kartochkalar, tab bo'limlar,
+        # bosib tanlash. Mahalliy sinovda (https yo'q) avvalgi tugmali
+        # ko'rinishga tushadi (pastdagi else).
+        builder.row(
+            KeyboardButton(text=BTN_CATALOG, web_app=WebAppInfo(url=WEBAPP_URL)),
+            KeyboardButton(text=BTN_CART),
+        )
+    else:
+        builder.row(KeyboardButton(text=BTN_CATALOG), KeyboardButton(text=BTN_CART))
     builder.row(KeyboardButton(text=BTN_ORDERS), KeyboardButton(text=BTN_PROFILE))
     builder.row(KeyboardButton(text=BTN_CUSTOM), KeyboardButton(text=BTN_CONTACT))
     return builder.as_markup(resize_keyboard=True)
