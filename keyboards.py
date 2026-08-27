@@ -32,19 +32,17 @@ BTN_SKIP_PROOF = "📎 Skrinshotsiz yuborish"
 
 
 def main_menu_keyboard() -> ReplyKeyboardMarkup:
-    # 2 tadan qatorga - tekis, ko'zga yoqimli va baribir yetarlicha katta
     # (resize_keyboard=True Telegram'ga mavjud joyni to'liq egallashni aytadi)
     builder = ReplyKeyboardBuilder()
     if WEBAPP_URL:
         # Production'da (Render, https mavjud) "Katalog" haqiqiy veb-do'kon
         # (Mini App) sifatida ochiladi - rasm-kartochkalar, tab bo'limlar,
-        # bosib tanlash. Mahalliy sinovda (https yo'q) avvalgi tugmali
-        # ko'rinishga tushadi (pastdagi else).
-        builder.row(
-            KeyboardButton(text=BTN_CATALOG, web_app=WebAppInfo(url=WEBAPP_URL)),
-            KeyboardButton(text=BTN_CART),
-        )
+        # savat va buyurtma berish HAM shu ichida. Shuning uchun alohida
+        # "Savat" tugmasi endi kerak emas - shu bilan menyu ham ixchamroq.
+        builder.row(KeyboardButton(text=BTN_CATALOG, web_app=WebAppInfo(url=WEBAPP_URL)))
     else:
+        # Mahalliy sinovda (https yo'q) avvalgi tugmali ko'rinishga tushadi -
+        # bu holatda "Savat" alohida tugma sifatida kerak.
         builder.row(KeyboardButton(text=BTN_CATALOG), KeyboardButton(text=BTN_CART))
     builder.row(KeyboardButton(text=BTN_ORDERS), KeyboardButton(text=BTN_PROFILE))
     builder.row(KeyboardButton(text=BTN_CUSTOM), KeyboardButton(text=BTN_CONTACT))

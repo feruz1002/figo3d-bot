@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Figo3D Do'kon</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: #ffffff;
+    --text: #111111;
+    --hint: #8e8e93;
+    --link: #2ea6ff;
+    --button: #2ea6ff;
+    --button-text: #ffffff;
+    --secondary-bg: #f4f4f5;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #app { min-height: 100vh; padding-bottom: 96px; }
+  header { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 12px 14px 0; }
+  header h1 { margin: 0 0 10px; font-size: 20px; font-weight: 700; }
+  #tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; scrollbar-width: none; }
+  #tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    flex: none; border: none; border-radius: 999px; padding: 8px 16px;
+    background: var(--secondary-bg); color: var(--text); font-size: 14px; font-weight: 500;
+  }
+  .tab.active { background: var(--button); color: var(--button-text); }
+
+  #grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px 14px; }
+  .empty, .cart-empty { grid-column: 1 / -1; text-align: center; color: var(--hint); padding: 40px 20px; font-size: 15px; }
+
+  .card { background: var(--secondary-bg); border-radius: 16px; overflow: hidden; display: flex; flex-direction: column; }
+  .card-img { aspect-ratio: 1 / 1; background: var(--bg); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .card-img img { width: 100%; height: 100%; object-fit: cover; }
+  .noimg { font-size: 34px; opacity: 0.5; }
+  .noimg.big { font-size: 64px; padding: 60px 0; }
+  .noimg.small { font-size: 20px; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: var(--bg); border-radius: 10px; }
+  .card-body { padding: 8px 10px 4px; flex: 1; }
+  .card-name { font-size: 13.5px; font-weight: 600; line-height: 1.3; margin-bottom: 4px; }
+  .card-price { font-size: 13px; color: var(--hint); }
+  .card-action { padding: 8px 10px 10px; }
+  .add-btn {
+    width: 100%; border: none; border-radius: 10px; padding: 8px 0;
+    background: var(--button); color: var(--button-text); font-size: 13px; font-weight: 600;
+  }
+  .stepper {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--button); border-radius: 10px; padding: 4px 6px; color: var(--button-text);
+  }
+  .stepper button {
+    border: none; background: transparent; color: var(--button-text); font-size: 18px;
+    width: 26px; height: 26px; line-height: 1;
+  }
+  .stepper span { font-size: 14px; font-weight: 700; min-width: 18px; text-align: center; }
+
+  #overlay {
+    position: fixed; inset: 0; background: var(--bg); z-index: 20;
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+  }
+  #overlay.hidden { display: none; }
+  .screen { padding: 14px 16px 30px; }
+  .screen-title { font-size: 19px; font-weight: 700; margin: 4px 0 16px; }
+
+  .gallery { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
+  .gallery img { width: 100%; flex: none; scroll-snap-align: start; aspect-ratio: 1 / 1; object-fit: cover; }
+  .dots { display: flex; justify-content: center; gap: 6px; padding: 10px 0; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--hint); opacity: 0.4; }
+  .dot.active { opacity: 1; background: var(--button); }
+  .detail-body { padding: 4px 16px 20px; }
+  .detail-body h2 { font-size: 19px; margin: 6px 0 8px; }
+  .detail-desc { font-size: 14.5px; color: var(--hint); line-height: 1.5; margin: 0 0 14px; white-space: pre-wrap; }
+  .detail-price { font-size: 18px; font-weight: 700; }
+
+  .cart-list { padding: 14px 14px 0; display: flex; flex-direction: column; gap: 10px; }
+  .cart-row { display: flex; align-items: center; gap: 10px; background: var(--secondary-bg); border-radius: 14px; padding: 8px; }
+  .cart-row-img { width: 52px; height: 52px; border-radius: 10px; overflow: hidden; background: var(--bg); display: flex; align-items: center; justify-content: center; flex: none; }
+  .cart-row-img img { width: 100%; height: 100%; object-fit: cover; }
+  .cart-row-info { flex: 1; min-width: 0; }
+  .cart-row-name { font-size: 13.5px; font-weight: 600; line-height: 1.3; }
+  .cart-row-price { font-size: 12.5px; color: var(--hint); margin-top: 2px; }
+  .cart-total { padding: 18px 16px 8px; font-size: 16px; font-weight: 700; text-align: right; }
+
+  .option-btn {
+    display: block; width: 100%; text-align: left; border: none; border-radius: 14px;
+    background: var(--secondary-bg); color: var(--text); padding: 16px; font-size: 15px;
+    font-weight: 600; margin-bottom: 10px;
+  }
+  .option-btn .sub { display: block; font-weight: 400; font-size: 12.5px; color: var(--hint); margin-top: 3px; }
+  .option-btn:disabled { opacity: 0.4; }
+
+  .form-group { margin-bottom: 14px; }
+  .form-label { display: block; font-size: 12.5px; color: var(--hint); margin-bottom: 6px; font-weight: 500; }
+  .form-input {
+    width: 100%; border: none; border-radius: 12px; background: var(--secondary-bg);
+    color: var(--text); padding: 13px 14px; font-size: 15px; font-family: inherit;
+  }
+  .form-input:focus { outline: 2px solid var(--button); }
+  .form-error { color: #ff3b30; font-size: 12.5px; margin-top: 6px; }
+
+  .promo-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .promo-row .form-input { flex: 1; }
+  .promo-check-btn {
+    border: none; border-radius: 12px; background: var(--button); color: var(--button-text);
+    padding: 0 16px; font-size: 14px; font-weight: 600;
+  }
+  .promo-result { font-size: 13.5px; margin-top: 4px; }
+  .promo-result.ok { color: #34c759; }
+  .promo-result.bad { color: #ff3b30; }
+
+  .summary-box { background: var(--secondary-bg); border-radius: 14px; padding: 14px; margin-bottom: 16px; font-size: 14px; line-height: 1.7; }
+  .summary-box .row { display: flex; justify-content: space-between; }
+  .summary-box .total { font-weight: 700; font-size: 16px; margin-top: 6px; }
+
+  .center-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 60px 24px; min-height: 70vh; }
+  .center-screen .icon { font-size: 52px; margin-bottom: 16px; }
+  .center-screen h2 { font-size: 19px; margin: 0 0 8px; }
+  .center-screen p { color: var(--hint); font-size: 14.5px; line-height: 1.5; margin: 0; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🎁 Figo3D</h1>
+    <div id="tabs"></div>
+  </header>
+  <main id="grid"></main>
+  <div id="overlay" class="hidden"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+  if (tg) { tg.ready(); tg.expand(); }
+
+  function themeVar(name, fallback) {
+    return (tg && tg.themeParams && tg.themeParams[name]) ? tg.themeParams[name] : fallback;
+  }
+  function applyTheme() {
+    var root = document.documentElement.style;
+    root.setProperty("--bg", themeVar("bg_color", "#ffffff"));
+    root.setProperty("--text", themeVar("text_color", "#111111"));
+    root.setProperty("--hint", themeVar("hint_color", "#8e8e93"));
+    root.setProperty("--link", themeVar("link_color", "#2ea6ff"));
+    root.setProperty("--button", themeVar("button_color", "#2ea6ff"));
+    root.setProperty("--button-text", themeVar("button_text_color", "#ffffff"));
+    root.setProperty("--secondary-bg", themeVar("secondary_bg_color", "#f4f4f5"));
+  }
+  applyTheme();
+  if (tg) tg.onEvent("themeChanged", applyTheme);
+
+  // ---------- Holat ----------
+  var state = {
+    categories: [], products: [], cart: {},
+    detailProduct: null,
+    cardEnabled: false,
+    profile: null,
+    checkout: { full_name: "", phone: "", address: "", promo_code: null, discount_percent: 0, discount_amount: 0 },
+  };
+  var navStack = []; // bo'sh = "grid" (asosiy) ko'rinish
+
+  function fmtPrice(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+  function escapeHtml(s) {
+    return (s || "").replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function initDataStr() { return tg ? tg.initData : ""; }
+
+  // {ok, status, data} qaytaradi - xato holatini ham chaqiruvchi o'zi ko'rib chiqishi mumkin
+  function api(path, opts) {
+    opts = opts || {};
+    var headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+    if (initDataStr()) headers["X-Telegram-Init-Data"] = initDataStr();
+    return fetch(path, Object.assign({}, opts, { headers: headers }))
+      .then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          return { ok: res.ok, status: res.status, data: data };
+        });
+      });
+  }
+
+  function photoUrl(fileId) { return "/api/photo/" + encodeURIComponent(fileId); }
+
+  // ---------- Navigatsiya ----------
+  function currentView() { return navStack.length ? navStack[navStack.length - 1] : "grid"; }
+  function pushView(name) { navStack.push(name); render(); }
+  function popView() { if (navStack.length) navStack.pop(); render(); }
+  function resetToGrid() { navStack = []; render(); renderGrid(); }
+
+  if (tg) {
+    tg.BackButton.onClick(function () { popView(); });
+  }
+
+  var VIEW_RENDERERS = {}; // to'ldiriladi (pastda)
+
+  function render() {
+    var view = currentView();
+    var overlay = document.getElementById("overlay");
+    if (view === "grid") {
+      overlay.classList.add("hidden");
+      overlay.innerHTML = "";
+      if (tg) tg.BackButton.hide();
+    } else {
+      overlay.classList.remove("hidden");
+      if (tg) tg.BackButton.show();
+      (VIEW_RENDERERS[view] || function () {})(overlay);
+    }
+    updateMainButton();
+  }
+
+  // ---------- Yuklash ----------
+  function loadCatalog() {
+    return api("/api/catalog").then(function (r) {
+      state.categories = (r.data && r.data.categories) || [];
+      state.products = (r.data && r.data.products) || [];
+    });
+  }
+  function loadCart() {
+    return api("/api/cart").then(function (r) {
+      state.cart = {};
+      if (r.ok) ((r.data && r.data.items) || []).forEach(function (i) { state.cart[i.product_id] = i.quantity; });
+    });
+  }
+  function loadConfig() {
+    return api("/api/config").then(function (r) { state.cardEnabled = !!(r.data && r.data.card_enabled); });
+  }
+  function loadProfile() {
+    return api("/api/profile").then(function (r) { if (r.ok) state.profile = r.data; });
+  }
+
+  // ---------- Katalog to'ri ----------
+  var activeCategory = null;
+
+  function renderTabs() {
+    var el = document.getElementById("tabs");
+    el.innerHTML = "";
+    state.categories.forEach(function (cat) {
+      var btn = document.createElement("button");
+      btn.className = "tab" + (cat === activeCategory ? " active" : "");
+      btn.textContent = cat;
+      btn.onclick = function () { activeCategory = cat; renderTabs(); renderGrid(); };
+      el.appendChild(btn);
+    });
+  }
+
+  function renderGrid() {
+    var el = document.getElementById("grid");
+    el.innerHTML = "";
+    var items = state.products.filter(function (p) { return p.category === activeCategory; });
+    if (!items.length) {
+      el.innerHTML = "<div class=\"empty\">Bu bo'limda hozircha mahsulot yo'q</div>";
+      return;
+    }
+    items.forEach(function (p) {
+      var qty = state.cart[p.id] || 0;
+      var card = document.createElement("div");
+      card.className = "card";
+      var img = (p.photos && p.photos[0])
+        ? '<img src="' + photoUrl(p.photos[0]) + '" loading="lazy">'
+        : '<div class="noimg">🎁</div>';
+      card.innerHTML =
+        '<div class="card-img">' + img + '</div>' +
+        '<div class="card-body">' +
+          '<div class="card-name">' + escapeHtml(p.name) + '</div>' +
+          '<div class="card-price">' + fmtPrice(p.price) + " so'm</div>" +
+        '</div>' +
+        '<div class="card-action">' +
+          (qty > 0
+            ? '<div class="stepper"><button class="dec">−</button><span>' + qty + '</span><button class="inc">+</button></div>'
+            : '<button class="add-btn">➕ Qo\'shish</button>') +
+        '</div>';
+      card.querySelector(".card-img").onclick = function () { openDetail(p); };
+      card.querySelector(".card-name").onclick = function () { openDetail(p); };
+      var addBtn = card.querySelector(".add-btn");
+      if (addBtn) addBtn.onclick = function (e) { e.stopPropagation(); changeQty(p.id, 1); };
+      var dec = card.querySelector(".dec");
+      var inc = card.querySelector(".inc");
+      if (dec) dec.onclick = function (e) { e.stopPropagation(); changeQty(p.id, -1); };
+      if (inc) inc.onclick = function (e) { e.stopPropagation(); changeQty(p.id, 1); };
+      el.appendChild(card);
+    });
+  }
+
+  function changeQty(productId, delta) {
+    var current = state.cart[productId] || 0;
+    var next = Math.max(0, current + delta);
+    if (next === 0) delete state.cart[productId]; else state.cart[productId] = next;
+    if (currentView() === "grid") renderGrid();
+    if (currentView() === "cart") render();
+    updateMainButton();
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+
+    api("/api/cart/set_qty", { method: "POST", body: JSON.stringify({ product_id: productId, quantity: next }) })
+      .then(function (r) {
+        if (r.ok && r.data.quantity > 0) state.cart[productId] = r.data.quantity;
+        else if (r.ok) delete state.cart[productId];
+        if (currentView() === "grid") renderGrid();
+        if (currentView() === "cart") render();
+        updateMainButton();
+      });
+  }
+
+  function cartCount() { return Object.keys(state.cart).reduce(function (a, k) { return a + state.cart[k]; }, 0); }
+  function cartSubtotal() {
+    var total = 0;
+    Object.keys(state.cart).forEach(function (pid) {
+      var p = state.products.filter(function (x) { return x.id === Number(pid); })[0];
+      if (p) total += p.price * state.cart[pid];
+    });
+    return total;
+  }
+  function cartTotalAfterDiscount() {
+    return Math.max(cartSubtotal() - (state.checkout.discount_amount || 0), 0);
+  }
+
+  // ---------- MainButton ----------
+  function updateMainButton() {
+    if (!tg) return;
+    var view = currentView();
+    if (view === "detail" && state.detailProduct) {
+      var qty = state.cart[state.detailProduct.id] || 0;
+      tg.MainButton.setText(qty > 0 ? ("✅ Savatda: " + qty + " ta — yana qo'shish") : "➕ Savatga qo'shish");
+      tg.MainButton.show();
+    } else if (view === "cart") {
+      var count = cartCount();
+      if (count > 0) { tg.MainButton.setText("✅ Buyurtma berish — " + fmtPrice(cartSubtotal()) + " so'm"); tg.MainButton.show(); }
+      else tg.MainButton.hide();
+    } else if (view === "checkout_form") {
+      tg.MainButton.setText("Davom etish"); tg.MainButton.show();
+    } else if (view === "checkout_promo") {
+      tg.MainButton.setText("Davom etish"); tg.MainButton.show();
+    } else if (view === "checkout_success") {
+      tg.MainButton.setText("Davom etish"); tg.MainButton.show();
+    } else if (view === "grid") {
+      var c = cartCount();
+      if (c > 0) { tg.MainButton.setText("🛒 Savat — " + c + " ta, " + fmtPrice(cartSubtotal()) + " so'm"); tg.MainButton.show(); }
+      else tg.MainButton.hide();
+    } else {
+      tg.MainButton.hide();
+    }
+  }
+
+  if (tg) {
+    tg.MainButton.onClick(function () {
+      var view = currentView();
+      if (view === "detail" && state.detailProduct) { changeQty(state.detailProduct.id, 1); }
+      else if (view === "cart") { beginCheckout(); }
+      else if (view === "checkout_form") { submitCheckoutForm(); }
+      else if (view === "checkout_promo") { submitPromoStep(); }
+      else if (view === "checkout_success") { resetToGrid(); }
+      else if (view === "grid") { pushView("cart"); }
+    });
+  }
+
+  // ---------- Mahsulot tafsiloti ----------
+  function setupGalleryScroll(el) {
+    var gallery = el.querySelector(".gallery");
+    var dots = el.querySelectorAll(".dot");
+    if (!gallery) return;
+    gallery.addEventListener("scroll", function () {
+      var idx = Math.round(gallery.scrollLeft / gallery.clientWidth);
+      dots.forEach(function (d, i) { d.classList.toggle("active", i === idx); });
+    });
+  }
+
+  function openDetail(p) {
+    state.detailProduct = p;
+    pushView("detail");
+  }
+
+  VIEW_RENDERERS.detail = function (el) {
+    var p = state.detailProduct;
+    var photos = (p.photos && p.photos.length) ? p.photos : [];
+    var imagesHtml;
+    if (photos.length) {
+      imagesHtml = '<div class="gallery">' + photos.map(function (f) { return '<img src="' + photoUrl(f) + '">'; }).join("") + '</div>';
+      if (photos.length > 1) {
+        imagesHtml += '<div class="dots">' + photos.map(function (_, i) { return '<span class="dot' + (i === 0 ? " active" : "") + '"></span>'; }).join("") + '</div>';
+      }
+    } else {
+      imagesHtml = '<div class="noimg big">🎁</div>';
+    }
+    el.innerHTML =
+      imagesHtml +
+      '<div class="detail-body">' +
+        '<h2>' + escapeHtml(p.name) + '</h2>' +
+        '<p class="detail-desc">' + escapeHtml(p.description || "") + '</p>' +
+        '<div class="detail-price">' + fmtPrice(p.price) + " so'm</div>" +
+      '</div>';
+    setupGalleryScroll(el);
+  };
+
+  // ---------- Savat ----------
+  VIEW_RENDERERS.cart = function (el) {
+    var pids = Object.keys(state.cart).filter(function (pid) { return state.cart[pid] > 0; });
+    if (!pids.length) {
+      el.innerHTML = '<div class="cart-empty">🛒 Savatingiz bo\'sh</div>';
+      return;
+    }
+    var rows = pids.map(function (pid) {
+      var p = state.products.filter(function (x) { return x.id === Number(pid); })[0];
+      if (!p) return "";
+      var qty = state.cart[pid];
+      var img = (p.photos && p.photos[0]) ? '<img src="' + photoUrl(p.photos[0]) + '">' : '<div class="noimg small">🎁</div>';
+      return (
+        '<div class="cart-row" data-pid="' + p.id + '">' +
+          '<div class="cart-row-img">' + img + '</div>' +
+          '<div class="cart-row-info">' +
+            '<div class="cart-row-name">' + escapeHtml(p.name) + '</div>' +
+            '<div class="cart-row-price">' + fmtPrice(p.price) + " so'm</div>" +
+          '</div>' +
+          '<div class="stepper"><button class="dec">−</button><span>' + qty + '</span><button class="inc">+</button></div>' +
+        '</div>'
+      );
+    }).join("");
+    el.innerHTML = '<div class="cart-list">' + rows + '</div><div class="cart-total">Jami: ' + fmtPrice(cartSubtotal()) + " so'm</div>";
+    el.querySelectorAll(".cart-row").forEach(function (row) {
+      var pid = Number(row.getAttribute("data-pid"));
+      row.querySelector(".dec").onclick = function () { changeQty(pid, -1); };
+      row.querySelector(".inc").onclick = function () { changeQty(pid, 1); };
+    });
+  };
+
+  // ---------- Checkout: profil tanlovi ----------
+  function beginCheckout() {
+    if (cartCount() === 0) return;
+    state.checkout = { full_name: "", phone: "", address: "", promo_code: null, discount_percent: 0, discount_amount: 0 };
+    loadProfile().then(function () {
+      var pr = state.profile;
+      var hasSaved = pr && pr.full_name && pr.phone && pr.address;
+      if (hasSaved) pushView("checkout_profile");
+      else pushView("checkout_form");
+    });
+  }
+
+  VIEW_RENDERERS.checkout_profile = function (el) {
+    var pr = state.profile || {};
+    el.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">Buyurtma kimga?</div>' +
+        '<button class="option-btn" id="opt-saved">🙋 O\'zim uchun' +
+          '<span class="sub">' + escapeHtml(pr.full_name || "") + ' · ' + escapeHtml(pr.phone || "") + ' · ' + escapeHtml(pr.address || "") + '</span>' +
+        '</button>' +
+        '<button class="option-btn" id="opt-new">🎁 Sovg\'a / boshqa manzil' +
+          '<span class="sub">Ism, telefon va manzilni qo\'lda kiritaman</span>' +
+        '</button>' +
+      '</div>';
+    el.querySelector("#opt-saved").onclick = function () {
+      state.checkout.full_name = pr.full_name;
+      state.checkout.phone = pr.phone;
+      state.checkout.address = pr.address;
+      pushView("checkout_promo");
+    };
+    el.querySelector("#opt-new").onclick = function () { pushView("checkout_form"); };
+  };
+
+  // ---------- Checkout: forma ----------
+  VIEW_RENDERERS.checkout_form = function (el) {
+    var c = state.checkout;
+    el.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">Ma\'lumotlaringiz</div>' +
+        '<div class="form-group"><label class="form-label">Ism-familiya</label>' +
+          '<input class="form-input" id="f-name" value="' + escapeHtml(c.full_name) + '" placeholder="Ism Familiya"></div>' +
+        '<div class="form-group"><label class="form-label">Telefon raqam</label>' +
+          '<input class="form-input" id="f-phone" value="' + escapeHtml(c.phone) + '" placeholder="+998 90 123 45 67" type="tel"></div>' +
+        '<div class="form-group"><label class="form-label">Yetkazib berish manzili</label>' +
+          '<input class="form-input" id="f-address" value="' + escapeHtml(c.address) + '" placeholder="Shahar, tuman, mo\'ljal"></div>' +
+        '<div class="form-error hidden" id="f-error"></div>' +
+      '</div>';
+  };
+
+  function submitCheckoutForm() {
+    var name = document.getElementById("f-name").value.trim();
+    var phone = document.getElementById("f-phone").value.trim();
+    var address = document.getElementById("f-address").value.trim();
+    var errEl = document.getElementById("f-error");
+    var problems = [];
+    if (name.length < 2) problems.push("to'liq ismingizni yozing");
+    if (phone.length < 7) problems.push("telefon raqamni to'g'ri kiriting");
+    if (address.length < 3) problems.push("manzilni kiriting");
+    if (problems.length) {
+      errEl.textContent = "Iltimos: " + problems.join(", ") + ".";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    state.checkout.full_name = name;
+    state.checkout.phone = phone;
+    state.checkout.address = address;
+    pushView("checkout_promo");
+  }
+
+  // ---------- Checkout: promo-kod ----------
+  VIEW_RENDERERS.checkout_promo = function (el) {
+    var c = state.checkout;
+    el.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">Promo-kod (ixtiyoriy)</div>' +
+        '<div class="promo-row">' +
+          '<input class="form-input" id="p-code" placeholder="Masalan: YANGI10" value="' + escapeHtml(c.promo_code || "") + '">' +
+          '<button class="promo-check-btn" id="p-check">Tekshirish</button>' +
+        '</div>' +
+        '<div class="promo-result" id="p-result"></div>' +
+      '</div>';
+
+    if (c.promo_code) showPromoResult(true, c.discount_percent, c.discount_amount, c.promo_code);
+
+    el.querySelector("#p-check").onclick = function () { checkPromoCode(); };
+  };
+
+  function showPromoResult(valid, percent, amount, code) {
+    var el = document.getElementById("p-result");
+    if (!el) return;
+    if (valid) {
+      el.className = "promo-result ok";
+      el.textContent = "✅ \"" + code + "\" qabul qilindi: -" + percent + "% (−" + fmtPrice(amount) + " so'm)";
+    } else {
+      el.className = "promo-result bad";
+      el.textContent = "❌ Bu promo-kod topilmadi yoki muddati o'tgan.";
+    }
+  }
+
+  function checkPromoCode() {
+    var code = document.getElementById("p-code").value.trim().toUpperCase();
+    if (!code) {
+      state.checkout.promo_code = null;
+      state.checkout.discount_percent = 0;
+      state.checkout.discount_amount = 0;
+      var el = document.getElementById("p-result");
+      if (el) { el.className = "promo-result"; el.textContent = ""; }
+      return;
+    }
+    api("/api/promo/check", { method: "POST", body: JSON.stringify({ code: code }) }).then(function (r) {
+      if (r.ok && r.data.valid) {
+        state.checkout.promo_code = r.data.code;
+        state.checkout.discount_percent = r.data.discount_percent;
+        state.checkout.discount_amount = r.data.discount_amount;
+        showPromoResult(true, r.data.discount_percent, r.data.discount_amount, r.data.code);
+      } else {
+        state.checkout.promo_code = null;
+        state.checkout.discount_percent = 0;
+        state.checkout.discount_amount = 0;
+        showPromoResult(false);
+      }
+    });
+  }
+
+  function submitPromoStep() {
+    var codeInput = document.getElementById("p-code");
+    var typed = codeInput ? codeInput.value.trim().toUpperCase() : "";
+    if (typed && typed !== state.checkout.promo_code) {
+      api("/api/promo/check", { method: "POST", body: JSON.stringify({ code: typed }) }).then(function (r) {
+        if (r.ok && r.data.valid) {
+          state.checkout.promo_code = r.data.code;
+          state.checkout.discount_percent = r.data.discount_percent;
+          state.checkout.discount_amount = r.data.discount_amount;
+        } else {
+          state.checkout.promo_code = null;
+          state.checkout.discount_percent = 0;
+          state.checkout.discount_amount = 0;
+        }
+        loadProfile().then(function () { pushView("checkout_payment"); });
+      });
+    } else {
+      loadProfile().then(function () { pushView("checkout_payment"); });
+    }
+  }
+
+  // ---------- Checkout: to'lov usuli ----------
+  VIEW_RENDERERS.checkout_payment = function (el) {
+    var total = cartTotalAfterDiscount();
+    var balance = (state.profile && state.profile.balance) || 0;
+    var c = state.checkout;
+
+    var summary =
+      '<div class="summary-box">' +
+        '<div class="row"><span>Mahsulotlar</span><span>' + fmtPrice(cartSubtotal()) + " so'm</span></div>" +
+        (c.discount_amount ? '<div class="row"><span>Chegirma (' + escapeHtml(c.promo_code) + ')</span><span>−' + fmtPrice(c.discount_amount) + " so'm</span></div>" : "") +
+        '<div class="row total"><span>Jami</span><span>' + fmtPrice(total) + " so'm</span></div>" +
+      '</div>';
+
+    var options = "";
+    if (balance >= total && total > 0) {
+      options += '<button class="option-btn" id="pay-balance">💰 Hamyondan to\'lash<span class="sub">Joriy balans: ' + fmtPrice(balance) + " so'm</span></button>";
+    }
+    if (state.cardEnabled && total > 0) {
+      options += '<button class="option-btn" id="pay-card">💳 Karta orqali (Click/Payme)<span class="sub">Telegram ichida darhol to\'lash</span></button>';
+    }
+    options += '<button class="option-btn" id="pay-cash">💵 Naqd/karta (operator bilan)<span class="sub">Operator siz bilan bog\'lanadi</span></button>';
+
+    el.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">To\'lov usuli</div>' +
+        summary +
+        options +
+        '<div class="form-error hidden" id="pay-error"></div>' +
+      '</div>';
+
+    if (document.getElementById("pay-balance")) document.getElementById("pay-balance").onclick = function () { submitCheckout("balance"); };
+    if (document.getElementById("pay-card")) document.getElementById("pay-card").onclick = function () { submitCheckout("card"); };
+    document.getElementById("pay-cash").onclick = function () { submitCheckout("cash"); };
+  };
+
+  function setPaymentButtonsDisabled(disabled) {
+    ["pay-balance", "pay-card", "pay-cash"].forEach(function (id) {
+      var b = document.getElementById(id);
+      if (b) b.disabled = disabled;
+    });
+  }
+
+  function showPayError(text) {
+    var el = document.getElementById("pay-error");
+    if (!el) return;
+    el.textContent = text;
+    el.classList.remove("hidden");
+  }
+
+  var ERROR_MESSAGES = {
+    empty_cart: "Savatingiz bo'sh qolgan.",
+    insufficient_balance: "Hamyoningizda mablag' yetarli emas.",
+    invalid_input: "Ism/telefon/manzil to'ldirilmagan.",
+    card_unavailable: "Karta orqali to'lov hozircha sozlanmagan.",
+    invoice_failed: "To'lov oynasini ochib bo'lmadi.",
+  };
+
+  function submitCheckout(method) {
+    setPaymentButtonsDisabled(true);
+    var body = {
+      full_name: state.checkout.full_name,
+      phone: state.checkout.phone,
+      address: state.checkout.address,
+      promo_code: state.checkout.promo_code || null,
+      payment_method: method,
+    };
+    api("/api/checkout", { method: "POST", body: JSON.stringify(body) }).then(function (r) {
+      if (!r.ok) {
+        setPaymentButtonsDisabled(false);
+        showPayError(ERROR_MESSAGES[r.data && r.data.error] || "Xatolik yuz berdi. Qaytadan urinib ko'ring.");
+        if (r.data && r.data.error === "insufficient_balance") loadProfile().then(function () { if (currentView() === "checkout_payment") render(); });
+        return;
+      }
+      // Server buyurtmani yaratgan zahoti savatni allaqachon tozalagan
+      // (to'lov natijasidan qat'i nazar) - shu bilan mos holda darhol
+      // mahalliy holatni ham tozalaymiz, aks holda katalog/savat ko'rinishi
+      // serverdan uzilib qoladi.
+      state.cart = {};
+      if (r.data.status === "awaiting_payment" && r.data.invoice_link) {
+        if (!tg) { setPaymentButtonsDisabled(false); showPayError("To'lovni faqat Telegram ilovasi ichida amalga oshirish mumkin."); return; }
+        tg.openInvoice(r.data.invoice_link, function (status) {
+          setPaymentButtonsDisabled(false);
+          if (status === "paid") {
+            showCheckoutSuccess(r.data.order_id, true);
+          } else {
+            showPayError("To'lov amalga oshmadi (holat: " + status + "). Buyurtma #" + r.data.order_id + " \"to'lov kutilmoqda\" holatida - qaytadan urinib ko'rishingiz yoki boshqa usulni tanlashingiz mumkin.");
+          }
+        });
+      } else if (r.data.status === "confirmed") {
+        showCheckoutSuccess(r.data.order_id, false);
+      }
+    }).catch(function () {
+      setPaymentButtonsDisabled(false);
+      showPayError("Tarmoq xatosi. Qaytadan urinib ko'ring.");
+    });
+  }
+
+  // ---------- Checkout: muvaffaqiyat ----------
+  var lastOrderId = null;
+  var lastOrderPaid = false;
+
+  function showCheckoutSuccess(orderId, paid) {
+    lastOrderId = orderId;
+    lastOrderPaid = paid;
+    navStack = ["checkout_success"];
+    render();
+  }
+
+  VIEW_RENDERERS.checkout_success = function (el) {
+    el.innerHTML =
+      '<div class="center-screen">' +
+        '<div class="icon">✅</div>' +
+        '<h2>Buyurtmangiz qabul qilindi!</h2>' +
+        '<p>Buyurtma raqami: #' + lastOrderId + '<br>' +
+        (lastOrderPaid
+          ? "To'lov karta orqali muvaffaqiyatli amalga oshirildi."
+          : "Tez orada operator siz bilan bog'lanadi.") +
+        '</p>' +
+      '</div>';
+  };
+
+  // ---------- Boshlash ----------
+  loadCatalog()
+    .then(function () {
+      activeCategory = state.categories[0] || null;
+      renderTabs(); renderGrid();
+      return Promise.all([loadCart(), loadConfig()]);
+    })
+    .then(function () { renderGrid(); updateMainButton(); })
+    .catch(function () {
+      document.getElementById("grid").innerHTML = '<div class="empty">Yuklashda xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.</div>';
+    });
+})();
+</script>
+</body>
+</html>

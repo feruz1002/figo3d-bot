@@ -7,11 +7,14 @@ sizga (adminga) avtomatik xabar keladi.
 **Hozircha ishlaydigan qism:** **veb-do'kon (Mini App)** — "🗂 Katalog"
 tugmasi endi zamonaviy, rasmli-kartochkali veb-sahifa ko'rinishida ochiladi
 (eski tugmali menyu emas); katalog (ko'p rasm/video bilan, endi to'liq
-**bot orqali** boshqariladi — /admin), savat (miqdorni ➕/➖ qilish bilan),
-buyurtma rasmiylashtirish, promo-kod/chegirma, mijoz sharhlari va reytingi,
-shaxsiy (o'z rasmidan) buyurtma so'rovi, shaxsiy profil (ism/telefon/manzilni
-saqlash va qayta ishlatish), ichki hamyon (balans), Telegram ichida karta
-orqali to'lov (Click/Payme ulangach), admin xabarnomasi.
+**bot orqali** boshqariladi — /admin), savat (miqdorni ➕/➖ qilish bilan) —
+**va endi butun buyurtma berish jarayoni HAM** (kimga: o'zimga/sovg'a, ism/
+telefon/manzil, promo-kod, to'lov usuli — hamyon/karta/naqd) **to'liq shu
+veb-sahifa ichida**, chatga chiqmasdan. Bundan tashqari: mijoz sharhlari va
+reytingi, shaxsiy (o'z rasmidan) buyurtma so'rovi, shaxsiy profil (ism/
+telefon/manzilni saqlash va qayta ishlatish), ichki hamyon (balans),
+Telegram ichida karta orqali to'lov (Click/Payme ulangach), admin
+xabarnomasi.
 
 **Keyingi bosqichda qo'shiladi:** hozircha hisobni to'ldirish (hamyon)
 qo'lda admin tasdig'i bilan ishlaydi (mijoz to'lov qilib, chekining
@@ -103,28 +106,36 @@ mahsulotlaringizni (rasmlari bilan) qo'shishni boshlashingiz mumkin — pastda
 
 ## Yangi imkoniyatlar qanday ishlatiladi
 
-### 🛍 Veb-do'kon (Mini App) — yangi, qulay katalog ko'rinishi
+### 🛍 Veb-do'kon (Mini App) — endi TO'LIQ shu yerda, buyurtma berish ham
 
 Endi "🗂 Katalog" tugmasi eski tugma-menyu o'rniga haqiqiy **veb-sahifa**
 sifatida ochiladi (Telegram buni "Mini App" deb ataydi) — rasm-kartochkalar
 2 ustunli to'r ko'rinishida, bo'limlar tepada tab (yorliq) sifatida, mahsulot
 ustiga bosilganda katta rasm + bir necha rasm bo'lsa suriladigan galereya,
-va Telegram'ning o'z pastki tugmasi (masalan "🛒 Savat — 3 ta, 450 000 so'm")
-orqali savatni ko'rish va "✅ Buyurtma berish" bilan davom etish. Bundan
-tashqari, xabar yozish maydoni yonida doimiy **"🛍 Do'kon"** tugmasi ham
-paydo bo'ladi — istalgan vaqtda shu orqali ham ochish mumkin.
+Telegram'ning o'z pastki tugmasi (masalan "🛒 Savat — 3 ta, 450 000 so'm")
+orqali savatni ko'rish. Bundan tashqari, xabar yozish maydoni yonida doimiy
+**"🛍 Do'kon"** tugmasi ham paydo bo'ladi — istalgan vaqtda shu orqali ham
+ochish mumkin.
 
-Buyurtma berish (ism/telefon/manzil, promo-kod, to'lov usuli) hozirgidek
-oddiy suhbat orqali davom etadi — Mini App ichidagi "✅ Buyurtma berish"
-tugmasi shu suhbatni avtomatik boshlab beradi, qayta "🛒 Savat" tugmasini
-bosish shart emas.
+Sizning so'rovingizga ko'ra (buyurtmalarni chatga chiqmasdan, to'liq Mini
+App orqali qilish), endi **butun buyurtma berish jarayoni** shu veb-sahifa
+ichida: savatdan "✅ Buyurtma berish" → "🙋 O'zim uchun" (saqlangan
+ma'lumotdan) yoki "🎁 Sovg'a / boshqa manzil" (yangi ism/telefon/manzil) →
+promo-kod (ixtiyoriy, darhol tekshiriladi) → to'lov usuli (hamyon/karta/
+naqd) → "✅ Buyurtmangiz qabul qilindi!" ekrani — hammasi bitta oqimda,
+chatga umuman chiqmasdan. Karta orqali to'lov tanlansa, Telegram'ning o'z
+to'lov oynasi shu Mini App ichida ochiladi (`openInvoice`). Shu bilan
+birga, endi kerak bo'lmagani uchun bosh menyudan alohida **"🛒 Savat"**
+tugmasi olib tashlandi — savat va buyurtma to'liq "🗂 Katalog" (veb-do'kon)
+ichida.
 
 **Muhim:** bu faqat Render'da (haqiqiy https manzil bilan) ishlaydi —
 mahalliy kompyuteringizda sinaganingizda (https yo'q joyda) bot avvalgi
-tugmali katalog ko'rinishiga avtomatik tushib qoladi, hech narsa buzilmaydi.
-Deploy qilgach ishlamay qolsa, ehtimol @BotFather'da `/setdomain` orqali
-domeningizni tasdiqlash kerak bo'lishi mumkin — shunday bo'lsa menga
-xabar bering, birga hal qilamiz.
+tugmali katalog+savat ko'rinishiga avtomatik tushib qoladi (o'sha holatda
+"🛒 Savat" tugmasi ham qayta ko'rinadi, buyurtma berish esa chatda davom
+etadi) — hech narsa buzilmaydi. Deploy qilgach ishlamay qolsa, ehtimol
+@BotFather'da `/setdomain` orqali domeningizni tasdiqlash kerak bo'lishi
+mumkin — shunday bo'lsa menga xabar bering, birga hal qilamiz.
 
 ### Savat: miqdorni ➕/➖ qilish
 
@@ -139,12 +150,15 @@ o'chadi). Butunlay o'chirish uchun bir necha marta ➖ bosish kifoya, yoki
 
 ### Tugmalar
 
-Bosh menyudagi 6 ta tugma endi 2 tadan qilib, 3 qatorga tekis joylashtirilgan
-(Katalog/Savat, Buyurtmalarim/Profil, Shaxsiy buyurtma/Aloqa) — bir ustunga
-tizilgan avvalgi ko'rinishdan ko'ra ancha ixcham va ko'zga yoqimli
-(eslatma: tugma shrifti/piksel o'lchamini bot dasturi orqali o'zgartirib
-bo'lmaydi — bu faqat Telegram ilovasining o'zi belgilaydi, bot faqat
-tugmalarning necha ustunga joylashishini belgilay oladi).
+Bosh menyu tugmalari 2 tadan qilib, tekis qatorlarga joylashtirilgan (
+Buyurtmalarim/Profil, Shaxsiy buyurtma/Aloqa) — bir ustunga tizilgan avvalgi
+ko'rinishdan ko'ra ancha ixcham va ko'zga yoqimli. "🗂 Katalog" endi o'zi
+alohida qatorda, chunki u orqali ochiladigan veb-do'kon savat va buyurtma
+berishni ham o'z ichiga oladi ("🛒 Savat" tugmasi shu sababli olib
+tashlangan — yuqoridagi Mini App bo'limiga qarang). (Eslatma: tugma shrifti/
+piksel o'lchamini bot dasturi orqali o'zgartirib bo'lmaydi — bu faqat
+Telegram ilovasining o'zi belgilaydi, bot faqat tugmalarning necha ustunga
+joylashishini belgilay oladi.)
 
 ### Shaxsiy profil va o'zim/sovg'a tanlovi
 
