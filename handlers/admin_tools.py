@@ -2,22 +2,23 @@
 bo'ladigan "file_id"ni topib berish. Boshqa hech qanday tashqi botga hojat
 qolmaydi - shu bot o'ziga yuborilgan rasmning file_id'sini qaytarib beradi.
 
-Bu FAQAT admin (ADMIN_CHAT_ID) uchun ishlaydi va FAQAT hech qanday jarayon
-(masalan checkout yoki shaxsiy buyurtma) davom etmayotgan bo'lsa ishga tushadi -
-shu sababli oddiy mijozlarga yoki boshqa jarayonlarga xalaqit bermaydi."""
+Bu FAQAT adminlar (config.ADMIN_IDS) uchun ishlaydi va FAQAT hech qanday
+jarayon (masalan checkout yoki shaxsiy buyurtma) davom etmayotgan bo'lsa
+ishga tushadi - shu sababli oddiy mijozlarga yoki boshqa jarayonlarga
+xalaqit bermaydi."""
 from aiogram import Router, F
 from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
-from config import ADMIN_CHAT_ID
+from config import is_admin
 
 admin_tools_router = Router()
 
 
 @admin_tools_router.message(F.photo)
 async def send_file_id(message: Message, state: FSMContext):
-    if ADMIN_CHAT_ID is None or message.from_user.id != ADMIN_CHAT_ID:
+    if not is_admin(message.from_user.id):
         # Admin bo'lmasa - boshqa routerlar (masalan shaxsiy buyurtma oqimi) shu
         # rasmni o'zi ko'rib chiqsin, biz aralashmaymiz.
         raise SkipHandler()

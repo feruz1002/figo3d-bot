@@ -7,51 +7,43 @@ from aiogram import Router, F, Bot
 from aiogram.filters import Command, CommandObject
 from aiogram.types import CallbackQuery, Message
 
+import admin_service
 import db
-from config import ADMIN_CHAT_ID
-from handlers.catalog import format_price
+from config import is_admin as _is_admin
 
 admin_router = Router()
 
 
-def _is_admin(user_id: int) -> bool:
-    return ADMIN_CHAT_ID is not None and user_id == ADMIN_CHAT_ID
-
-
 @admin_router.callback_query(F.data.startswith("order_accept:"))
 async def order_accept(callback: CallbackQuery, bot: Bot):
-    order_id = int(callback.data.split(":", 1)[1])
-    order = await db.get_order(order_id)
-    if not order:
-        await callback.answer("Buyurtma topilmadi", show_alert=True)
+    if not _is_admin(callback.from_user.id):
+        await callback.answer()
         return
 
-    await db.update_order_status(order_id, "qabul qilindi")
+    order_id = int(callback.data.split(":", 1)[1])
+    order, reason = await admin_service.accept_order(order_id)
+    if order is None:
+        await callback.answer("Buyurtma topilmadi", show_alert=True)
+        return
 
     # html_text - Telegram formatlashini (qalin harflar va h.k.) HTML ko'rinishida qayta tiklaydi
     old_text = callback.message.html_text or ""
     await callback.message.edit_text(old_text + "\n\n✅ <b>Qabul qilindi</b>")
-
-    try:
-        await bot.send_message(
-            order["user_id"],
-            f"✅ Buyurtmangiz #{order_id} qabul qilindi va tayyorlanmoqda!",
-        )
-    except Exception:
-        pass
-
+    await admin_service.notify_customer_order_accepted(bot, order)
     await callback.answer("Belgilandi")
 
 
 @admin_router.callback_query(F.data.startswith("custom_contacted:"))
 async def custom_order_contacted(callback: CallbackQuery):
-    custom_order_id = int(callback.data.split(":", 1)[1])
-    order = await db.get_custom_order(custom_order_id)
-    if not order:
-        await callback.answer("Buyurtma topilmadi", show_alert=True)
+    if not _is_admin(callback.from_user.id):
+        await callback.answer()
         return
 
-    await db.update_custom_order_status(custom_order_id, "bog'lanildi")
+    custom_order_id = int(callback.data.split(":", 1)[1])
+    order, reason = await admin_service.mark_custom_order_contacted(custom_order_id)
+    if order is None:
+        await callback.answer("Buyurtma topilmadi", show_alert=True)
+        return
 
     # DIQQAT: aiogram caption uchun html_text kabi tayyor "html_caption" bermaydi,
     # shuning uchun oddiy (formatlanmagan) matnga qo'shib qo'yamiz - bu yerda
@@ -68,16 +60,11 @@ async def topup_approve(callback: CallbackQuery, bot: Bot):
         return
 
     request_id = int(callback.data.split(":", 1)[1])
-    req = await db.get_topup_request(request_id)
-    if not req:
-        await callback.answer("So'rov topilmadi", show_alert=True)
+    req, new_balance, reason = await admin_service.approve_topup(request_id)
+    if req is None:
+        msg = "So'rov topilmadi" if reason == "not_found" else "Bu so'rov allaqachon ko'rib chiqilgan"
+        await callback.answer(msg, show_alert=True)
         return
-    if req["status"] != "kutilmoqda":
-        await callback.answer("Bu so'rov allaqachon ko'rib chiqilgan", show_alert=True)
-        return
-
-    new_balance = await db.adjust_balance(req["user_id"], req["amount"])
-    await db.update_topup_status(request_id, "tasdiqlandi")
 
     if callback.message.photo:
         old_caption = callback.message.caption or ""
@@ -86,15 +73,7 @@ async def topup_approve(callback: CallbackQuery, bot: Bot):
         old_text = callback.message.html_text or ""
         await callback.message.edit_text(old_text + "\n\n✅ Tasdiqlandi")
 
-    try:
-        await bot.send_message(
-            req["user_id"],
-            f"✅ Hisobingiz {format_price(req['amount'])} so'mga to'ldirildi!\n"
-            f"💰 Joriy balans: {format_price(new_balance)} so'm",
-        )
-    except Exception:
-        pass
-
+    await admin_service.notify_customer_topup_approved(bot, req, new_balance)
     await callback.answer("Tasdiqlandi")
 
 
@@ -105,15 +84,11 @@ async def topup_reject(callback: CallbackQuery, bot: Bot):
         return
 
     request_id = int(callback.data.split(":", 1)[1])
-    req = await db.get_topup_request(request_id)
-    if not req:
-        await callback.answer("So'rov topilmadi", show_alert=True)
+    req, reason = await admin_service.reject_topup(request_id)
+    if req is None:
+        msg = "So'rov topilmadi" if reason == "not_found" else "Bu so'rov allaqachon ko'rib chiqilgan"
+        await callback.answer(msg, show_alert=True)
         return
-    if req["status"] != "kutilmoqda":
-        await callback.answer("Bu so'rov allaqachon ko'rib chiqilgan", show_alert=True)
-        return
-
-    await db.update_topup_status(request_id, "rad etildi")
 
     if callback.message.photo:
         old_caption = callback.message.caption or ""
@@ -122,14 +97,7 @@ async def topup_reject(callback: CallbackQuery, bot: Bot):
         old_text = callback.message.html_text or ""
         await callback.message.edit_text(old_text + "\n\n❌ Rad etildi")
 
-    try:
-        await bot.send_message(
-            req["user_id"],
-            "❌ Hisobni to'ldirish so'rovingiz rad etildi. Savol bo'lsa, operator bilan bog'laning.",
-        )
-    except Exception:
-        pass
-
+    await admin_service.notify_customer_topup_rejected(bot, req)
     await callback.answer("Rad etildi")
 
 

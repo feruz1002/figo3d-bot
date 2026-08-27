@@ -23,7 +23,7 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     -webkit-tap-highlight-color: transparent;
   }
-  #app { min-height: 100vh; padding-bottom: 96px; }
+  #app { min-height: 100vh; padding-bottom: 40px; }
   header { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 12px 14px 0; }
   header h1 { margin: 0 0 10px; font-size: 20px; font-weight: 700; }
   #tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; scrollbar-width: none; }
@@ -61,11 +61,13 @@
   }
   .stepper span { font-size: 14px; font-weight: 700; min-width: 18px; text-align: center; }
 
-  .overlay {
+  #overlay {
     position: fixed; inset: 0; background: var(--bg); z-index: 20;
     overflow-y: auto; -webkit-overflow-scrolling: touch;
   }
-  .overlay.hidden { display: none; }
+  #overlay.hidden { display: none; }
+  .screen { padding: 14px 16px 30px; }
+  .screen-title { font-size: 19px; font-weight: 700; margin: 4px 0 16px; }
 
   .gallery { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
   .gallery img { width: 100%; flex: none; scroll-snap-align: start; aspect-ratio: 1 / 1; object-fit: cover; }
@@ -85,6 +87,26 @@
   .cart-row-name { font-size: 13.5px; font-weight: 600; line-height: 1.3; }
   .cart-row-price { font-size: 12.5px; color: var(--hint); margin-top: 2px; }
   .cart-total { padding: 18px 16px 8px; font-size: 16px; font-weight: 700; text-align: right; }
+  .cart-hint {
+    margin: 4px 16px 0; padding: 14px; border-radius: 14px; background: var(--secondary-bg);
+    color: var(--text); font-size: 14px; line-height: 1.55; text-align: center;
+  }
+  .cart-hint b { color: var(--link); }
+
+  .page-cta {
+    display: block; width: 100%; border: none; border-radius: 14px;
+    background: var(--button); color: var(--button-text); padding: 15px;
+    font-size: 15.5px; font-weight: 700; margin: 18px 0 4px;
+  }
+  .page-cta:disabled { opacity: 0.55; }
+
+  #toast {
+    position: fixed; left: 14px; right: 14px; bottom: 14px; z-index: 50;
+    background: #1c1c1e; color: #ffffff; padding: 13px 16px; border-radius: 12px;
+    font-size: 13.5px; line-height: 1.4; box-shadow: 0 4px 18px rgba(0,0,0,0.25);
+    transform: translateY(140%); transition: transform 0.25s ease;
+  }
+  #toast.show { transform: translateY(0); }
 </style>
 </head>
 <body>
@@ -94,20 +116,27 @@
     <div id="tabs"></div>
   </header>
   <main id="grid"></main>
-  <div id="detail-overlay" class="overlay hidden"></div>
-  <div id="cart-overlay" class="overlay hidden"></div>
+  <div id="overlay" class="hidden"></div>
 </div>
+<div id="toast"></div>
 
 <script>
 (function () {
   "use strict";
+  // MUHIM (foydalanuvchi so'rovi bilan soddalashtirildi): bu Mini App endi
+  // FAQAT ikkita ishni qiladi - katalogni ko'rsatish va savatga mahsulot
+  // qo'shish/miqdorini o'zgartirish. Buyurtma berish (checkout), profil,
+  // buyurtmalar tarixi, shaxsiy buyurtma va aloqa - булар barchasi ENDI
+  // Telegram CHATning o'zidagi pastki tugmalar orqali ishlaydi (ular
+  // ancha ishonchli, chunki webview/JS'ga bog'liq emas). Savat bitta
+  // umumiy ma'lumotlar bazasida saqlanadi, shuning uchun bu yerda
+  // qo'shilgan mahsulot chatdagi "🛒 Savat" tugmasida ham darhol ko'rinadi.
   var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
   if (tg) { tg.ready(); tg.expand(); }
 
   function themeVar(name, fallback) {
     return (tg && tg.themeParams && tg.themeParams[name]) ? tg.themeParams[name] : fallback;
   }
-
   function applyTheme() {
     var root = document.documentElement.style;
     root.setProperty("--bg", themeVar("bg_color", "#ffffff"));
@@ -121,56 +150,118 @@
   applyTheme();
   if (tg) tg.onEvent("themeChanged", applyTheme);
 
-  var state = { categories: [], products: [], cart: {}, activeCategory: null, detailProduct: null };
-  var currentView = "grid"; // "grid" | "detail" | "cart"
+  // ---------- Holat ----------
+  var state = {
+    categories: [], products: [], cart: {},
+    detailProduct: null,
+  };
+  var navStack = []; // bo'sh = katalog (grid) ko'rinishi
 
-  function fmtPrice(n) {
-    return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-  }
-
+  function fmtPrice(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
   function escapeHtml(s) {
     return (s || "").replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
-
   function initDataStr() { return tg ? tg.initData : ""; }
 
+  // Bitta joyda ko'rinadigan xato/ogohlantirish xabari - tarmoq/server
+  // muammosi YUZ BERGANDA hech narsa ko'rsatmasdan "jim" qolib ketmaslik
+  // uchun (aynan shu narsa avvalgi xato sababi edi: sekin/uxlab qolgan
+  // Render server javob bermaganda hech qanday xabar chiqmasdi).
+  var toastTimer = null;
+  function showToast(text) {
+    var el = document.getElementById("toast");
+    el.textContent = text;
+    el.classList.add("show");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove("show"); }, 5000);
+  }
+
+  // {ok, status, data} qaytaradi - xato holatini ham chaqiruvchi o'zi ko'rib chiqishi mumkin.
+  // Render'ning bepul tarifi uzoq ishlatilmasa "uxlab qoladi" va birinchi
+  // so'rovga javob berish 30-60 soniyagacha cho'zilishi mumkin - shuning
+  // uchun 45 soniyagacha kutamiz (darhol "ishlamayapti" deb hisoblamaymiz),
+  // lekin abadiy osilib qolmasligi uchun shu muddatdan keyin to'xtatamiz.
   function api(path, opts) {
     opts = opts || {};
     var headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
     if (initDataStr()) headers["X-Telegram-Init-Data"] = initDataStr();
-    return fetch(path, Object.assign({}, opts, { headers: headers })).then(function (res) {
-      if (!res.ok) throw new Error("API error " + res.status);
-      return res.json();
-    });
+    var controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    var timeoutId = controller ? setTimeout(function () { controller.abort(); }, 45000) : null;
+    return fetch(path, Object.assign({}, opts, { headers: headers, signal: controller ? controller.signal : undefined }))
+      .then(function (res) {
+        if (timeoutId) clearTimeout(timeoutId);
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          return { ok: res.ok, status: res.status, data: data };
+        });
+      })
+      .catch(function (err) {
+        if (timeoutId) clearTimeout(timeoutId);
+        var isAbort = err && err.name === "AbortError";
+        showToast(
+          isAbort
+            ? "Server javob bermayapti (uxlab qolgan bo'lishi mumkin). Biroz kutib, qaytadan urinib ko'ring."
+            : "Internet aloqasida muammo. Qaytadan urinib ko'ring."
+        );
+        if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("error");
+        return { ok: false, status: 0, data: { error: "network" } };
+      });
   }
 
   function photoUrl(fileId) { return "/api/photo/" + encodeURIComponent(fileId); }
 
+  // ---------- Navigatsiya (grid -> detail -> orqaga, yoki grid -> cart -> orqaga) ----------
+  function currentView() { return navStack.length ? navStack[navStack.length - 1] : "grid"; }
+  function pushView(name) { navStack.push(name); render(); }
+  function popView() { if (navStack.length) navStack.pop(); render(); }
+
+  if (tg) {
+    tg.BackButton.onClick(function () { popView(); });
+  }
+
+  var VIEW_RENDERERS = {}; // to'ldiriladi (pastda)
+
+  function render() {
+    var view = currentView();
+    var overlay = document.getElementById("overlay");
+    if (view === "grid") {
+      overlay.classList.add("hidden");
+      overlay.innerHTML = "";
+      if (tg) tg.BackButton.hide();
+    } else {
+      overlay.classList.remove("hidden");
+      if (tg) tg.BackButton.show();
+      (VIEW_RENDERERS[view] || function () {})(overlay);
+    }
+    updateMainButton();
+  }
+
+  // ---------- Yuklash ----------
   function loadCatalog() {
-    return api("/api/catalog").then(function (data) {
-      state.categories = data.categories || [];
-      state.products = data.products || [];
-      state.activeCategory = state.categories[0] || null;
+    return api("/api/catalog").then(function (r) {
+      state.categories = (r.data && r.data.categories) || [];
+      state.products = (r.data && r.data.products) || [];
+    });
+  }
+  function loadCart() {
+    return api("/api/cart").then(function (r) {
+      state.cart = {};
+      if (r.ok) ((r.data && r.data.items) || []).forEach(function (i) { state.cart[i.product_id] = i.quantity; });
     });
   }
 
-  function loadCart() {
-    return api("/api/cart").then(function (data) {
-      state.cart = {};
-      (data.items || []).forEach(function (i) { state.cart[i.product_id] = i.quantity; });
-    }).catch(function () { state.cart = {}; });
-  }
+  // ---------- Katalog to'ri ----------
+  var activeCategory = null;
 
   function renderTabs() {
     var el = document.getElementById("tabs");
     el.innerHTML = "";
     state.categories.forEach(function (cat) {
       var btn = document.createElement("button");
-      btn.className = "tab" + (cat === state.activeCategory ? " active" : "");
+      btn.className = "tab" + (cat === activeCategory ? " active" : "");
       btn.textContent = cat;
-      btn.onclick = function () { state.activeCategory = cat; renderTabs(); renderGrid(); };
+      btn.onclick = function () { activeCategory = cat; renderTabs(); renderGrid(); };
       el.appendChild(btn);
     });
   }
@@ -178,7 +269,7 @@
   function renderGrid() {
     var el = document.getElementById("grid");
     el.innerHTML = "";
-    var items = state.products.filter(function (p) { return p.category === state.activeCategory; });
+    var items = state.products.filter(function (p) { return p.category === activeCategory; });
     if (!items.length) {
       el.innerHTML = "<div class=\"empty\">Bu bo'limda hozircha mahsulot yo'q</div>";
       return;
@@ -216,34 +307,24 @@
   function changeQty(productId, delta) {
     var current = state.cart[productId] || 0;
     var next = Math.max(0, current + delta);
-    state.cart[productId] = next;
-    if (next === 0) delete state.cart[productId];
-    if (currentView === "grid") renderGrid();
-    if (currentView === "cart") renderCart();
+    if (next === 0) delete state.cart[productId]; else state.cart[productId] = next;
+    if (currentView() === "grid") renderGrid();
+    if (currentView() === "cart") render();
     updateMainButton();
     if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
 
     api("/api/cart/set_qty", { method: "POST", body: JSON.stringify({ product_id: productId, quantity: next }) })
-      .then(function (data) {
-        if (data.quantity > 0) state.cart[productId] = data.quantity;
-        else delete state.cart[productId];
-        if (currentView === "grid") renderGrid();
-        if (currentView === "cart") renderCart();
+      .then(function (r) {
+        if (r.ok && r.data.quantity > 0) state.cart[productId] = r.data.quantity;
+        else if (r.ok) delete state.cart[productId];
+        if (currentView() === "grid") renderGrid();
+        if (currentView() === "cart") render();
         updateMainButton();
-      })
-      .catch(function () {
-        loadCart().then(function () {
-          if (currentView === "grid") renderGrid();
-          if (currentView === "cart") renderCart();
-          updateMainButton();
-        });
       });
   }
 
-  function cartCount() {
-    return Object.keys(state.cart).reduce(function (a, k) { return a + state.cart[k]; }, 0);
-  }
-  function cartTotal() {
+  function cartCount() { return Object.keys(state.cart).reduce(function (a, k) { return a + state.cart[k]; }, 0); }
+  function cartSubtotal() {
     var total = 0;
     Object.keys(state.cart).forEach(function (pid) {
       var p = state.products.filter(function (x) { return x.id === Number(pid); })[0];
@@ -252,31 +333,42 @@
     return total;
   }
 
+  // ---------- MainButton ----------
+  // Endi faqat ikkita ishni bajaradi: mahsulot tafsilotida "savatga
+  // qo'shish" va katalogda "savatni ochish". Buyurtma berish, profil va
+  // boshqa hammasi endi chatning o'zida (ishonchliroq) ishlaydi.
   function updateMainButton() {
     if (!tg) return;
-    if (currentView === "detail" && state.detailProduct) {
+    var view = currentView();
+    if (view === "detail" && state.detailProduct) {
       var qty = state.cart[state.detailProduct.id] || 0;
       tg.MainButton.setText(qty > 0 ? ("✅ Savatda: " + qty + " ta — yana qo'shish") : "➕ Savatga qo'shish");
       tg.MainButton.show();
-    } else if (currentView === "cart") {
-      var count = cartCount();
-      if (count > 0) {
-        tg.MainButton.setText("✅ Buyurtma berish — " + fmtPrice(cartTotal()) + " so'm");
-        tg.MainButton.show();
-      } else {
-        tg.MainButton.hide();
-      }
-    } else {
+    } else if (view === "grid") {
       var c = cartCount();
-      if (c > 0) {
-        tg.MainButton.setText("🛒 Savat — " + c + " ta, " + fmtPrice(cartTotal()) + " so'm");
-        tg.MainButton.show();
-      } else {
-        tg.MainButton.hide();
-      }
+      if (c > 0) { tg.MainButton.setText("🛒 Savat — " + c + " ta, " + fmtPrice(cartSubtotal()) + " so'm"); tg.MainButton.show(); }
+      else tg.MainButton.hide();
+    } else {
+      tg.MainButton.hide();
     }
   }
 
+  if (tg) {
+    tg.MainButton.onClick(function () {
+      // Himoya qatlami: kutilmagan xato chiqsa ham, tugma "qotib
+      // qolmasligi" va foydalanuvchiga tushunarli xabar chiqishi uchun.
+      try {
+        var view = currentView();
+        if (view === "detail" && state.detailProduct) { changeQty(state.detailProduct.id, 1); }
+        else if (view === "grid") { pushView("cart"); }
+      } catch (err) {
+        console.error("MainButton bosilganda kutilmagan xatolik:", err);
+        showToast("Kutilmagan xatolik yuz berdi. Qaytadan urinib ko'ring.");
+      }
+    });
+  }
+
+  // ---------- Mahsulot tafsiloti ----------
   function setupGalleryScroll(el) {
     var gallery = el.querySelector(".gallery");
     var dots = el.querySelectorAll(".dot");
@@ -289,8 +381,11 @@
 
   function openDetail(p) {
     state.detailProduct = p;
-    currentView = "detail";
-    var el = document.getElementById("detail-overlay");
+    pushView("detail");
+  }
+
+  VIEW_RENDERERS.detail = function (el) {
+    var p = state.detailProduct;
     var photos = (p.photos && p.photos.length) ? p.photos : [];
     var imagesHtml;
     if (photos.length) {
@@ -301,29 +396,27 @@
     } else {
       imagesHtml = '<div class="noimg big">🎁</div>';
     }
+    var qty = state.cart[p.id] || 0;
     el.innerHTML =
       imagesHtml +
       '<div class="detail-body">' +
         '<h2>' + escapeHtml(p.name) + '</h2>' +
         '<p class="detail-desc">' + escapeHtml(p.description || "") + '</p>' +
         '<div class="detail-price">' + fmtPrice(p.price) + " so'm</div>" +
+        '<button class="page-cta" id="detail-add-btn">' + (qty > 0 ? ("✅ Savatda: " + qty + " ta — yana qo'shish") : "➕ Savatga qo'shish") + '</button>' +
       '</div>';
-    el.classList.remove("hidden");
     setupGalleryScroll(el);
-    if (tg) { tg.BackButton.show(); tg.BackButton.onClick(closeOverlay); }
-    updateMainButton();
-  }
+    document.getElementById("detail-add-btn").onclick = function () { changeQty(p.id, 1); render(); };
+  };
 
-  function openCart() {
-    currentView = "cart";
-    renderCart();
-    document.getElementById("cart-overlay").classList.remove("hidden");
-    if (tg) { tg.BackButton.show(); tg.BackButton.onClick(closeOverlay); }
-    updateMainButton();
-  }
-
-  function renderCart() {
-    var el = document.getElementById("cart-overlay");
+  // ---------- Savat ----------
+  // MUHIM (foydalanuvchi so'rovi bilan o'zgartirildi): bu yerda ENDI
+  // "Buyurtma berish" tugmasi YO'Q - buyurtma berish, to'lov usuli,
+  // promo-kod - hammasi endi Telegram CHATning o'zida ("🛒 Savat"
+  // tugmasi orqali) ishlaydi, chunki u aynan shu yerda muammo (savat/
+  // buyurtma "qotib qolishi") chiqarayotgan edi. Bu yerda faqat ko'rish
+  // va miqdorni o'zgartirish qoladi.
+  VIEW_RENDERERS.cart = function (el) {
     var pids = Object.keys(state.cart).filter(function (pid) { return state.cart[pid] > 0; });
     if (!pids.length) {
       el.innerHTML = '<div class="cart-empty">🛒 Savatingiz bo\'sh</div>';
@@ -345,38 +438,22 @@
         '</div>'
       );
     }).join("");
-    el.innerHTML = '<div class="cart-list">' + rows + '</div><div class="cart-total">Jami: ' + fmtPrice(cartTotal()) + " so'm</div>";
+    el.innerHTML = '<div class="cart-list">' + rows + '</div><div class="cart-total">Jami: ' + fmtPrice(cartSubtotal()) + " so'm</div>" +
+      '<div class="cart-hint">Buyurtmani rasmiylashtirish uchun bu oynani yoping va Telegram xabar oynasidagi <b>"🛒 Savat"</b> tugmasini bosing — savatingiz o\'sha yerda ham xuddi shunday ko\'rinadi.</div>';
     el.querySelectorAll(".cart-row").forEach(function (row) {
       var pid = Number(row.getAttribute("data-pid"));
       row.querySelector(".dec").onclick = function () { changeQty(pid, -1); };
       row.querySelector(".inc").onclick = function () { changeQty(pid, 1); };
     });
-  }
+  };
 
-  function closeOverlay() {
-    document.getElementById("detail-overlay").classList.add("hidden");
-    document.getElementById("cart-overlay").classList.add("hidden");
-    state.detailProduct = null;
-    currentView = "grid";
-    if (tg) tg.BackButton.hide();
-    updateMainButton();
-    renderGrid();
-  }
-
-  if (tg) {
-    tg.MainButton.onClick(function () {
-      if (currentView === "detail" && state.detailProduct) {
-        changeQty(state.detailProduct.id, 1);
-      } else if (currentView === "cart") {
-        tg.sendData(JSON.stringify({ action: "checkout" }));
-      } else {
-        openCart();
-      }
-    });
-  }
-
+  // ---------- Boshlash ----------
   loadCatalog()
-    .then(function () { renderTabs(); renderGrid(); return loadCart(); })
+    .then(function () {
+      activeCategory = state.categories[0] || null;
+      renderTabs(); renderGrid();
+      return loadCart();
+    })
     .then(function () { renderGrid(); updateMainButton(); })
     .catch(function () {
       document.getElementById("grid").innerHTML = '<div class="empty">Yuklashda xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.</div>';

@@ -98,7 +98,7 @@ PAYMENT_INFO = os.getenv(
 # avvalgidek hamyon yoki naqd/karta (operator bilan) orqali to'laydi.
 PAYMENT_PROVIDER_TOKEN = os.getenv("PAYMENT_PROVIDER_TOKEN", "").strip() or None
 
-# "Aloqa" bo'limida mijozlarga ko'rsatiladigan matn (Mini App ichida).
+# "☎️ Aloqa" tugmasida mijozlarga ko'rsatiladigan matn (chatda).
 # Render'ning Environment Variables bo'limida CONTACT_INFO nomi bilan
 # qo'shing - masalan: "@figo3d_support yoki +998 90 123 45 67".
 CONTACT_INFO = os.getenv(

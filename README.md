@@ -4,20 +4,24 @@ Bu bot mijozlarga 3D-print qilingan haykalcha, kalitcha va sovg'a buyumlarini
 katalogdan tanlab, buyurtma berish imkonini beradi. Buyurtma qabul qilingach,
 sizga (adminga) avtomatik xabar keladi.
 
-**Hozircha ishlaydigan qism:** Endi **hammasi bitta veb-do'kon (Mini App)
-ichida** — pastdagi eski matnli tugmalar butunlay olib tashlandi (production
-rejimida). Xabar yozish maydoni yonidagi doimiy **"🛍 Do'kon"** tugmasini
-bosgan mijoz — katalog, savat, **butun buyurtma berish jarayoni** (ism/
-telefon/manzil, promo-kod, to'lov usuli — hamyon/karta/naqd), **profil**
-(ism/telefon/manzilni saqlash), **buyurtmalar tarixi**, **shaxsiy (o'z
-rasmidan) buyurtma so'rovi** va **aloqa ma'lumotlari** — bularning
-BARCHASINI pastki tab (yorliq) navigatsiyasi orqali, chatga umuman
-chiqmasdan ishlatadi. Bundan tashqari: mijoz sharhlari va reytingi, ichki
-hamyon (balans), Telegram ichida karta orqali to'lov (Click/Payme
-ulangach), **bir nechta admin/hamkorga ruxsat berish**, va — eng
-muhimi — endi **admin veb-paneli** orqali buyurtmalarni, hisob to'ldirish
-so'rovlarini va mahsulotlarni chatga yozmasdan, chiroyli veb-sahifadan
-boshqarish mumkin (pastda "Admin veb-paneli" bo'limiga qarang).
+**Hozircha ishlaydigan qism:** Bosh menyudagi pastki tugmalar
+(**🗂 Katalog, 🛒 Savat, 📦 Buyurtmalarim, 👤 Profil, 🎨 Shaxsiy buyurtma,
+☎️ Aloqa**) orqali mijoz **BARCHA** amalni — katalogni ko'rish, savatga
+qo'shish, **butun buyurtma berish jarayonini** (ism/telefon/manzil,
+promo-kod, to'lov usuli — hamyon/karta/naqd), **profilni** saqlash,
+**buyurtmalar tarixini** ko'rish, **shaxsiy (o'z rasmidan) buyurtma
+so'rovi** yuborish va **aloqa ma'lumotlarini** ko'rish — oddiy Telegram
+xabar almashinuvi orqali qiladi (bu eng barqaror usul). Bundan tashqari,
+xabar yozish maydoni yonidagi **"🛍 Do'kon"** tugmasi orqali ochiladigan
+veb-do'kon (Mini App) ham bor — u endi FAQAT mahsulotlarni chiroyli
+(rasm-kartochka) ko'rinishda ko'rish va savatga qo'shish uchun qulay
+muqobil (pastda "Veb-do'kon (Mini App)" bo'limiga qarang). Bundan tashqari:
+mijoz sharhlari va reytingi, ichki hamyon (balans), Telegram ichida karta
+orqali to'lov (Click/Payme ulangach), **bir nechta admin/hamkorga ruxsat
+berish**, va — eng muhimi — endi **admin veb-paneli** orqali buyurtmalarni,
+hisob to'ldirish so'rovlarini va mahsulotlarni chatga yozmasdan, chiroyli
+veb-sahifadan boshqarish mumkin (pastda "Admin veb-paneli" bo'limiga
+qarang).
 
 **Keyingi bosqichda qo'shiladi:** hozircha hisobni to'ldirish (hamyon)
 qo'lda admin tasdig'i bilan ishlaydi (mijoz to'lov qilib, chekining
@@ -123,42 +127,36 @@ mahsulotlaringizni (rasmlari bilan) qo'shishni boshlashingiz mumkin — pastda
 
 ## Yangi imkoniyatlar qanday ishlatiladi
 
-### 🛍 Veb-do'kon (Mini App) — endi hammasi shu yerda: katalog, buyurtma, profil, buyurtmalar, aloqa
+### 🛍 Veb-do'kon (Mini App) — endi FAQAT katalog va savat uchun
 
-Xabar yozish maydoni yonidagi doimiy **"🛍 Do'kon"** tugmasi haqiqiy
-**veb-sahifa** sifatida ochiladi (Telegram buni "Mini App" deb ataydi).
-Pastida 4 ta tab (yorliq) bor:
+⚠️ **O'zgardi:** avval buyurtma berish, profil, buyurtmalar tarixi, shaxsiy
+buyurtma va aloqa — hammasi shu Mini App ichida edi. Amalda bu ba'zan
+ishonchsiz chiqib qoldi: mijoz katta tugmani bossa ham serverga hech qanday
+so'rov ketmay, savat/buyurtma "qotib qolgandek" ko'rinadigan holatlar
+bo'ldi. Shuning uchun endi bu funksiyalarning HAMMASI oddiy, ancha
+barqaror Telegram chat tugmalariga (bosh menyuga) qaytarildi — pastdagi
+"Pastki tugmalar qaytarildi" bo'limiga qarang.
 
-- **🗂 Katalog** — rasm-kartochkalar 2 ustunli to'r ko'rinishida, bo'limlar
-  tepada tab sifatida, mahsulot ustiga bosilganda katta rasm + galereya,
-  savat va **butun buyurtma berish jarayoni** (kimga: o'zimga/sovg'a, ism/
-  telefon/manzil, promo-kod, to'lov usuli — hamyon/karta/naqd) — hammasi
-  shu yerda, chatga chiqmasdan. Karta orqali to'lov tanlansa, Telegram'ning
-  o'z to'lov oynasi shu Mini App ichida ochiladi (`openInvoice`)
-- **🎨 Shaxsiy** — mijoz o'z rasmini yuklab, shaxsiy buyurtma so'rovi yuboradi
-- **📦 Buyurtmalar** — mijozning oldingi buyurtmalari va ularning holati
-  (kutilmoqda / qabul qilindi / tayyorlanmoqda / yetkazildi)
-- **👤 Profil** — ism/telefon/manzilni saqlash-yangilash, hamyon balansi,
-  "💰 Hisobni to'ldirish" va aloqa ma'lumotlari (`CONTACT_INFO`) — hammasi
-  shu bitta bo'limda
+Xabar yozish maydoni yonidagi doimiy **"🛍 Do'kon"** tugmasi hamon bor va
+haqiqiy **veb-sahifa** sifatida ochiladi (Telegram buni "Mini App" deb
+ataydi), lekin endi u ancha soddalashtirilgan — faqat:
 
-**Muhim (tuzatilgan xato):** avval Mini App'dan buyurtma berilganda ba'zan
-hech qanday tasdiq xabari chiqmay, adminga ham xabar bormay qolishi mumkin
-edi (asosiy sabab — Render bepul rejasi 15 daqiqadan keyin botni
-"uxlatib qo'yadi", va shu tufayli birinchi so'rov 30-60 soniya kechikishi
-mumkin edi — agar shu payt tarmoq vaqtinchalik javob bermasa, xabar
-sizga ham, mijozga ham yetib bormasdi). Endi har bir so'rov 45 soniyagacha
-kutadi va MUVAFFAQIYATSIZ bo'lsa mijozga darhol tushunarli xabar (toast)
-chiqadi — jim qolib ketish yo'q. Bundan tashqari, endi naqd/hamyon orqali
-berilgan har bir buyurtmada **mijozning o'ziga ham** alohida "✅ Buyurtmangiz
-qabul qilindi!" tasdiq xabari yuboriladi (avval faqat adminga yuborilardi).
+- Mahsulotlarni rasm-kartochkalar 2 ustunli to'r ko'rinishida ko'rish,
+  bo'limlar tepada tab sifatida, mahsulot ustiga bosilganda katta rasm +
+  galereya va tavsif
+- Savatga qo'shish va savatdagi miqdorni ➕/➖ bilan o'zgartirish
+
+Savat oynasida endi "Buyurtma berish" tugmasi YO'Q — buning o'rniga
+mijozga "buyurtmani rasmiylashtirish uchun chatdagi '🛒 Savat' tugmasini
+bosing" degan eslatma chiqadi. Bu ataylab shunday: savat bitta umumiy
+ma'lumotlar bazasida saqlanadi, shuning uchun Mini App'da qo'shilgan
+mahsulot chatdagi "🛒 Savat"da ham darhol ko'rinadi — mijoz shunchaki
+Mini App'ni yopib, chatdan davom etadi.
 
 **Muhim:** bu faqat Render'da (haqiqiy https manzil bilan) ishlaydi —
-mahalliy kompyuteringizda sinaganingizda (https yo'q joyda) bot avvalgi
-tugmali ko'rinishga avtomatik tushib qoladi (buyurtma berish esa chatda
-davom etadi) — hech narsa buzilmaydi. Deploy qilgach ishlamay qolsa, ehtimol
-@BotFather'da `/setdomain` orqali domeningizni tasdiqlash kerak bo'lishi
-mumkin — shunday bo'lsa menga xabar bering, birga hal qilamiz.
+mahalliy kompyuteringizda sinaganingizda (https yo'q joyda) "🛍 Do'kon"
+tugmasi umuman ko'rinmaydi — hech narsa buzilmaydi, chunki barcha asosiy
+funksiya baribir chat tugmalari orqali ishlayveradi.
 
 ### Admin veb-paneli — buyurtma/mahsulotlarni chatsiz, veb-sahifadan boshqarish
 
@@ -220,28 +218,30 @@ kamaytirish yoki oshirish mumkin (0 ga tushsa, mahsulot savatdan butunlay
 o'chadi). Butunlay o'chirish uchun bir necha marta ➖ bosish kifoya, yoki
 "🗑 Savatni tozalash" bilan hammasini bir yo'la tozalash mumkin.
 
-### Pastki tugmalar butunlay olib tashlandi
+### Pastki tugmalar qaytarildi
 
-Avval bosh menyuda pastda doimiy matnli tugmalar (Katalog, Buyurtmalarim,
-Profil va h.k.) turardi — bu ko'rinishni "eskicha" va tor qilib turardi,
-degan fikringiz asosida ular Render'da (production'da) **butunlay olib
-tashlandi**. Endi yagona kirish nuqtasi — xabar yozish maydoni yonidagi
-doimiy **"🛍 Do'kon"** tugmasi, undan keyin esa yuqorida tasvirlangan Mini
-App ichidagi pastki tab'lar (Katalog/Shaxsiy/Buyurtmalar/Profil). Mahalliy
-sinovda (https yo'q joyda) bot avvalgidek eski tugmali ko'rinishga tushib
-qoladi — bu faqat siz kodni o'zingizning kompyuteringizda sinab
-ko'rmoqchi bo'lsangiz kerak bo'ladi, real foydalanuvchilarga taalluqli emas.
+Bir muddat (yuqorida tasvirlangan sabab bilan) bosh menyudagi doimiy
+matnli tugmalar Render'da (production'da) butunlay olib tashlangan edi —
+hammasi Mini App ichida bo'lishi kerak edi. Endi bu **qaytarildi**: bosh
+menyuda doim (production'da ham) 🗂 Katalog, 🛒 Savat, 📦 Buyurtmalarim,
+👤 Profil, 🎨 Shaxsiy buyurtma, ☎️ Aloqa tugmalari ko'rinadi va BARCHA
+amal shular orqali ishlaydi. "🛍 Do'kon" Mini App tugmasi ham qoladi —
+u endi faqat katalog+savat uchun qulay qo'shimcha (yuqoridagi bo'limga
+qarang).
 
-### Shaxsiy profil va o'zim/sovg'a tanlovi
+### Shaxsiy profil va manzilni tasdiqlash
 
-Mini App'dagi "👤 Profil" tab'i orqali mijoz o'z ism-familiyasi, telefon
-raqami va manzilini bir marta kiritib saqlab qo'yishi mumkin. Keyingi safar
-buyurtma berayotganda, agar saqlangan ma'lumot bo'lsa, bot avtomatik
-so'raydi: "🙋 O'zim uchun (saqlangan ma'lumot)" — shu tugma bilan qayta
-yozmasdan davom etadi, yoki "🎁 Sovg'a / boshqa manzil" — shu holda ism/
-telefon/manzilni har safargidek qo'lda kiritadi (masalan do'stiga sovg'a
-yuborayotganda). Har bir muvaffaqiyatli buyurtmadan so'ng eng oxirgi
-kiritilgan ma'lumot profilga saqlanib qoladi.
+"👤 Profil" tugmasi orqali mijoz o'z ism-familiyasi, telefon raqami va
+manzilini bir marta kiritib saqlab qo'yishi mumkin. Keyingi safar buyurtma
+berayotganda ("🛒 Savat" → "✅ Buyurtma berish"), bot ism/telefon/manzilni
+BARIBIR HAR DOIM birma-bir so'raydi — lekin agar saqlangan qiymat bo'lsa,
+u pastdagi tugmada ko'rinadi (masalan avvalgi manzil tugma sifatida
+chiqadi) — mijoz shuni bosib bir zumda tasdiqlashi, yoki o'rniga
+yangisini yozib yuborishi mumkin (masalan do'stiga sovg'a
+yuborayotganda, boshqa manzil bilan). Bu ataylab shunday: manzil
+HECH QACHON ko'rsatmasdan, sinovsiz avtomatik ishlatilmaydi — mijoz doim
+uni ko'rib, tasdiqlab o'tadi. Har bir muvaffaqiyatli buyurtmadan so'ng eng
+oxirgi kiritilgan ma'lumot profilga saqlanib qoladi.
 
 ### Ichki hamyon (balans) tizimi
 

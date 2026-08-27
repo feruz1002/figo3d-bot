@@ -8,15 +8,11 @@ va tekis (kvadratsimon) ko'rinadigan qilib joylashtirilgan.
 """
 from aiogram.types import (
     ReplyKeyboardMarkup,
-    ReplyKeyboardRemove,
     KeyboardButton,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
-    WebAppInfo,
 )
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
-
-from config import WEBAPP_URL
 
 # ---------- Asosiy menyu (pastdagi doimiy tugmalar) ----------
 
@@ -33,17 +29,18 @@ BTN_SKIP_PROOF = "📎 Skrinshotsiz yuborish"
 
 
 def main_menu_keyboard():
-    if WEBAPP_URL:
-        # Production'da (Render, https mavjud) KATALOG, SAVAT, BUYURTMA
-        # BERISH, PROFIL, BUYURTMALAR TARIXI, SHAXSIY BUYURTMA va ALOQA -
-        # BARCHASI bitta veb-do'kon (Mini App) ichida (pastki tab'lar
-        # orqali). Shuning uchun pastdagi matnli tugmalar endi umuman
-        # kerak emas - ular ko'rinishni "eskicha" qilib turardi. Kirish
-        # nuqtasi - xabar yozish maydoni yonidagi doimiy "🛍 Do'kon" tugmasi
-        # (bot.py'da MenuButtonWebApp orqali o'rnatiladi).
-        return ReplyKeyboardRemove()
-    # Mahalliy sinovda (https yo'q joyda) avvalgi tugmali ko'rinishga
-    # tushadi - bu holatda hamma narsa chatda (eski usulda) ishlaydi.
+    # MUHIM (foydalanuvchi so'rovi bilan qaytarildi): ILGARI production'da
+    # (WEBAPP_URL mavjud bo'lganda) bu pastdagi matnli tugmalar butunlay
+    # OLIB TASHLANGAN edi - hammasi faqat Mini App (veb-do'kon) ichida
+    # ishlashi kerak edi. Lekin amalda Mini App'ning veb-ko'rinishi (JS/
+    # webview) ba'zan ishonchsiz chiqib qoldi (savat/buyurtma "qotib
+    # qolishi" kabi muammolar) - shuning uchun ENDI bu tugmalar HAR DOIM
+    # (production'da ham) ko'rsatiladi: ular oddiy Telegram xabar
+    # almashinuvi orqali ishlagani uchun ancha ishonchli. "🛍 Do'kon" Mini
+    # App tugmasi ham alohida qoladi (bot.py'da MenuButtonWebApp orqali),
+    # lekin endi u FAQAT katalogni ko'rish va savatga qo'shish uchun -
+    # buyurtma berish/profil/buyurtmalar/shaxsiy buyurtma/aloqa esa ENDI
+    # faqat shu pastdagi chat tugmalari orqali ishlaydi.
     builder = ReplyKeyboardBuilder()
     builder.row(KeyboardButton(text=BTN_CATALOG), KeyboardButton(text=BTN_CART))
     builder.row(KeyboardButton(text=BTN_ORDERS), KeyboardButton(text=BTN_PROFILE))
@@ -51,11 +48,35 @@ def main_menu_keyboard():
     return builder.as_markup(resize_keyboard=True)
 
 
-def contact_request_keyboard() -> ReplyKeyboardMarkup:
+def contact_request_keyboard(saved_phone: str | None = None) -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.row(
         KeyboardButton(text="📱 Telefon raqamni yuborish", request_contact=True)
     )
+    if saved_phone:
+        # Avvalgi (profilda saqlangan) raqamni ham TUGMA sifatida ko'rsatamiz -
+        # mijoz shuni ko'rib, bosib tasdiqlashi yoki yangisini yozishi mumkin.
+        # Hech qachon buni ko'rsatmasdan, chetlab o'tib avtomatik ishlatilmaydi.
+        builder.row(KeyboardButton(text=saved_phone))
+    builder.row(KeyboardButton(text=BTN_CANCEL))
+    return builder.as_markup(resize_keyboard=True)
+
+
+def prefill_or_cancel_keyboard(saved_value: str | None) -> ReplyKeyboardMarkup:
+    """Checkout'da ism/manzil so'ralganda ishlatiladi: agar profilda saqlangan
+    qiymat bo'lsa, uni TUGMA sifatida ko'rsatadi (bosilsa xuddi shu matn
+    yuborilgani kabi ishlaydi) - shu bilan mijoz qiymatni HAR DOIM ko'radi va
+    bitta tugma bilan tasdiqlashi yoki qo'lda boshqasini yozishi mumkin.
+
+    MUHIM (BUZILMASIN): avval bu o'rniga "🙋 O'zim uchun / 🎁 Sovg'a" degan
+    oraliq tanlov ekrani bor edi - u bosilganda manzil HECH QACHON
+    ko'rsatilmasdan, sinovsiz to'g'ridan-to'g'ri ishlatilardi. Mijoz
+    "manzil so'ramadi" deb shikoyat qilgani uchun bu OLIB TASHLANGAN edi -
+    qaytarilmasin. Qiymat har doim shu tugmada KO'RINADI, hech qachon
+    ko'rsatmasdan avtomatik ishlatilmaydi."""
+    builder = ReplyKeyboardBuilder()
+    if saved_value:
+        builder.row(KeyboardButton(text=saved_value))
     builder.row(KeyboardButton(text=BTN_CANCEL))
     return builder.as_markup(resize_keyboard=True)
 
@@ -188,14 +209,10 @@ def custom_admin_keyboard(custom_order_id: int) -> InlineKeyboardMarkup:
 
 
 # ---------- Profil va hamyon uchun tugmalar ----------
-
-def profile_choice_keyboard() -> InlineKeyboardMarkup:
-    """Checkout boshida: o'zi uchunmi (saqlangan ma'lumot) yoki sovg'a/boshqa manzilgami."""
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🙋 O'zim uchun (saqlangan ma'lumot)", callback_data="use_saved_profile")
-    builder.button(text="🎁 Sovg'a / boshqa manzil", callback_data="new_manual_profile")
-    builder.adjust(1)
-    return builder.as_markup()
+# DIQQAT: bu yerda ataylab "🙋 O'zim uchun / 🎁 Sovg'a" degan oraliq tanlov
+# klaviaturasi YO'Q - u avval shu yerda bo'lgan, lekin manzilni HECH
+# KO'RSATMASDAN sinovsiz ishlatib yuborgani uchun OLIB TASHLANGAN (yuqorida,
+# prefill_or_cancel_keyboard izohiga qarang). Qaytarilmasin.
 
 
 def profile_keyboard() -> InlineKeyboardMarkup:

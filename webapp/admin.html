@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Figo3D Boshqaruv paneli</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: #ffffff; --text: #111111; --hint: #8e8e93; --link: #2ea6ff;
+    --button: #2ea6ff; --button-text: #ffffff; --secondary-bg: #f4f4f5;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-tap-highlight-color: transparent; }
+  #app { min-height: 100vh; padding-bottom: 40px; }
+  header { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 12px 14px 0; }
+  header h1 { margin: 0 0 10px; font-size: 19px; font-weight: 700; }
+  #tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; scrollbar-width: none; }
+  #tabs::-webkit-scrollbar { display: none; }
+  .tab { flex: none; border: none; border-radius: 999px; padding: 8px 14px; background: var(--secondary-bg);
+    color: var(--text); font-size: 13.5px; font-weight: 500; }
+  .tab.active { background: var(--button); color: var(--button-text); }
+  #content { padding: 4px 14px 20px; }
+  .empty { text-align: center; color: var(--hint); padding: 50px 20px; font-size: 15px; }
+  .card { background: var(--secondary-bg); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
+  .card-title { font-size: 14.5px; font-weight: 700; margin-bottom: 4px; }
+  .card-line { font-size: 13px; color: var(--hint); line-height: 1.5; }
+  .card-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .card-btn { flex: 1; border: none; border-radius: 10px; padding: 9px 0; font-size: 13px; font-weight: 600;
+    background: var(--button); color: var(--button-text); }
+  .card-btn.danger { background: #ff3b30; }
+  .card-btn:disabled { opacity: 0.5; }
+  .fab { position: fixed; right: 18px; bottom: 22px; width: 54px; height: 54px; border-radius: 50%;
+    background: var(--button); color: var(--button-text); font-size: 26px; border: none;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25); z-index: 10; }
+
+  #overlay { position: fixed; inset: 0; background: var(--bg); z-index: 20; overflow-y: auto; }
+  #overlay.hidden { display: none; }
+  .screen { padding: 14px 16px 30px; }
+  .screen-title { font-size: 19px; font-weight: 700; margin: 4px 0 16px; }
+  .form-group { margin-bottom: 14px; }
+  .form-label { display: block; font-size: 12.5px; color: var(--hint); margin-bottom: 6px; font-weight: 500; }
+  .form-input, .form-select, .form-textarea { width: 100%; border: none; border-radius: 12px;
+    background: var(--secondary-bg); color: var(--text); padding: 13px 14px; font-size: 15px; font-family: inherit; }
+  .form-textarea { resize: vertical; min-height: 70px; }
+  .form-error { color: #ff3b30; font-size: 12.5px; margin-top: 6px; }
+  .photo-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .photo-thumb { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; }
+  .photo-pick-btn { width: 64px; height: 64px; border-radius: 10px; border: 1.5px dashed var(--hint);
+    background: transparent; color: var(--hint); font-size: 22px; }
+
+  #toast { position: fixed; left: 14px; right: 14px; bottom: 14px; z-index: 50; background: #1c1c1e;
+    color: #fff; padding: 13px 16px; border-radius: 12px; font-size: 13.5px; line-height: 1.4;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.25); transform: translateY(140%); transition: transform 0.25s ease; }
+  #toast.show { transform: translateY(0); }
+  .lockscreen { display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 60px 24px; min-height: 70vh; }
+  .lockscreen .icon { font-size: 48px; margin-bottom: 14px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🛠 Boshqaruv paneli</h1>
+    <div id="tabs"></div>
+  </header>
+  <main id="content"></main>
+</div>
+<button class="fab" id="fab" style="display:none">➕</button>
+<div id="overlay" class="hidden"></div>
+<div id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+  var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+  if (tg) { tg.ready(); tg.expand(); }
+
+  function themeVar(name, fallback) { return (tg && tg.themeParams && tg.themeParams[name]) ? tg.themeParams[name] : fallback; }
+  function applyTheme() {
+    var root = document.documentElement.style;
+    root.setProperty("--bg", themeVar("bg_color", "#ffffff"));
+    root.setProperty("--text", themeVar("text_color", "#111111"));
+    root.setProperty("--hint", themeVar("hint_color", "#8e8e93"));
+    root.setProperty("--button", themeVar("button_color", "#2ea6ff"));
+    root.setProperty("--button-text", themeVar("button_text_color", "#ffffff"));
+    root.setProperty("--secondary-bg", themeVar("secondary_bg_color", "#f4f4f5"));
+  }
+  applyTheme();
+  if (tg) tg.onEvent("themeChanged", applyTheme);
+
+  function fmtPrice(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+  function escapeHtml(s) { return (s || "").replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function initDataStr() { return tg ? tg.initData : ""; }
+
+  var toastTimer = null;
+  function showToast(text) {
+    var el = document.getElementById("toast");
+    el.textContent = text; el.classList.add("show");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove("show"); }, 5000);
+  }
+
+  function api(path, opts) {
+    opts = opts || {};
+    var headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+    if (initDataStr()) headers["X-Telegram-Init-Data"] = initDataStr();
+    var controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    var timeoutId = controller ? setTimeout(function () { controller.abort(); }, 45000) : null;
+    return fetch(path, Object.assign({}, opts, { headers: headers, signal: controller ? controller.signal : undefined }))
+      .then(function (res) {
+        if (timeoutId) clearTimeout(timeoutId);
+        return res.json().catch(function () { return {}; }).then(function (data) { return { ok: res.ok, status: res.status, data: data }; });
+      })
+      .catch(function (err) {
+        if (timeoutId) clearTimeout(timeoutId);
+        var isAbort = err && err.name === "AbortError";
+        showToast(isAbort ? "Server javob bermayapti. Biroz kutib, qaytadan urinib ko'ring." : "Internet aloqasida muammo.");
+        return { ok: false, status: 0, data: { error: "network" } };
+      });
+  }
+
+  function photoUrl(fileId) { return "/api/photo/" + encodeURIComponent(fileId); }
+
+  var STATUS_LABELS = {
+    "yangi": "🕓 Kutilmoqda", "qabul qilindi": "✅ Qabul qilindi",
+    "tayyorlanmoqda": "🛠 Tayyorlanmoqda", "yetkazildi": "📦 Yetkazildi",
+    "to'lov kutilmoqda (karta)": "💳 To'lov kutilmoqda",
+    "to'landi (karta)": "💳 To'landi (karta)", "to'landi (hamyondan)": "💰 To'landi (hamyondan)",
+  };
+
+  var state = { categories: [] };
+  var TABS = [
+    { key: "orders", label: "📦 Buyurtmalar" },
+    { key: "custom", label: "🎨 Shaxsiy" },
+    { key: "topups", label: "💰 To'ldirish" },
+    { key: "products", label: "🗂 Mahsulotlar" },
+  ];
+  var activeTab = "orders";
+
+  function renderTabs() {
+    var el = document.getElementById("tabs");
+    el.innerHTML = "";
+    TABS.forEach(function (t) {
+      var btn = document.createElement("button");
+      btn.className = "tab" + (t.key === activeTab ? " active" : "");
+      btn.textContent = t.label;
+      btn.onclick = function () { activeTab = t.key; renderTabs(); loadActiveTab(); };
+      el.appendChild(btn);
+    });
+    document.getElementById("fab").style.display = activeTab === "products" ? "block" : "none";
+  }
+
+  function loadActiveTab() {
+    var content = document.getElementById("content");
+    content.innerHTML = '<div class="empty">Yuklanmoqda...</div>';
+    if (activeTab === "orders") loadOrders();
+    else if (activeTab === "custom") loadCustomOrders();
+    else if (activeTab === "topups") loadTopups();
+    else if (activeTab === "products") loadProducts();
+  }
+
+  // ---------- Buyurtmalar ----------
+  function loadOrders() {
+    api("/admin/api/orders?open=1").then(function (r) {
+      var content = document.getElementById("content");
+      if (!r.ok) { content.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
+      var orders = r.data.orders || [];
+      if (!orders.length) { content.innerHTML = '<div class="empty">Hozircha yangi buyurtma yo\'q. 🎉</div>'; return; }
+      content.innerHTML = orders.map(function (o) {
+        var items = [];
+        try { items = JSON.parse(o.items_json); } catch (e) {}
+        var itemsText = items.map(function (i) { return i.name + " x" + i.quantity; }).join(", ");
+        var statusLabel = STATUS_LABELS[o.status] || o.status;
+        var canAccept = o.status !== "qabul qilindi" && o.status !== "yetkazildi";
+        return (
+          '<div class="card" data-id="' + o.id + '">' +
+            '<div class="card-title">#' + o.id + ' — ' + fmtPrice(o.total_price) + " so'm</div>" +
+            '<div class="card-line">' + escapeHtml(itemsText) + '</div>' +
+            '<div class="card-line">👤 ' + escapeHtml(o.full_name || "") + ' · 📱 ' + escapeHtml(o.phone || "") + '</div>' +
+            '<div class="card-line">📍 ' + escapeHtml(o.address || "") + '</div>' +
+            '<div class="card-line">Holat: ' + statusLabel + '</div>' +
+            (canAccept ? '<div class="card-actions"><button class="card-btn" data-action="accept">✅ Qabul qilish</button></div>' : '') +
+          '</div>'
+        );
+      }).join("");
+      content.querySelectorAll('[data-action="accept"]').forEach(function (btn) {
+        btn.onclick = function () {
+          var id = btn.closest(".card").getAttribute("data-id");
+          btn.disabled = true;
+          api("/admin/api/orders/" + id + "/accept", { method: "POST" }).then(function (r) {
+            if (r.ok) { showToast("Qabul qilindi"); loadOrders(); }
+            else { btn.disabled = false; showToast("Xatolik yuz berdi."); }
+          });
+        };
+      });
+    });
+  }
+
+  // ---------- Shaxsiy buyurtmalar ----------
+  function loadCustomOrders() {
+    api("/admin/api/custom_orders").then(function (r) {
+      var content = document.getElementById("content");
+      if (!r.ok) { content.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
+      var orders = r.data.orders || [];
+      if (!orders.length) { content.innerHTML = '<div class="empty">Hozircha shaxsiy buyurtma so\'rovi yo\'q.</div>'; return; }
+      content.innerHTML = orders.map(function (o) {
+        return (
+          '<div class="card" data-id="' + o.id + '">' +
+            '<div class="card-img"><img src="' + photoUrl(o.photo_file_id) + '" style="width:100%;border-radius:10px;margin-bottom:8px"></div>' +
+            '<div class="card-title">#' + o.id + '</div>' +
+            '<div class="card-line">' + escapeHtml(o.description || "") + '</div>' +
+            '<div class="card-line">👤 ' + escapeHtml(o.full_name || "") + ' · 📱 ' + escapeHtml(o.phone || "") + '</div>' +
+            '<div class="card-line">📍 ' + escapeHtml(o.address || "") + '</div>' +
+            '<div class="card-actions"><button class="card-btn" data-action="contacted">✅ Bog\'landim</button></div>' +
+          '</div>'
+        );
+      }).join("");
+      content.querySelectorAll('[data-action="contacted"]').forEach(function (btn) {
+        btn.onclick = function () {
+          var id = btn.closest(".card").getAttribute("data-id");
+          btn.disabled = true;
+          api("/admin/api/custom_orders/" + id + "/contacted", { method: "POST" }).then(function (r) {
+            if (r.ok) { showToast("Belgilandi"); loadCustomOrders(); }
+            else { btn.disabled = false; showToast("Xatolik yuz berdi."); }
+          });
+        };
+      });
+    });
+  }
+
+  // ---------- Hisob to'ldirish ----------
+  function loadTopups() {
+    api("/admin/api/topups").then(function (r) {
+      var content = document.getElementById("content");
+      if (!r.ok) { content.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
+      var topups = r.data.topups || [];
+      if (!topups.length) { content.innerHTML = '<div class="empty">Kutilayotgan so\'rov yo\'q.</div>'; return; }
+      content.innerHTML = topups.map(function (t) {
+        return (
+          '<div class="card" data-id="' + t.id + '">' +
+            (t.screenshot_file_id ? '<img src="' + photoUrl(t.screenshot_file_id) + '" style="width:100%;border-radius:10px;margin-bottom:8px">' : '') +
+            '<div class="card-title">#' + t.id + ' — ' + fmtPrice(t.amount) + " so'm</div>" +
+            '<div class="card-line">Foydalanuvchi ID: ' + t.user_id + '</div>' +
+            '<div class="card-actions">' +
+              '<button class="card-btn" data-action="approve">✅ Tasdiqlash</button>' +
+              '<button class="card-btn danger" data-action="reject">❌ Rad etish</button>' +
+            '</div>' +
+          '</div>'
+        );
+      }).join("");
+      content.querySelectorAll('[data-action="approve"],[data-action="reject"]').forEach(function (btn) {
+        btn.onclick = function () {
+          var card = btn.closest(".card");
+          var id = card.getAttribute("data-id");
+          var action = btn.getAttribute("data-action");
+          card.querySelectorAll(".card-btn").forEach(function (b) { b.disabled = true; });
+          api("/admin/api/topups/" + id + "/" + action, { method: "POST" }).then(function (r) {
+            if (r.ok) { showToast(action === "approve" ? "Tasdiqlandi" : "Rad etildi"); loadTopups(); }
+            else { card.querySelectorAll(".card-btn").forEach(function (b) { b.disabled = false; }); showToast("Xatolik yuz berdi."); }
+          });
+        };
+      });
+    });
+  }
+
+  // ---------- Mahsulotlar ----------
+  function loadProducts() {
+    Promise.all([api("/admin/api/products"), state.categories.length ? Promise.resolve() : api("/api/catalog").then(function (r) { state.categories = (r.data && r.data.categories) || []; })])
+      .then(function (results) {
+        var r = results[0];
+        var content = document.getElementById("content");
+        if (!r.ok) { content.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
+        var products = r.data.products || [];
+        if (!products.length) { content.innerHTML = '<div class="empty">Hozircha mahsulot yo\'q. Pastdagi ➕ orqali qo\'shing.</div>'; return; }
+        content.innerHTML = products.map(function (p) {
+          var img = (p.photos && p.photos[0]) ? '<img src="' + photoUrl(p.photos[0]) + '" style="width:56px;height:56px;border-radius:10px;object-fit:cover;float:left;margin-right:10px">' : "";
+          return (
+            '<div class="card" data-id="' + p.id + '" style="overflow:auto">' +
+              img +
+              '<div class="card-title">' + escapeHtml(p.name) + '</div>' +
+              '<div class="card-line">' + escapeHtml(p.category) + ' · ' + fmtPrice(p.price) + " so'm</div>" +
+              '<div class="card-actions"><button class="card-btn danger" data-action="delete">🗑 O\'chirish</button></div>' +
+            '</div>'
+          );
+        }).join("");
+        content.querySelectorAll('[data-action="delete"]').forEach(function (btn) {
+          btn.onclick = function () {
+            var id = btn.closest(".card").getAttribute("data-id");
+            btn.disabled = true;
+            api("/admin/api/products/" + id + "/delete", { method: "POST" }).then(function (r) {
+              if (r.ok) { showToast("O'chirildi"); loadProducts(); }
+              else { btn.disabled = false; showToast("Xatolik yuz berdi."); }
+            });
+          };
+        });
+      });
+  }
+
+  // ---------- Yangi mahsulot qo'shish (overlay) ----------
+  var pickedPhotos = []; // base64 data URL'lar ro'yxati
+
+  function openAddProductForm() {
+    pickedPhotos = [];
+    var overlay = document.getElementById("overlay");
+    var catOptions = state.categories.map(function (c) { return '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</option>'; }).join("");
+    overlay.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">➕ Yangi mahsulot</div>' +
+        '<div class="form-group"><label class="form-label">Bo\'lim</label>' +
+          '<input class="form-input" id="p-category" list="cat-list" placeholder="Bo\'lim nomi (mavjud yoki yangi)">' +
+          '<datalist id="cat-list">' + catOptions + '</datalist></div>' +
+        '<div class="form-group"><label class="form-label">Nomi</label><input class="form-input" id="p-name"></div>' +
+        '<div class="form-group"><label class="form-label">Tavsifi</label><textarea class="form-textarea" id="p-desc"></textarea></div>' +
+        '<div class="form-group"><label class="form-label">Narxi (so\'m)</label><input class="form-input" id="p-price" type="number"></div>' +
+        '<div class="form-group"><label class="form-label">Rasmlar (kamida 1 ta)</label>' +
+          '<div class="photo-row" id="photo-row"><button class="photo-pick-btn" id="photo-pick">+</button></div>' +
+          '<input type="file" id="photo-input" accept="image/*" multiple style="display:none"></div>' +
+        '<div class="form-error hidden" id="p-error"></div>' +
+        '<button class="card-btn" id="p-submit" style="margin-top:6px">✅ Saqlash</button>' +
+        '<button class="card-btn" id="p-cancel" style="margin-top:8px;background:var(--secondary-bg);color:var(--text)">Bekor qilish</button>' +
+      '</div>';
+    overlay.classList.remove("hidden");
+    if (tg) tg.BackButton.show();
+
+    document.getElementById("photo-pick").onclick = function () { document.getElementById("photo-input").click(); };
+    document.getElementById("photo-input").onchange = function (e) {
+      var files = Array.prototype.slice.call(e.target.files || []);
+      var remaining = 8 - pickedPhotos.length;
+      files.slice(0, remaining).forEach(function (file) {
+        var reader = new FileReader();
+        reader.onload = function () { pickedPhotos.push(reader.result); renderPhotoRow(); };
+        reader.readAsDataURL(file);
+      });
+    };
+    document.getElementById("p-cancel").onclick = closeOverlay;
+    document.getElementById("p-submit").onclick = submitNewProduct;
+  }
+
+  function renderPhotoRow() {
+    var row = document.getElementById("photo-row");
+    var thumbs = pickedPhotos.map(function (src) { return '<img class="photo-thumb" src="' + src + '">'; }).join("");
+    row.innerHTML = thumbs + (pickedPhotos.length < 8 ? '<button class="photo-pick-btn" id="photo-pick">+</button>' : "");
+    if (pickedPhotos.length < 8) {
+      document.getElementById("photo-pick").onclick = function () { document.getElementById("photo-input").click(); };
+    }
+  }
+
+  function closeOverlay() {
+    document.getElementById("overlay").classList.add("hidden");
+    document.getElementById("overlay").innerHTML = "";
+    if (tg) tg.BackButton.hide();
+  }
+
+  function submitNewProduct() {
+    var category = document.getElementById("p-category").value.trim();
+    var name = document.getElementById("p-name").value.trim();
+    var description = document.getElementById("p-desc").value.trim();
+    var priceStr = document.getElementById("p-price").value.trim();
+    var errEl = document.getElementById("p-error");
+    var problems = [];
+    if (!category) problems.push("bo'limni kiriting");
+    if (!name) problems.push("nomini kiriting");
+    var price = parseInt(priceStr, 10);
+    if (!price || price <= 0) problems.push("narxini to'g'ri kiriting");
+    if (!pickedPhotos.length) problems.push("kamida 1 ta rasm tanlang");
+    if (problems.length) {
+      errEl.textContent = "Iltimos: " + problems.join(", ") + ".";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    errEl.classList.add("hidden");
+    var submitBtn = document.getElementById("p-submit");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "⏳ Saqlanmoqda...";
+    api("/admin/api/products", {
+      method: "POST",
+      body: JSON.stringify({ category: category, name: name, description: description, price: price, photos: pickedPhotos }),
+    }).then(function (r) {
+      if (r.ok) {
+        showToast("Mahsulot qo'shildi ✅");
+        closeOverlay();
+        state.categories = [];
+        loadProducts();
+      } else {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "✅ Saqlash";
+        errEl.textContent = "Xatolik yuz berdi. Qaytadan urinib ko'ring.";
+        errEl.classList.remove("hidden");
+      }
+    });
+  }
+
+  document.getElementById("fab").onclick = openAddProductForm;
+  if (tg) tg.BackButton.onClick(closeOverlay);
+
+  // ---------- Kirish tekshiruvi ----------
+  function showLocked() {
+    document.getElementById("app").innerHTML =
+      '<div class="lockscreen"><div class="icon">🔒</div><h2>Kirish taqiqlangan</h2>' +
+      '<p style="color:var(--hint);font-size:14.5px">Bu panel faqat ruxsat etilgan adminlar uchun.</p></div>';
+    document.getElementById("fab").style.display = "none";
+  }
+
+  api("/admin/api/orders?open=1").then(function (r) {
+    if (r.status === 401) { showLocked(); return; }
+    renderTabs();
+    loadActiveTab();
+  });
+})();
+</script>
+</body>
+</html>

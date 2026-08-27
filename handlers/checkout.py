@@ -1,15 +1,21 @@
-"""Buyurtma berish jarayoni:
-(saqlangan profil bo'lsa) o'zim uchun / sovg'a -> ism -> telefon -> manzil ->
-promo -> tasdiqlash (hamyondan yoki naqd/karta) -> saqlash."""
-import json
+"""Buyurtma berish jarayoni — CHATDA (matnli tugmalar orqali).
 
+DIQQAT: bu ENDI asosiy (production'da ham ishlatiladigan) yo'l — mijoz
+"🛒 Savat" tugmasini bosib, undagi savatdan "✅ Buyurtma berish" tugmasi
+orqali shu yerga keladi. Mini App ("🛍 Do'kon") esa endi faqat katalogni
+ko'rish va savatga qo'shish uchun (webapp/index.html'da checkout olib
+tashlangan) — buyurtmani yakunlash HAR DOIM shu chat oqimi orqali bo'ladi.
+webapp_api.py'dagi POST /api/checkout ham hali mavjud (eski Mini App
+mijozlari yoki kelajakda qayta yoqish uchun) va bir xil umumiy mantiqdan
+(order_service.py) foydalanadi, shu bilan ikkalasi doim izchil ishlaydi."""
 from aiogram import Router, F, Bot
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, LabeledPrice, Message, PreCheckoutQuery
+from aiogram.types import CallbackQuery, LabeledPrice, Message, PreCheckoutQuery, SuccessfulPayment
 
 import db
-from config import ADMIN_CHAT_ID, PAYMENT_PROVIDER_TOKEN
+import order_service
+from config import PAYMENT_PROVIDER_TOKEN
 from handlers.catalog import format_price
 from handlers.states import OrderStates
 from keyboards import (
@@ -17,107 +23,41 @@ from keyboards import (
     BTN_SKIP_PROMO,
     main_menu_keyboard,
     contact_request_keyboard,
-    cancel_only_keyboard,
     payment_choice_keyboard,
-    profile_choice_keyboard,
-    admin_order_keyboard,
+    prefill_or_cancel_keyboard,
     skip_promo_keyboard,
 )
 
 checkout_router = Router()
 
 
-def _has_complete_profile(profile: dict | None) -> bool:
-    return bool(profile and profile.get("full_name") and profile.get("phone") and profile.get("address"))
-
-
-async def _begin_checkout(chat: Message, user_id: int, state: FSMContext) -> bool:
-    """Checkout jarayonini boshlaydi (profil bor-yo'qligini tekshirib, mos
-    savol beradi). Savat bo'sh bo'lsa False qaytaradi - chaqiruvchi o'zi xabar
-    berishi kerak (callback bo'lsa alert, oddiy xabar bo'lsa oddiy matn)."""
-    cart = await db.get_cart(user_id)
-    if not cart:
-        return False
-
-    profile = await db.get_user_profile(user_id)
-    if _has_complete_profile(profile):
-        await chat.answer(
-            "Saqlangan ma'lumotlaringiz bor:\n\n"
-            f"👤 {profile['full_name']}\n"
-            f"📱 {profile['phone']}\n"
-            f"📍 {profile['address']}\n\n"
-            "Shu buyurtma kimga: o'zingizgami yoki sovg'a/boshqa manzilgami?",
-            reply_markup=profile_choice_keyboard(),
-        )
-    else:
-        await state.set_state(OrderStates.waiting_name)
-        await chat.answer(
-            "Buyurtmani rasmiylashtirish uchun ism-familiyangizni yozib yuboring:",
-            reply_markup=cancel_only_keyboard(),
-        )
-    return True
-
-
 @checkout_router.callback_query(F.data == "checkout")
 async def start_checkout(callback: CallbackQuery, state: FSMContext):
-    started = await _begin_checkout(callback.message, callback.from_user.id, state)
-    if not started:
-        await callback.answer("Savatingiz bo'sh", show_alert=True)
-        return
-    await callback.answer()
-
-
-@checkout_router.message(F.web_app_data)
-async def handle_webapp_checkout(message: Message, state: FSMContext):
-    """Veb-do'kon (Mini App)dagi "✅ Buyurtma berish" tugmasi bosilganda
-    Telegram shu yerga signal yuboradi - checkout jarayonini xuddi
-    "✅ Buyurtma berish" inline tugmasi bosilgandek boshlaymiz."""
-    try:
-        payload = json.loads(message.web_app_data.data)
-    except Exception:
-        payload = {}
-    if payload.get("action") != "checkout":
-        return
-
-    started = await _begin_checkout(message, message.from_user.id, state)
-    if not started:
-        await message.answer("Savatingiz bo'sh.")
-
-
-@checkout_router.callback_query(F.data == "use_saved_profile")
-async def use_saved_profile(callback: CallbackQuery, state: FSMContext):
     cart = await db.get_cart(callback.from_user.id)
     if not cart:
         await callback.answer("Savatingiz bo'sh", show_alert=True)
         return
+
+    # MUHIM (BUZILMASIN): manzil (va ism/telefon) HAR DOIM so'raladi/
+    # ko'rsatiladi - hatto profilda saqlangan bo'lsa ham. Avvalgi qiymat
+    # bo'lsa, u pastdagi tugmada TUGMA sifatida ko'rinadi (bosib
+    # tasdiqlash yoki qo'lda o'zgartirish mumkin) - lekin hech qachon
+    # ko'rsatmasdan, sinovsiz avtomatik ishlatilmaydi (keyboards.py'dagi
+    # prefill_or_cancel_keyboard izohiga qarang).
     profile = await db.get_user_profile(callback.from_user.id)
-    if not _has_complete_profile(profile):
-        await callback.answer()
-        await state.set_state(OrderStates.waiting_name)
-        await callback.message.answer(
-            "Ism-familiyangizni yozing:", reply_markup=cancel_only_keyboard()
-        )
-        return
-
-    await state.update_data(
-        full_name=profile["full_name"], phone=profile["phone"], address=profile["address"]
-    )
-    await state.set_state(OrderStates.waiting_promo)
-    await callback.message.answer(
-        "Agar promo-kodingiz bo'lsa, shu yerga yozing. Bo'lmasa pastdagi "
-        "tugmani bosib davom eting:",
-        reply_markup=skip_promo_keyboard(),
-    )
-    await callback.answer()
-
-
-@checkout_router.callback_query(F.data == "new_manual_profile")
-async def new_manual_profile(callback: CallbackQuery, state: FSMContext):
+    saved_name = (profile or {}).get("full_name")
+    saved_phone = (profile or {}).get("phone")
+    saved_address = (profile or {}).get("address")
+    await state.update_data(hint_phone=saved_phone, hint_address=saved_address)
     await state.set_state(OrderStates.waiting_name)
-    await callback.message.answer(
-        "Qabul qiluvchining ism-familiyasini yozing:",
-        reply_markup=cancel_only_keyboard(),
-    )
+
+    text = "Buyurtmani rasmiylashtirish uchun ism-familiyangizni yozib yuboring:"
+    if saved_name:
+        text += (
+            "\n\n(Avvalgi ismingiz pastdagi tugmada — bosib ishlating, "
+            "yoki yangisini yozing.)"
+        )
+    await callback.message.answer(text, reply_markup=prefill_or_cancel_keyboard(saved_name))
     await callback.answer()
 
 
@@ -134,18 +74,23 @@ async def process_name(message: Message, state: FSMContext):
         return
     await state.update_data(full_name=message.text.strip())
     await state.set_state(OrderStates.waiting_phone)
-    await message.answer(
-        "Endi telefon raqamingizni yuboring — pastdagi tugmani bosing yoki qo'lda yozing:",
-        reply_markup=contact_request_keyboard(),
-    )
+    data = await state.get_data()
+    saved_phone = data.get("hint_phone")
+    text = "Endi telefon raqamingizni yuboring — pastdagi tugmani bosing yoki qo'lda yozing:"
+    await message.answer(text, reply_markup=contact_request_keyboard(saved_phone=saved_phone))
 
 
 async def _ask_address(message: Message, state: FSMContext):
     await state.set_state(OrderStates.waiting_address)
-    await message.answer(
-        "Yetkazib berish manzilini (shahar, tuman, mo'ljal) yozing:",
-        reply_markup=cancel_only_keyboard(),
-    )
+    data = await state.get_data()
+    saved_address = data.get("hint_address")
+    text = "Yetkazib berish manzilini (shahar, tuman, mo'ljal) yozing:"
+    if saved_address:
+        text += (
+            "\n\n(Avvalgi manzilingiz pastdagi tugmada — bosib ishlating, "
+            "yoki yangisini yozing.)"
+        )
+    await message.answer(text, reply_markup=prefill_or_cancel_keyboard(saved_address))
 
 
 @checkout_router.message(OrderStates.waiting_phone, F.contact)
@@ -254,90 +199,17 @@ async def process_promo(message: Message, state: FSMContext):
     await _show_order_summary(message, state, discount=discount, promo_code=code)
 
 
-PAYMENT_LABELS = {
-    "balance": ("to'landi (hamyondan)", "💰 To'lov: hamyondan (to'langan)\n"),
-    "card": ("to'landi (karta)", "💳 To'lov: karta orqali (to'langan)\n"),
-    "cash": ("yangi", "💵 To'lov: naqd/karta (operator bilan)\n"),
-}
-
-
-async def _create_order_from_state(user_id: int, state: FSMContext, payment_method: str):
-    """Umumiy yadro: state'dagi ma'lumotlar asosida buyurtma yaratadi.
-    payment_method: "balance" | "card" | "cash".
-    Qaytaradi: (order_id, "ok") muvaffaqiyatda, yoki (None, sabab) muvaffaqiyatsizlikda
-    ("empty_cart" yoki "insufficient_balance")."""
-    data = await state.get_data()
-    cart = await db.get_cart(user_id)
-    if not cart:
-        return None, "empty_cart"
-
-    subtotal = sum(item["product"]["price"] * item["quantity"] for item in cart)
-    discount = data.get("discount", 0)
-    total = max(subtotal - discount, 0)
-
-    if payment_method == "balance":
-        balance = await db.get_balance(user_id)
-        if balance < total:
-            return None, "insufficient_balance"
-
-    order_id = await db.create_order(
-        user_id,
-        data["full_name"],
-        data["phone"],
-        data["address"],
-        promo_code=data.get("promo_code"),
-        discount_amount=discount,
-    )
-
-    if payment_method == "balance":
-        await db.adjust_balance(user_id, -total)
-    status, _ = PAYMENT_LABELS[payment_method]
-    await db.update_order_status(order_id, status)
-
-    # Keyingi safar qayta kiritmasligi uchun ma'lumotlarni saqlaymiz
-    # (bu "o'zim uchun" bo'lmasa ham zarari yo'q - eng oxirgi kiritilgan
-    # ma'lumot sifatida saqlanib qoladi, xohlasa Profil bo'limidan tahrirlaydi).
-    await db.upsert_user_profile(
-        user_id, full_name=data["full_name"], phone=data["phone"], address=data["address"]
-    )
-
-    return order_id, "ok"
-
-
-async def _notify_admin_new_order(bot: Bot, order_id: int, payment_method: str):
-    if not ADMIN_CHAT_ID:
-        return
-    order = await db.get_order(order_id)
-    items = json.loads(order["items_json"])
-    items_text = "\n".join(f"• {i['name']} x{i['quantity']}" for i in items)
-    discount_line = ""
-    if order.get("promo_code"):
-        discount_line = f"🏷 Promo: {order['promo_code']} (-{format_price(order['discount_amount'])} so'm)\n"
-    _, payment_line = PAYMENT_LABELS[payment_method]
-    admin_text = (
-        f"🆕 <b>Yangi buyurtma #{order_id}</b>\n\n"
-        f"{items_text}\n\n"
-        f"{discount_line}"
-        f"{payment_line}"
-        f"💰 Jami: {format_price(order['total_price'])} so'm\n\n"
-        f"👤 {order['full_name']}\n"
-        f"📱 {order['phone']}\n"
-        f"📍 {order['address']}"
-    )
-    try:
-        await bot.send_message(ADMIN_CHAT_ID, admin_text, reply_markup=admin_order_keyboard(order_id))
-    except Exception:
-        # Admin hali botga /start bosmagan bo'lishi mumkin - bot unga yoza olmaydi.
-        pass
-
-
 async def _finalize_order(callback: CallbackQuery, state: FSMContext, bot: Bot, payment_method: str):
-    order_id, reason = await _create_order_from_state(callback.from_user.id, state, payment_method)
+    data = await state.get_data()
+    order_id, reason = await order_service.create_order_and_apply_payment(
+        callback.from_user.id, data["full_name"], data["phone"], data["address"],
+        data.get("promo_code"), data.get("discount", 0), payment_method,
+    )
 
     if reason == "insufficient_balance":
         await callback.answer("Hamyoningizda mablag' yetarli emas", show_alert=True)
         return
-    if reason == "empty_cart" or order_id is None:
+    if order_id is None:
         await state.clear()
         await callback.message.edit_text("Savatingiz bo'sh qolgan, buyurtma bekor qilindi.")
         await callback.message.answer("Bosh menyu:", reply_markup=main_menu_keyboard())
@@ -354,7 +226,7 @@ async def _finalize_order(callback: CallbackQuery, state: FSMContext, bot: Bot, 
         f"✅ Buyurtmangiz qabul qilindi! Buyurtma raqami: #{order_id}\n\n{payment_note}"
     )
     await callback.message.answer("Bosh menyu:", reply_markup=main_menu_keyboard())
-    await _notify_admin_new_order(bot, order_id, payment_method)
+    await order_service.notify_admin_new_order(bot, order_id, payment_method)
     await callback.answer()
 
 
@@ -390,22 +262,38 @@ async def confirm_card(callback: CallbackQuery, state: FSMContext, bot: Bot):
         await callback.answer("Jami summa 0, karta orqali to'lash shart emas", show_alert=True)
         return
 
+    # Buyurtmani darhol "to'lov kutilmoqda" holatida yaratamiz - to'lov
+    # muvaffaqiyatli bo'lganda uni "process_successful_payment" (pastda)
+    # payload orqali topib, "to'landi"ga o'tkazadi. Bu FSM holatiga bog'liq
+    # emas, shuning uchun Mini App orqali to'langanda ham bir xil ishlaydi.
+    order_id, reason = await order_service.create_order_and_apply_payment(
+        callback.from_user.id, data["full_name"], data["phone"], data["address"],
+        data.get("promo_code"), discount, "card",
+    )
+    if order_id is None:
+        await state.clear()
+        await callback.message.edit_text("Savatingiz bo'sh qolgan, buyurtma bekor qilindi.")
+        await callback.message.answer("Bosh menyu:", reply_markup=main_menu_keyboard())
+        await callback.answer()
+        return
+
+    await state.clear()
     await callback.answer()
     try:
-        # UZS Telegram Payments'da "bo'linmaydigan" valyuta emas, shuning
-        # uchun summa 100 ga ko'paytiriladi (Telegram talabi).
         await bot.send_invoice(
             chat_id=callback.from_user.id,
             title="Figo3D buyurtma",
-            description=f"{len(cart)} xil mahsulot, jami {format_price(total)} so'm",
-            payload=f"figo3d_order:{callback.from_user.id}",
+            description=f"Buyurtma #{order_id} — {len(cart)} xil mahsulot, jami {format_price(total)} so'm",
+            payload=f"order:{order_id}",
             provider_token=PAYMENT_PROVIDER_TOKEN,
             currency="UZS",
             prices=[LabeledPrice(label="Buyurtma", amount=total * 100)],
         )
     except Exception:
         await callback.message.answer(
-            "❌ To'lov oynasini ochib bo'lmadi. Iltimos, boshqa to'lov usulini tanlang."
+            f"❌ To'lov oynasini ochib bo'lmadi. Buyurtmangiz #{order_id} \"to'lov "
+            "kutilmoqda\" holatida qoldi - operator siz bilan bog'lanadi, yoki "
+            "\"📦 Buyurtmalarim\"dan holatini kuzatib borishingiz mumkin."
         )
 
 
@@ -416,39 +304,25 @@ async def process_pre_checkout(pre_checkout_query: PreCheckoutQuery, bot: Bot):
     await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
 
 
-@checkout_router.message(F.successful_payment, OrderStates.confirming)
-async def process_successful_payment(message: Message, state: FSMContext, bot: Bot):
-    order_id, reason = await _create_order_from_state(message.from_user.id, state, "card")
-
-    if order_id is None:
-        # To'lov Telegram tomonidan allaqachon qabul qilingan, lekin savat
-        # bo'sh qolgan bo'lsa (kamdan-kam holat) - adminga xabar berib qo'yamiz,
-        # pul mijozdan olingan, operator qo'lda hal qiladi.
-        await message.answer(
-            "✅ To'lovingiz qabul qilindi, lekin buyurtmani avtomatik "
-            "rasmiylashtirishda muammo yuz berdi. Operatorimiz tez orada siz "
-            "bilan bog'lanadi.",
-            reply_markup=main_menu_keyboard(),
-        )
-        if ADMIN_CHAT_ID:
-            try:
-                await bot.send_message(
-                    ADMIN_CHAT_ID,
-                    f"⚠️ Mijoz {message.from_user.id} to'lov qildi, lekin buyurtma "
-                    f"avtomatik yaratilmadi (sabab: {reason}). Tekshiring!",
-                )
-            except Exception:
-                pass
-        await state.clear()
+@checkout_router.message(F.successful_payment)
+async def process_successful_payment(message: Message, bot: Bot):
+    """To'lov (chatdagi invoice orqali HAM, Mini App'ning openInvoice orqali
+    HAM) muvaffaqiyatli bo'lganda Telegram shu yerga xabar yuboradi. Buyurtma
+    o'zi allaqachon "to'lov kutilmoqda" holatida yaratilgan edi (yuqorida /
+    webapp_api.py'da) - payload'dagi ID orqali topib, "to'landi"ga o'tkazamiz."""
+    payment: SuccessfulPayment = message.successful_payment
+    try:
+        order_id = int(payment.invoice_payload.split(":", 1)[1])
+    except (IndexError, ValueError):
         return
 
-    await state.clear()
+    await order_service.mark_card_order_paid(order_id)
     await message.answer(
         f"✅ To'lov qabul qilindi! Buyurtmangiz raqami: #{order_id}\n\n"
         "💳 To'lov karta orqali amalga oshirildi.",
         reply_markup=main_menu_keyboard(),
     )
-    await _notify_admin_new_order(bot, order_id, "card")
+    await order_service.notify_admin_new_order(bot, order_id, "card_paid")
 
 
 @checkout_router.callback_query(F.data == "cancel_order", OrderStates.confirming)
