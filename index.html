@@ -119,6 +119,19 @@
   .summary-box .row { display: flex; justify-content: space-between; }
   .summary-box .total { font-weight: 700; font-size: 16px; margin-top: 6px; }
 
+  /* Telegram'ning o'z (sahifadan tashqarida chiziladigan) "MainButton"iga
+     QO'SHIMCHA ravishda, HAR bir muhim qadamda sahifaning O'ZIDA ham oddiy
+     HTML tugma ko'rsatiladi - ba'zi Telegram mijozlarida (masalan Telegram
+     Web/brauzer orqali) MainButton bosilishi har doim ham kutilganidek
+     ishlayvermasligi mumkin ekan, shuning uchun buyurtma berish HECH QACHON
+     faqat bitta (ishonchsiz) tugmaga bog'liq bo'lib qolmasligi kerak. */
+  .page-cta {
+    display: block; width: 100%; border: none; border-radius: 14px;
+    background: var(--button); color: var(--button-text); padding: 15px;
+    font-size: 15.5px; font-weight: 700; margin: 18px 0 4px;
+  }
+  .page-cta:disabled { opacity: 0.55; }
+
   .center-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 60px 24px; min-height: 70vh; }
   .center-screen .icon { font-size: 52px; margin-bottom: 16px; }
   .center-screen h2 { font-size: 19px; margin: 0 0 8px; }
@@ -588,14 +601,17 @@
     } else {
       imagesHtml = '<div class="noimg big">🎁</div>';
     }
+    var qty = state.cart[p.id] || 0;
     el.innerHTML =
       imagesHtml +
       '<div class="detail-body">' +
         '<h2>' + escapeHtml(p.name) + '</h2>' +
         '<p class="detail-desc">' + escapeHtml(p.description || "") + '</p>' +
         '<div class="detail-price">' + fmtPrice(p.price) + " so'm</div>" +
+        '<button class="page-cta" id="detail-add-btn">' + (qty > 0 ? ("✅ Savatda: " + qty + " ta — yana qo'shish") : "➕ Savatga qo'shish") + '</button>' +
       '</div>';
     setupGalleryScroll(el);
+    document.getElementById("detail-add-btn").onclick = function () { changeQty(p.id, 1); render(); };
   };
 
   // ---------- Savat ----------
@@ -621,12 +637,14 @@
         '</div>'
       );
     }).join("");
-    el.innerHTML = '<div class="cart-list">' + rows + '</div><div class="cart-total">Jami: ' + fmtPrice(cartSubtotal()) + " so'm</div>";
+    el.innerHTML = '<div class="cart-list">' + rows + '</div><div class="cart-total">Jami: ' + fmtPrice(cartSubtotal()) + " so'm</div>" +
+      '<button class="page-cta" id="cart-checkout-btn">✅ Buyurtma berish — ' + fmtPrice(cartSubtotal()) + " so'm</button>";
     el.querySelectorAll(".cart-row").forEach(function (row) {
       var pid = Number(row.getAttribute("data-pid"));
       row.querySelector(".dec").onclick = function () { changeQty(pid, -1); };
       row.querySelector(".inc").onclick = function () { changeQty(pid, 1); };
     });
+    document.getElementById("cart-checkout-btn").onclick = function () { withMainButtonProgress(beginCheckout); };
   };
 
   // ---------- Checkout: forma ----------
@@ -666,7 +684,9 @@
         '<div class="form-group"><label class="form-label">Yetkazib berish manzili</label>' +
           '<input class="form-input" id="f-address" value="' + escapeHtml(c.address) + '" placeholder="Shahar, tuman, mo\'ljal"></div>' +
         '<div class="form-error hidden" id="f-error"></div>' +
+        '<button class="page-cta" id="checkout-form-next-btn">Davom etish</button>' +
       '</div>';
+    document.getElementById("checkout-form-next-btn").onclick = function () { submitCheckoutForm(); };
   };
 
   function submitCheckoutForm() {
@@ -700,11 +720,13 @@
           '<button class="promo-check-btn" id="p-check">Tekshirish</button>' +
         '</div>' +
         '<div class="promo-result" id="p-result"></div>' +
+        '<button class="page-cta" id="promo-next-btn">Davom etish</button>' +
       '</div>';
 
     if (c.promo_code) showPromoResult(true, c.discount_percent, c.discount_amount, c.promo_code);
 
     el.querySelector("#p-check").onclick = function () { checkPromoCode(); };
+    el.querySelector("#promo-next-btn").onclick = function () { withMainButtonProgress(submitPromoStep); };
   };
 
   function showPromoResult(valid, percent, amount, code) {
@@ -883,7 +905,9 @@
           ? "To'lov karta orqali muvaffaqiyatli amalga oshirildi."
           : "Tez orada operator siz bilan bog'lanadi.") +
         '</p>' +
+        '<button class="page-cta" id="success-done-btn">Davom etish</button>' +
       '</div>';
+    document.getElementById("success-done-btn").onclick = function () { resetToGrid(); };
   };
 
   // ---------- Shaxsiy buyurtma (tab) ----------
@@ -910,8 +934,10 @@
         '<input class="form-input" id="custom-phone" value="' + escapeHtml(f.phone) + '" type="tel"></div>' +
       '<div class="form-group"><label class="form-label">Manzil</label>' +
         '<input class="form-input" id="custom-address" value="' + escapeHtml(f.address) + '"></div>' +
-      '<div class="form-error hidden" id="custom-error"></div>';
+      '<div class="form-error hidden" id="custom-error"></div>' +
+      '<button class="page-cta" id="custom-submit-btn">📤 So\'rovni yuborish</button>';
 
+    document.getElementById("custom-submit-btn").onclick = function () { withMainButtonProgress(submitCustomOrderForm); };
     document.getElementById("custom-photo-btn").onclick = function () { document.getElementById("custom-photo-input").click(); };
     document.getElementById("custom-photo-input").onchange = function (e) {
       var file = e.target.files && e.target.files[0];
@@ -1009,9 +1035,11 @@
         '<div class="form-group"><label class="form-label">Telefon</label><input class="form-input" id="pf-phone" value="' + escapeHtml(pr.phone || "") + '" type="tel"></div>' +
         '<div class="form-group"><label class="form-label">Manzil</label><input class="form-input" id="pf-address" value="' + escapeHtml(pr.address || "") + '"></div>' +
         '<div class="form-error hidden" id="pf-error"></div>' +
+        '<button class="page-cta" id="profile-save-btn">💾 Saqlash</button>' +
         '<div class="section-title">☎️ Aloqa</div>' +
         '<div class="profile-box" style="white-space:pre-wrap;font-size:13.5px">' + escapeHtml(state.contactInfo) + '</div>';
       document.getElementById("topup-btn").onclick = function () { pushView("topup_form"); };
+      document.getElementById("profile-save-btn").onclick = function () { withMainButtonProgress(submitProfileForm); };
     });
   }
 
@@ -1058,7 +1086,9 @@
           '<button class="option-btn" id="tp-photo-btn" style="margin-top:8px">' + (f.screenshot ? "🔄 Boshqa rasm" : "📎 Skrinshot biriktirish") + '</button>' +
           '<input type="file" id="tp-photo-input" accept="image/*" style="display:none"></div>' +
         '<div class="form-error hidden" id="tp-error"></div>' +
+        '<button class="page-cta" id="topup-submit-btn">💳 So\'rov yuborish</button>' +
       '</div>';
+    document.getElementById("topup-submit-btn").onclick = function () { withMainButtonProgress(submitTopupForm); };
     document.getElementById("tp-photo-btn").onclick = function () { document.getElementById("tp-photo-input").click(); };
     document.getElementById("tp-photo-input").onchange = function (e) {
       var file = e.target.files && e.target.files[0];
