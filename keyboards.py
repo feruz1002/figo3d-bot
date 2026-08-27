@@ -191,11 +191,38 @@ def payment_choice_keyboard(balance: int, total: int, card_enabled: bool = False
 
 
 def admin_order_keyboard(order_id: int) -> InlineKeyboardMarkup:
-    """Admin/hamkorga yuboriladigan xabar ostidagi tugmalar."""
+    """Yangi buyurtma xabari ostidagi tugmalar (🆕 Qabul qilish bosqichi)."""
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Qabul qildim", callback_data=f"order_accept:{order_id}")
+    builder.button(text="⚠️ Muammo", callback_data=f"order_problem:{order_id}")
     builder.adjust(1)
     return builder.as_markup()
+
+
+def admin_order_shipping_keyboard(order_id: int) -> InlineKeyboardMarkup:
+    """Qabul qilingandan keyingi tugmalar (🛠 Yig'ish bosqichi)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🚚 Chiqarib yubordim", callback_data=f"order_ship:{order_id}")
+    builder.button(text="⚠️ Muammo", callback_data=f"order_problem:{order_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def admin_order_archive_keyboard(order_id: int) -> InlineKeyboardMarkup:
+    """Chiqarib yuborilgandan keyingi tugmalar (🚚 Chiqarib yuborilgan bosqichi)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Yetkazildi", callback_data=f"order_archive:{order_id}")
+    builder.button(text="⚠️ Muammo", callback_data=f"order_problem:{order_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def empty_keyboard() -> InlineKeyboardMarkup:
+    """Yakunlangan (arxiv/muammo) buyurtma xabaridan tugmalarni butunlay
+    olib tashlash uchun - `reply_markup`ni chaqirmasdan qoldirish Telegram
+    tomonidan "o'zgarishsiz qoldirish" deb talqin qilinadi, shuning uchun
+    haqiqatan ham OLIB TASHLASH uchun bo'sh klaviatura YUBORILISHI kerak."""
+    return InlineKeyboardBuilder().as_markup()
 
 
 def custom_admin_keyboard(custom_order_id: int) -> InlineKeyboardMarkup:

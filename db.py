@@ -467,6 +467,23 @@ async def get_all_orders(limit: int = 50, open_only: bool = False):
         return [dict(r) for r in rows]
 
 
+async def get_orders_by_statuses(statuses: list, limit: int = 100):
+    """Admin panelning bosqichli (Kanban: Qabul qilish / Yig'ish / Chiqarib
+    yuborilgan / Arxiv-Muammo) ko'rinishi uchun: berilgan status(lar)dagi
+    buyurtmalar ro'yxati, eng yangisidan boshlab. `statuses` bo'sh bo'lsa,
+    bo'sh ro'yxat qaytadi (SQL xatosiga yo'l qo'ymaslik uchun)."""
+    if not statuses:
+        return []
+    async with get_db_connection() as conn:
+        placeholders = ",".join("?" for _ in statuses)
+        cursor = await conn.execute(
+            f"SELECT * FROM orders WHERE status IN ({placeholders}) ORDER BY id DESC LIMIT ?",
+            (*statuses, limit),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
 # ---------- SHARHLAR (REVIEWS) ----------
 
 async def add_review(product_id: int, user_id: int, user_name: str, rating: int, comment: str | None):

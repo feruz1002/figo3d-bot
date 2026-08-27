@@ -13,6 +13,7 @@ from aiohttp import web
 
 import admin_service
 import db
+import order_service
 from config import BOT_TOKEN, is_admin
 from webapp_auth import validate_init_data
 
@@ -44,6 +45,27 @@ async def api_admin_orders(request: web.Request):
     return web.json_response({"orders": orders})
 
 
+# Admin panelning bosqichli (Kanban) "Buyurtmalar" ko'rinishi uchun -
+# har bir bo'lim (tab) shu lug'atdagi status ro'yxatiga mos keladi.
+_ORDER_STAGES = {
+    "new": order_service.STAGE_NEW_STATUSES,
+    "accepted": order_service.STAGE_ACCEPTED_STATUSES,
+    "shipped": order_service.STAGE_SHIPPED_STATUSES,
+    "final": order_service.STAGE_FINAL_STATUSES,
+}
+
+
+async def api_admin_orders_by_stage(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    stage = request.match_info["stage"]
+    statuses = _ORDER_STAGES.get(stage)
+    if statuses is None:
+        return web.json_response({"error": "bad_request"}, status=400)
+    orders = await db.get_orders_by_statuses(statuses, limit=100)
+    return web.json_response({"orders": orders})
+
+
 async def api_admin_order_accept(request: web.Request):
     if _authed_admin_id(request) is None:
         return _unauthorized()
@@ -55,6 +77,48 @@ async def api_admin_order_accept(request: web.Request):
     if order is None:
         return web.json_response({"error": reason}, status=404)
     await admin_service.notify_customer_order_accepted(request.app["bot"], order)
+    return web.json_response({"ok": True})
+
+
+async def api_admin_order_ship(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        order_id = int(request.match_info["order_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    order, reason = await admin_service.ship_order(order_id)
+    if order is None:
+        return web.json_response({"error": reason}, status=404)
+    await admin_service.notify_customer_order_shipped(request.app["bot"], order)
+    return web.json_response({"ok": True})
+
+
+async def api_admin_order_archive(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        order_id = int(request.match_info["order_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    order, reason = await admin_service.archive_order(order_id)
+    if order is None:
+        return web.json_response({"error": reason}, status=404)
+    await admin_service.notify_customer_order_archived(request.app["bot"], order)
+    return web.json_response({"ok": True})
+
+
+async def api_admin_order_problem(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        order_id = int(request.match_info["order_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    order, reason = await admin_service.flag_order_problem(order_id)
+    if order is None:
+        return web.json_response({"error": reason}, status=404)
+    await admin_service.notify_customer_order_problem(request.app["bot"], order)
     return web.json_response({"ok": True})
 
 
@@ -198,7 +262,11 @@ def register_admin_routes(app: web.Application, admin_index_path: str):
     app["admin_index_path"] = admin_index_path
     app.router.add_get("/admin-panel", admin_page)
     app.router.add_get("/admin/api/orders", api_admin_orders)
+    app.router.add_get("/admin/api/orders/stage/{stage}", api_admin_orders_by_stage)
     app.router.add_post("/admin/api/orders/{order_id}/accept", api_admin_order_accept)
+    app.router.add_post("/admin/api/orders/{order_id}/ship", api_admin_order_ship)
+    app.router.add_post("/admin/api/orders/{order_id}/archive", api_admin_order_archive)
+    app.router.add_post("/admin/api/orders/{order_id}/problem", api_admin_order_problem)
     app.router.add_get("/admin/api/custom_orders", api_admin_custom_orders)
     app.router.add_post("/admin/api/custom_orders/{order_id}/contacted", api_admin_custom_order_contacted)
     app.router.add_get("/admin/api/topups", api_admin_topups)

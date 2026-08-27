@@ -5,15 +5,18 @@ veb-panel (admin_webapp_api.py) orqali ISHLATILADI, shu bilan ikkalasi
 doim bir xil qoidalar bilan (masalan status "kutilmoqda" bo'lmasa qayta
 tasdiqlanmaydi) ishlaydi."""
 import db
+import order_service
 from handlers.catalog import format_price
 
 
 async def accept_order(order_id: int):
-    """Qaytaradi: (order, None) muvaffaqiyatda, yoki (None, sabab)."""
+    """Qaytaradi: (order, None) muvaffaqiyatda, yoki (None, sabab).
+    Admin panelning "🆕 Qabul qilish" bo'limidagi amal - buyurtma shu bilan
+    "🛠 Yig'ish" bo'limiga o'tadi (STATUS_ACCEPTED)."""
     order = await db.get_order(order_id)
     if not order:
         return None, "not_found"
-    await db.update_order_status(order_id, "qabul qilindi")
+    await db.update_order_status(order_id, order_service.STATUS_ACCEPTED)
     return order, None
 
 
@@ -21,6 +24,68 @@ async def notify_customer_order_accepted(bot, order):
     try:
         await bot.send_message(
             order["user_id"], f"✅ Buyurtmangiz #{order['id']} qabul qilindi va tayyorlanmoqda!"
+        )
+    except Exception:
+        pass
+
+
+async def ship_order(order_id: int):
+    """Admin panelning "🛠 Yig'ish" bo'limidagi amal - buyurtma "🚚 Chiqarib
+    yuborilgan" bo'limiga o'tadi."""
+    order = await db.get_order(order_id)
+    if not order:
+        return None, "not_found"
+    await db.update_order_status(order_id, order_service.STATUS_SHIPPED)
+    return order, None
+
+
+async def notify_customer_order_shipped(bot, order):
+    try:
+        await bot.send_message(
+            order["user_id"],
+            f"🚚 Buyurtmangiz #{order['id']} chiqarib yuborildi — tez orada yetib boradi!",
+        )
+    except Exception:
+        pass
+
+
+async def archive_order(order_id: int):
+    """Admin panelning "🚚 Chiqarib yuborilgan" bo'limidagi "✅ Yetkazildi"
+    amali - buyurtma "📁 Arxiv"ga o'tadi (yakunlangan)."""
+    order = await db.get_order(order_id)
+    if not order:
+        return None, "not_found"
+    await db.update_order_status(order_id, order_service.STATUS_ARCHIVED)
+    return order, None
+
+
+async def notify_customer_order_archived(bot, order):
+    try:
+        await bot.send_message(
+            order["user_id"], f"📦 Buyurtmangiz #{order['id']} yetkazildi. Xaridingiz uchun rahmat!"
+        )
+    except Exception:
+        pass
+
+
+async def flag_order_problem(order_id: int):
+    """Buyurtmada muammo bo'lsa (masalan mijoz bilan bog'lanib bo'lmayapti,
+    mahsulot yo'q va h.k.) - istalgan faol bosqichdan "⚠️ Muammo"ga
+    o'tkazish uchun. Admin panelda bu amal "🆕 Qabul qilish", "🛠 Yig'ish"
+    va "🚚 Chiqarib yuborilgan" bo'limlarining barchasida mavjud."""
+    order = await db.get_order(order_id)
+    if not order:
+        return None, "not_found"
+    await db.update_order_status(order_id, order_service.STATUS_PROBLEM)
+    return order, None
+
+
+async def notify_customer_order_problem(bot, order):
+    try:
+        await bot.send_message(
+            order["user_id"],
+            f"⚠️ Buyurtmangiz #{order['id']} bo'yicha savol/muammo yuzaga keldi — "
+            "tez orada operator siz bilan bog'lanadi.",
         )
     except Exception:
         pass

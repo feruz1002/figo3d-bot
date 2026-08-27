@@ -338,6 +338,47 @@ async def api_checkout(request: web.Request):
     return web.json_response({"order_id": order_id, "status": "confirmed", "total": total})
 
 
+async def api_request_checkout(request: web.Request):
+    """Mini App'ning savat oynasidagi "✅ Buyurtmani yakunlash" tugmasi
+    uchun. MUHIM: bu yerda buyurtma BEVOSITA yaratilmaydi va to'lov
+    so'ralmaydi - bu ataylab shunday, chunki buyurtma yaratish/to'lov
+    mantig'i endi FAQAT ishonchli CHAT oqimida (handlers/checkout.py)
+    qoladi (qarang: 27-avgust brifingi - Mini App'ning JS/webview orqali
+    to'g'ridan-to'g'ri buyurtma berishi muammoli chiqqan edi). Bu funksiya
+    faqat "signal beradi": mijozning CHATIGA savat xulosasini va "✅
+    Buyurtma berish" tugmasini (xuddi chatda "🛒 Savat" bosilgandagidek)
+    yuboradi - shundan keyin Mini App yopiladi va mijoz to'g'ridan-to'g'ri
+    tayyor xabar bilan chatda qoladi, qo'lda "🛒 Savat" tugmasini qidirib
+    o'tirishi shart emas."""
+    user_id = _authed_user_id(request)
+    if user_id is None:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    cart = await db.get_cart(user_id)
+    if not cart:
+        return web.json_response({"error": "empty_cart"}, status=400)
+
+    from handlers.catalog import format_price
+    from keyboards import cart_keyboard
+
+    subtotal = sum(item["product"]["price"] * item["quantity"] for item in cart)
+    lines = ["🛒 <b>Savatingiz:</b>\n"]
+    for item in cart:
+        lines.append(f"• {item['product']['name']} x{item['quantity']}")
+    lines.append(f"\n<b>Jami: {format_price(subtotal)} so'm</b>")
+    lines.append("\nBuyurtmani yakunlash uchun pastdagi tugmani bosing:")
+
+    bot = request.app["bot"]
+    try:
+        await bot.send_message(user_id, "\n".join(lines), reply_markup=cart_keyboard(cart))
+    except Exception:
+        # Mijoz botni bloklagan yoki hali /start bosmagan bo'lishi mumkin -
+        # bu holatda ham Mini App'dagi savat o'zgarishsiz qoladi, frontend
+        # buni ko'rib, chatdagi "🛒 Savat" tugmasidan foydalanishni so'raydi.
+        return web.json_response({"error": "send_failed"}, status=502)
+    return web.json_response({"ok": True})
+
+
 async def api_photo(request: web.Request):
     file_id = request.match_info["file_id"]
     bot = request.app["bot"]
@@ -370,4 +411,5 @@ def register_webapp_routes(app: web.Application, webapp_index_path: str):
     app.router.add_post("/api/topup", api_topup)
     app.router.add_post("/api/promo/check", api_promo_check)
     app.router.add_post("/api/checkout", api_checkout)
+    app.router.add_post("/api/request_checkout", api_request_checkout)
     app.router.add_get("/api/photo/{file_id}", api_photo)

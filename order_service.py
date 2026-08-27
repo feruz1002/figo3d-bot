@@ -25,6 +25,43 @@ PAYMENT_LABELS = {
     "card_paid": ("to'landi (karta)", "💳 To'lov: karta orqali (to'langan)\n"),
 }
 
+# ---------- Buyurtma HOLATI (bosqichlar) ----------
+# MUHIM (foydalanuvchi so'rovi bilan qo'shildi, 27-avgust): avval faqat
+# "yangi -> qabul qilindi" bosqichi bor edi - qabul qilingach, buyurtma
+# admin ro'yxatidan (ochiq buyurtmalar) BUTUNLAY g'oyib bo'lardi va uni
+# yanada oldinga (yig'ilmoqda -> chiqarib yuborilgan -> yakunlangan)
+# surish imkoni yo'q edi. Endi to'liq bosqich bor - admin panelda 4 ta
+# bo'lim (Qabul qilish / Yig'ish / Chiqarib yuborilgan / Arxiv-Muammo)
+# aynan shu bosqichlarga mos keladi.
+STATUS_ACCEPTED = "qabul qilindi"
+STATUS_SHIPPED = "chiqarildi"
+STATUS_ARCHIVED = "arxiv"
+STATUS_PROBLEM = "muammo"
+
+# "Yangi" bosqichga tegishli barcha holatlar - buyurtma yaratilgandagi
+# standart holat ("yangi") HAM, hali qabul qilinmagan turli to'lov
+# holatlari HAM (create_order_and_apply_payment/PAYMENT_LABELS'ga qarang) -
+# bularning barchasi admin uchun "hali qabul qilinmagan, harakat kerak"
+# degani, shuning uchun "🆕 Qabul qilish" bo'limida birga ko'rsatiladi.
+STAGE_NEW_STATUSES = ["yangi", "to'landi (hamyondan)", "to'lov kutilmoqda (karta)", "to'landi (karta)"]
+STAGE_ACCEPTED_STATUSES = [STATUS_ACCEPTED]
+STAGE_SHIPPED_STATUSES = [STATUS_SHIPPED]
+STAGE_FINAL_STATUSES = [STATUS_ARCHIVED, STATUS_PROBLEM]
+
+# Mijozga ko'rsatiladigan (chatda "📦 Buyurtmalarim"da, Mini App'da va h.k.)
+# oddiy, tushunarli holat matnlari - bosqichlar: qabul qilindi -> yig'ilyapti
+# -> chiqarib yuborildi -> yetkazildi (yoki muammo bo'lsa alohida xabar).
+CUSTOMER_STATUS_LABELS = {
+    "yangi": "🕓 Kutilmoqda",
+    "to'landi (hamyondan)": "🕓 Kutilmoqda (to'lov qabul qilindi)",
+    "to'lov kutilmoqda (karta)": "💳 To'lov kutilmoqda",
+    "to'landi (karta)": "🕓 Kutilmoqda (to'lov qabul qilindi)",
+    STATUS_ACCEPTED: "✅ Qabul qilindi, yig'ilmoqda",
+    STATUS_SHIPPED: "🚚 Chiqarib yuborildi",
+    STATUS_ARCHIVED: "📦 Yetkazildi",
+    STATUS_PROBLEM: "⚠️ Muammo bor — operator siz bilan bog'lanadi",
+}
+
 
 async def create_order_and_apply_payment(
     user_id: int,

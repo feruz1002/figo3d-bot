@@ -1,12 +1,13 @@
 """Buyurtma berish jarayoni — CHATDA (matnli tugmalar orqali).
 
-DIQQAT: bu fayl faqat "zaxira" yo'l sifatida ishlaydi — mahalliy sinovda
-(https yo'q joyda, ya'ni WEBAPP_URL=None bo'lganda) "🗂 Katalog" hali ham
-eski tugmali ko'rinishda ochiladi va undagi savatdan "✅ Buyurtma berish"
-tugmasi shu yerga olib keladi. Production'da (Render, veb-do'kon yoqilganda)
-mijozlar buyurtmani to'liq Mini App ichida beradi (qarang: webapp_api.py,
-POST /api/checkout) — ikkalasi ham bir xil umumiy mantiqdan (order_service.py)
-foydalanadi, shu bilan ikki yo'l doim izchil ishlaydi."""
+DIQQAT: bu ENDI asosiy (production'da ham ishlatiladigan) yo'l — mijoz
+"🛒 Savat" tugmasini bosib, undagi savatdan "✅ Buyurtma berish" tugmasi
+orqali shu yerga keladi. Mini App ("🛍 Do'kon") esa endi faqat katalogni
+ko'rish va savatga qo'shish uchun (webapp/index.html'da checkout olib
+tashlangan) — buyurtmani yakunlash HAR DOIM shu chat oqimi orqali bo'ladi.
+webapp_api.py'dagi POST /api/checkout ham hali mavjud (eski Mini App
+mijozlari yoki kelajakda qayta yoqish uchun) va bir xil umumiy mantiqdan
+(order_service.py) foydalanadi, shu bilan ikkalasi doim izchil ishlaydi."""
 from aiogram import Router, F, Bot
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
@@ -22,17 +23,12 @@ from keyboards import (
     BTN_SKIP_PROMO,
     main_menu_keyboard,
     contact_request_keyboard,
-    cancel_only_keyboard,
     payment_choice_keyboard,
-    profile_choice_keyboard,
+    prefill_or_cancel_keyboard,
     skip_promo_keyboard,
 )
 
 checkout_router = Router()
-
-
-def _has_complete_profile(profile: dict | None) -> bool:
-    return bool(profile and profile.get("full_name") and profile.get("phone") and profile.get("address"))
 
 
 @checkout_router.callback_query(F.data == "checkout")
@@ -42,59 +38,26 @@ async def start_checkout(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Savatingiz bo'sh", show_alert=True)
         return
 
+    # MUHIM (BUZILMASIN): manzil (va ism/telefon) HAR DOIM so'raladi/
+    # ko'rsatiladi - hatto profilda saqlangan bo'lsa ham. Avvalgi qiymat
+    # bo'lsa, u pastdagi tugmada TUGMA sifatida ko'rinadi (bosib
+    # tasdiqlash yoki qo'lda o'zgartirish mumkin) - lekin hech qachon
+    # ko'rsatmasdan, sinovsiz avtomatik ishlatilmaydi (keyboards.py'dagi
+    # prefill_or_cancel_keyboard izohiga qarang).
     profile = await db.get_user_profile(callback.from_user.id)
-    if _has_complete_profile(profile):
-        await callback.message.answer(
-            "Saqlangan ma'lumotlaringiz bor:\n\n"
-            f"👤 {profile['full_name']}\n"
-            f"📱 {profile['phone']}\n"
-            f"📍 {profile['address']}\n\n"
-            "Shu buyurtma kimga: o'zingizgami yoki sovg'a/boshqa manzilgami?",
-            reply_markup=profile_choice_keyboard(),
-        )
-    else:
-        await state.set_state(OrderStates.waiting_name)
-        await callback.message.answer(
-            "Buyurtmani rasmiylashtirish uchun ism-familiyangizni yozib yuboring:",
-            reply_markup=cancel_only_keyboard(),
-        )
-    await callback.answer()
-
-
-@checkout_router.callback_query(F.data == "use_saved_profile")
-async def use_saved_profile(callback: CallbackQuery, state: FSMContext):
-    cart = await db.get_cart(callback.from_user.id)
-    if not cart:
-        await callback.answer("Savatingiz bo'sh", show_alert=True)
-        return
-    profile = await db.get_user_profile(callback.from_user.id)
-    if not _has_complete_profile(profile):
-        await callback.answer()
-        await state.set_state(OrderStates.waiting_name)
-        await callback.message.answer(
-            "Ism-familiyangizni yozing:", reply_markup=cancel_only_keyboard()
-        )
-        return
-
-    await state.update_data(
-        full_name=profile["full_name"], phone=profile["phone"], address=profile["address"]
-    )
-    await state.set_state(OrderStates.waiting_promo)
-    await callback.message.answer(
-        "Agar promo-kodingiz bo'lsa, shu yerga yozing. Bo'lmasa pastdagi "
-        "tugmani bosib davom eting:",
-        reply_markup=skip_promo_keyboard(),
-    )
-    await callback.answer()
-
-
-@checkout_router.callback_query(F.data == "new_manual_profile")
-async def new_manual_profile(callback: CallbackQuery, state: FSMContext):
+    saved_name = (profile or {}).get("full_name")
+    saved_phone = (profile or {}).get("phone")
+    saved_address = (profile or {}).get("address")
+    await state.update_data(hint_phone=saved_phone, hint_address=saved_address)
     await state.set_state(OrderStates.waiting_name)
-    await callback.message.answer(
-        "Qabul qiluvchining ism-familiyasini yozing:",
-        reply_markup=cancel_only_keyboard(),
-    )
+
+    text = "Buyurtmani rasmiylashtirish uchun ism-familiyangizni yozib yuboring:"
+    if saved_name:
+        text += (
+            "\n\n(Avvalgi ismingiz pastdagi tugmada — bosib ishlating, "
+            "yoki yangisini yozing.)"
+        )
+    await callback.message.answer(text, reply_markup=prefill_or_cancel_keyboard(saved_name))
     await callback.answer()
 
 
@@ -111,18 +74,23 @@ async def process_name(message: Message, state: FSMContext):
         return
     await state.update_data(full_name=message.text.strip())
     await state.set_state(OrderStates.waiting_phone)
-    await message.answer(
-        "Endi telefon raqamingizni yuboring — pastdagi tugmani bosing yoki qo'lda yozing:",
-        reply_markup=contact_request_keyboard(),
-    )
+    data = await state.get_data()
+    saved_phone = data.get("hint_phone")
+    text = "Endi telefon raqamingizni yuboring — pastdagi tugmani bosing yoki qo'lda yozing:"
+    await message.answer(text, reply_markup=contact_request_keyboard(saved_phone=saved_phone))
 
 
 async def _ask_address(message: Message, state: FSMContext):
     await state.set_state(OrderStates.waiting_address)
-    await message.answer(
-        "Yetkazib berish manzilini (shahar, tuman, mo'ljal) yozing:",
-        reply_markup=cancel_only_keyboard(),
-    )
+    data = await state.get_data()
+    saved_address = data.get("hint_address")
+    text = "Yetkazib berish manzilini (shahar, tuman, mo'ljal) yozing:"
+    if saved_address:
+        text += (
+            "\n\n(Avvalgi manzilingiz pastdagi tugmada — bosib ishlating, "
+            "yoki yangisini yozing.)"
+        )
+    await message.answer(text, reply_markup=prefill_or_cancel_keyboard(saved_address))
 
 
 @checkout_router.message(OrderStates.waiting_phone, F.contact)

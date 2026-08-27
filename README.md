@@ -146,12 +146,16 @@ ataydi), lekin endi u ancha soddalashtirilgan — faqat:
   galereya va tavsif
 - Savatga qo'shish va savatdagi miqdorni ➕/➖ bilan o'zgartirish
 
-Savat oynasida endi "Buyurtma berish" tugmasi YO'Q — buning o'rniga
-mijozga "buyurtmani rasmiylashtirish uchun chatdagi '🛒 Savat' tugmasini
-bosing" degan eslatma chiqadi. Bu ataylab shunday: savat bitta umumiy
-ma'lumotlar bazasida saqlanadi, shuning uchun Mini App'da qo'shilgan
-mahsulot chatdagi "🛒 Savat"da ham darhol ko'rinadi — mijoz shunchaki
-Mini App'ni yopib, chatdan davom etadi.
+✅ **Yangilandi (27-avgust):** savat oynasida endi **"✅ Buyurtmani
+yakunlash"** tugmasi bor — lekin bu tugma buyurtmani Mini App'ning o'zida
+YARATMAYDI (bu ataylab shunday, yuqoridagi sababga ko'ra). Bosilganda:
+server mijozning CHATIGA savat xulosasi va "✅ Buyurtma berish" tugmasini
+(xuddi chatda "🛒 Savat" bosilgandagidek) yuboradi, so'ng Mini App
+avtomatik yopiladi — mijoz endi chatdagi qo'lda tugmani qidirib
+o'tirmasdan, tayyor xabar bilan chatda qoladi va shu yerdan davom etadi.
+Agar biror sababga ko'ra (masalan mijoz botni bloklagan) xabar yuborib
+bo'lmasa, Mini App shunchaki xato ko'rsatadi va chatdagi "🛒 Savat"
+tugmasidan foydalanishni so'raydi — hech narsa buzilmaydi.
 
 **Muhim:** bu faqat Render'da (haqiqiy https manzil bilan) ishlaydi —
 mahalliy kompyuteringizda sinaganingizda (https yo'q joyda) "🛍 Do'kon"
@@ -165,8 +169,8 @@ ochish"** tugmasi bor — bu ham xuddi mijozlar do'koni kabi veb-sahifa
 (Mini App) ko'rinishida ochiladi, lekin FAQAT sizga (va ruxsat bergan
 hamkorlaringizga) mo'ljallangan. Tab'lari:
 
-- **Buyurtmalar** — hali "qabul qilindi"ga o'tmagan buyurtmalar ro'yxati,
-  har birida "✅ Qabul qildim" tugmasi
+- **Buyurtmalar** — endi 4 ta bosqich (bo'lim) bilan, pastda "Buyurtma
+  bosqichlari" bo'limiga qarang
 - **Shaxsiy** — hali javob berilmagan shaxsiy buyurtma so'rovlari (rasm bilan)
 - **To'ldirish** — kutilayotgan hisob to'ldirish so'rovlari, "✅ Tasdiqlash"/
   "❌ Rad etish" tugmalari bilan
@@ -187,6 +191,38 @@ buyurtmalar/to'lovlarni tasdiqlashdan oldin. Va mijozlar do'koni kabi, bu
 ham faqat Render'da (haqiqiy https manzil bilan) ishlaydi — mahalliy
 kompyuteringizda sinaganingizda "🖥 Boshqaruv panelini ochish" tugmasi
 umuman ko'rinmaydi, chatdagi eski `/admin` usuli esa ishlayveradi.
+
+### ✅ Yangi: Buyurtma bosqichlari (27-avgust)
+
+Avval buyurtmani "✅ Qabul qildim" deb belgilagach, u ro'yxatdan BUTUNLAY
+g'oyib bo'lardi — uni yanada oldinga surish (masalan "chiqarib
+yubordim" deb belgilash) imkoni yo'q edi. Endi buyurtma to'liq bosqichdan
+o'tadi, admin panelning **"📦 Buyurtmalar"** bo'limida 4 ta kichik bo'lim
+(tab) bor:
+
+1. **🆕 Qabul qilish** — hali javob berilmagan yangi buyurtmalar. "✅
+   Qabul qilish" bosilsa — buyurtma keyingi bo'limga o'tadi.
+2. **🛠 Yig'ish** — qabul qilingan, hozir tayyorlanayotgan buyurtmalar.
+   "🚚 Chiqarib yubordim" bosilsa — keyingi bo'limga o'tadi.
+3. **🚚 Chiqarib yuborilgan** — yo'lda bo'lgan buyurtmalar. "✅ Yetkazildi"
+   bosilsa — arxivga o'tadi.
+4. **📁 Arxiv / Muammo** — yakunlangan (yetkazilgan) va muammoli
+   buyurtmalarning barchasi shu yerda birga ko'rinadi.
+
+Har bir bosqichda (1, 2, 3-bo'limlarda) qo'shimcha **"⚠️ Muammo"** tugmasi
+ham bor — agar biror sababga ko'ra (mijoz bilan bog'lanib bo'lmayapti,
+mahsulot yo'q va h.k.) buyurtmani davom ettirib bo'lmasa, shu tugma bilan
+istalgan bosqichdan to'g'ridan-to'g'ri "Arxiv / Muammo" bo'limiga
+o'tkazish mumkin.
+
+Har bir bosqich o'zgarganda mijozga ham avtomatik xabar boradi (masalan
+"🚚 Buyurtmangiz chiqarib yuborildi"), va mijoz "📦 Buyurtmalarim"
+bo'limida buyurtmasining joriy holatini har doim ko'rib turadi ("✅ Qabul
+qilindi, yig'ilmoqda" → "🚚 Chiqarib yuborildi" → "📦 Yetkazildi").
+
+Bu bosqichlar chatning o'zidan ham (har bir yangi buyurtma xabari ostidagi
+tugmalar orqali) boshqariladi — admin panel va chat bir xil ma'lumot bilan
+ishlaydi, xohlagan birini ishlatishingiz mumkin.
 
 ### Bir nechta admin qo'shish
 

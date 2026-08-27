@@ -23,7 +23,7 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     -webkit-tap-highlight-color: transparent;
   }
-  #app { min-height: 100vh; padding-bottom: 150px; }
+  #app { min-height: 100vh; padding-bottom: 40px; }
   header { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 12px 14px 0; }
   header h1 { margin: 0 0 10px; font-size: 20px; font-weight: 700; }
   #tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; scrollbar-width: none; }
@@ -87,55 +87,18 @@
   .cart-row-name { font-size: 13.5px; font-weight: 600; line-height: 1.3; }
   .cart-row-price { font-size: 12.5px; color: var(--hint); margin-top: 2px; }
   .cart-total { padding: 18px 16px 8px; font-size: 16px; font-weight: 700; text-align: right; }
-
-  .option-btn {
-    display: block; width: 100%; text-align: left; border: none; border-radius: 14px;
-    background: var(--secondary-bg); color: var(--text); padding: 16px; font-size: 15px;
-    font-weight: 600; margin-bottom: 10px;
+  .cart-hint {
+    margin: 4px 16px 0; padding: 14px; border-radius: 14px; background: var(--secondary-bg);
+    color: var(--text); font-size: 14px; line-height: 1.55; text-align: center;
   }
-  .option-btn .sub { display: block; font-weight: 400; font-size: 12.5px; color: var(--hint); margin-top: 3px; }
-  .option-btn:disabled { opacity: 0.4; }
+  .cart-hint b { color: var(--link); }
 
-  .form-group { margin-bottom: 14px; }
-  .form-label { display: block; font-size: 12.5px; color: var(--hint); margin-bottom: 6px; font-weight: 500; }
-  .form-input {
-    width: 100%; border: none; border-radius: 12px; background: var(--secondary-bg);
-    color: var(--text); padding: 13px 14px; font-size: 15px; font-family: inherit;
-  }
-  .form-input:focus { outline: 2px solid var(--button); }
-  .form-error { color: #ff3b30; font-size: 12.5px; margin-top: 6px; }
-
-  .promo-row { display: flex; gap: 8px; margin-bottom: 8px; }
-  .promo-row .form-input { flex: 1; }
-  .promo-check-btn {
-    border: none; border-radius: 12px; background: var(--button); color: var(--button-text);
-    padding: 0 16px; font-size: 14px; font-weight: 600;
-  }
-  .promo-result { font-size: 13.5px; margin-top: 4px; }
-  .promo-result.ok { color: #34c759; }
-  .promo-result.bad { color: #ff3b30; }
-
-  .summary-box { background: var(--secondary-bg); border-radius: 14px; padding: 14px; margin-bottom: 16px; font-size: 14px; line-height: 1.7; }
-  .summary-box .row { display: flex; justify-content: space-between; }
-  .summary-box .total { font-weight: 700; font-size: 16px; margin-top: 6px; }
-
-  /* Telegram'ning o'z (sahifadan tashqarida chiziladigan) "MainButton"iga
-     QO'SHIMCHA ravishda, HAR bir muhim qadamda sahifaning O'ZIDA ham oddiy
-     HTML tugma ko'rsatiladi - ba'zi Telegram mijozlarida (masalan Telegram
-     Web/brauzer orqali) MainButton bosilishi har doim ham kutilganidek
-     ishlayvermasligi mumkin ekan, shuning uchun buyurtma berish HECH QACHON
-     faqat bitta (ishonchsiz) tugmaga bog'liq bo'lib qolmasligi kerak. */
   .page-cta {
     display: block; width: 100%; border: none; border-radius: 14px;
     background: var(--button); color: var(--button-text); padding: 15px;
     font-size: 15.5px; font-weight: 700; margin: 18px 0 4px;
   }
   .page-cta:disabled { opacity: 0.55; }
-
-  .center-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 60px 24px; min-height: 70vh; }
-  .center-screen .icon { font-size: 52px; margin-bottom: 16px; }
-  .center-screen h2 { font-size: 19px; margin: 0 0 8px; }
-  .center-screen p { color: var(--hint); font-size: 14.5px; line-height: 1.5; margin: 0; }
 
   #toast {
     position: fixed; left: 14px; right: 14px; bottom: 14px; z-index: 50;
@@ -144,36 +107,6 @@
     transform: translateY(140%); transition: transform 0.25s ease;
   }
   #toast.show { transform: translateY(0); }
-
-  .btn-spinner {
-    display: inline-block; width: 14px; height: 14px; border-radius: 50%;
-    border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff;
-    animation: spin 0.7s linear infinite; vertical-align: -2px; margin-right: 6px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  #bottomnav {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
-    display: flex; background: var(--bg); border-top: 1px solid rgba(128,128,128,0.18);
-    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
-  }
-  .navbtn {
-    flex: 1; border: none; background: transparent; color: var(--hint);
-    font-size: 10.5px; padding: 6px 2px 2px; display: flex; flex-direction: column;
-    align-items: center; gap: 3px;
-  }
-  .navbtn .navicon { font-size: 20px; }
-  .navbtn.active { color: var(--button); }
-  #tabcontent { padding: 4px 14px 90px; }
-  #tabcontent.hidden { display: none; }
-  #grid.hidden, #tabs.hidden { display: none; }
-
-  .profile-box { background: var(--secondary-bg); border-radius: 14px; padding: 14px; margin-bottom: 14px; }
-  .profile-balance { font-size: 17px; font-weight: 700; margin-top: 4px; }
-  .order-card { background: var(--secondary-bg); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
-  .order-card .oc-title { font-size: 14px; font-weight: 700; margin-bottom: 3px; }
-  .order-card .oc-line { font-size: 12.5px; color: var(--hint); line-height: 1.5; }
-  .section-title { font-size: 13px; font-weight: 700; margin: 18px 0 8px; color: var(--hint); text-transform: uppercase; letter-spacing: 0.3px; }
 </style>
 </head>
 <body>
@@ -183,15 +116,21 @@
     <div id="tabs"></div>
   </header>
   <main id="grid"></main>
-  <div id="tabcontent" class="hidden"></div>
   <div id="overlay" class="hidden"></div>
 </div>
-<nav id="bottomnav"></nav>
 <div id="toast"></div>
 
 <script>
 (function () {
   "use strict";
+  // MUHIM (foydalanuvchi so'rovi bilan soddalashtirildi): bu Mini App endi
+  // FAQAT ikkita ishni qiladi - katalogni ko'rsatish va savatga mahsulot
+  // qo'shish/miqdorini o'zgartirish. Buyurtma berish (checkout), profil,
+  // buyurtmalar tarixi, shaxsiy buyurtma va aloqa - булар barchasi ENDI
+  // Telegram CHATning o'zidagi pastki tugmalar orqali ishlaydi (ular
+  // ancha ishonchli, chunki webview/JS'ga bog'liq emas). Savat bitta
+  // umumiy ma'lumotlar bazasida saqlanadi, shuning uchun bu yerda
+  // qo'shilgan mahsulot chatdagi "🛒 Savat" tugmasida ham darhol ko'rinadi.
   var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
   if (tg) { tg.ready(); tg.expand(); }
 
@@ -215,16 +154,8 @@
   var state = {
     categories: [], products: [], cart: {},
     detailProduct: null,
-    cardEnabled: false,
-    contactInfo: "", paymentInfo: "",
-    profile: null,
-    orders: null,
-    mainTab: "katalog", // "katalog" | "custom" | "orders" | "profile"
-    customForm: { photo: null, description: "", full_name: "", phone: "", address: "" },
-    topupForm: { amount: "", screenshot: null },
-    checkout: { full_name: "", phone: "", address: "", promo_code: null, discount_percent: 0, discount_amount: 0 },
   };
-  var navStack = []; // bo'sh = joriy mainTab'ning asosiy ko'rinishi
+  var navStack = []; // bo'sh = katalog (grid) ko'rinishi
 
   function fmtPrice(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
   function escapeHtml(s) {
@@ -280,65 +211,10 @@
 
   function photoUrl(fileId) { return "/api/photo/" + encodeURIComponent(fileId); }
 
-  // ---------- Navigatsiya ----------
+  // ---------- Navigatsiya (grid -> detail -> orqaga, yoki grid -> cart -> orqaga) ----------
   function currentView() { return navStack.length ? navStack[navStack.length - 1] : "grid"; }
   function pushView(name) { navStack.push(name); render(); }
   function popView() { if (navStack.length) navStack.pop(); render(); }
-  function resetToGrid() { navStack = []; state.mainTab = "katalog"; renderBottomNav(); switchTabView(); render(); renderGrid(); }
-
-  // ---------- Asosiy tab (pastki navigatsiya): Katalog / Shaxsiy / Buyurtmalar / Profil ----------
-  var MAIN_TABS = [
-    { key: "katalog", icon: "🗂", label: "Katalog" },
-    { key: "custom", icon: "🎨", label: "Shaxsiy" },
-    { key: "orders", icon: "📦", label: "Buyurtmalar" },
-    { key: "profile", icon: "👤", label: "Profil" },
-  ];
-
-  function renderBottomNav() {
-    var el = document.getElementById("bottomnav");
-    el.innerHTML = MAIN_TABS.map(function (t) {
-      return (
-        '<button class="navbtn' + (state.mainTab === t.key ? " active" : "") + '" data-tab="' + t.key + '">' +
-          '<span class="navicon">' + t.icon + '</span><span>' + t.label + '</span>' +
-        '</button>'
-      );
-    }).join("");
-    el.querySelectorAll(".navbtn").forEach(function (btn) {
-      btn.onclick = function () { switchMainTab(btn.getAttribute("data-tab")); };
-    });
-  }
-
-  function switchTabView() {
-    var grid = document.getElementById("grid");
-    var tabsEl = document.getElementById("tabs");
-    var tabcontent = document.getElementById("tabcontent");
-    if (state.mainTab === "katalog") {
-      grid.classList.remove("hidden");
-      tabsEl.classList.remove("hidden");
-      tabcontent.classList.add("hidden");
-    } else {
-      grid.classList.add("hidden");
-      tabsEl.classList.add("hidden");
-      tabcontent.classList.remove("hidden");
-      renderTabContent();
-    }
-  }
-
-  function switchMainTab(tab) {
-    if (tab === state.mainTab && navStack.length === 0) return;
-    navStack = [];
-    state.mainTab = tab;
-    renderBottomNav();
-    switchTabView();
-    render();
-  }
-
-  function renderTabContent() {
-    var el = document.getElementById("tabcontent");
-    if (state.mainTab === "custom") renderCustomTab(el);
-    else if (state.mainTab === "orders") renderOrdersTab(el);
-    else if (state.mainTab === "profile") renderProfileTab(el);
-  }
 
   if (tg) {
     tg.BackButton.onClick(function () { popView(); });
@@ -373,16 +249,6 @@
       state.cart = {};
       if (r.ok) ((r.data && r.data.items) || []).forEach(function (i) { state.cart[i.product_id] = i.quantity; });
     });
-  }
-  function loadConfig() {
-    return api("/api/config").then(function (r) {
-      state.cardEnabled = !!(r.data && r.data.card_enabled);
-      state.contactInfo = (r.data && r.data.contact_info) || "";
-      state.paymentInfo = (r.data && r.data.payment_info) || "";
-    });
-  }
-  function loadProfile() {
-    return api("/api/profile").then(function (r) { if (r.ok) state.profile = r.data; });
   }
 
   // ---------- Katalog to'ri ----------
@@ -466,11 +332,11 @@
     });
     return total;
   }
-  function cartTotalAfterDiscount() {
-    return Math.max(cartSubtotal() - (state.checkout.discount_amount || 0), 0);
-  }
 
   // ---------- MainButton ----------
+  // Endi faqat ikkita ishni bajaradi: mahsulot tafsilotida "savatga
+  // qo'shish" va katalogda "savatni ochish". Buyurtma berish, profil va
+  // boshqa hammasi endi chatning o'zida (ishonchliroq) ishlaydi.
   function updateMainButton() {
     if (!tg) return;
     var view = currentView();
@@ -478,94 +344,23 @@
       var qty = state.cart[state.detailProduct.id] || 0;
       tg.MainButton.setText(qty > 0 ? ("✅ Savatda: " + qty + " ta — yana qo'shish") : "➕ Savatga qo'shish");
       tg.MainButton.show();
-    } else if (view === "cart") {
-      var count = cartCount();
-      if (count > 0) { tg.MainButton.setText("✅ Buyurtma berish — " + fmtPrice(cartSubtotal()) + " so'm"); tg.MainButton.show(); }
-      else tg.MainButton.hide();
-    } else if (view === "checkout_form") {
-      tg.MainButton.setText("Davom etish"); tg.MainButton.show();
-    } else if (view === "checkout_promo") {
-      tg.MainButton.setText("Davom etish"); tg.MainButton.show();
-    } else if (view === "checkout_success") {
-      tg.MainButton.setText("Davom etish"); tg.MainButton.show();
-    } else if (view === "topup_form") {
-      tg.MainButton.setText("💳 So'rov yuborish"); tg.MainButton.show();
     } else if (view === "grid") {
-      if (state.mainTab === "katalog") {
-        var c = cartCount();
-        if (c > 0) { tg.MainButton.setText("🛒 Savat — " + c + " ta, " + fmtPrice(cartSubtotal()) + " so'm"); tg.MainButton.show(); }
-        else tg.MainButton.hide();
-      } else if (state.mainTab === "custom") {
-        tg.MainButton.setText("📤 So'rovni yuborish"); tg.MainButton.show();
-      } else if (state.mainTab === "profile") {
-        tg.MainButton.setText("💾 Saqlash"); tg.MainButton.show();
-      } else {
-        tg.MainButton.hide();
-      }
+      var c = cartCount();
+      if (c > 0) { tg.MainButton.setText("🛒 Savat — " + c + " ta, " + fmtPrice(cartSubtotal()) + " so'm"); tg.MainButton.show(); }
+      else tg.MainButton.hide();
     } else {
       tg.MainButton.hide();
     }
   }
 
-  // Tarmoq so'rovi ketayotganda MainButton'ni "band" deb belgilaymiz - bu
-  // ikki narsa uchun kerak: (1) foydalanuvchi tugmani qayta-qayta bosib,
-  // bitta buyurtmani ikki marta yubormasligi uchun, (2) Telegram'ning o'z
-  // "aylanuvchi" indikatorini ko'rsatib, sekin (masalan Render uxlab
-  // qolgandan keyingi birinchi) so'rov paytida ekran "muzlab qolgandek"
-  // ko'rinmasligi uchun.
-  var mainBtnBusy = false;
-  function withMainButtonProgress(fn) {
-    if (mainBtnBusy) return;
-    mainBtnBusy = true;
-    if (tg) tg.MainButton.showProgress(true);
-    // DIQQAT (muhim tuzatish): agar `fn()` ichida kutilmagan xato chiqsa
-    // (masalan biror DOM elementi topilmasa) va u avvalgidek `.catch()`siz
-    // qolsa - Promise "rad etiladi" (rejected), pastdagi `.then()` HECH
-    // QACHON ishlamay qoladi, demak `mainBtnBusy` abadiy `true` bo'lib
-    // qolib, ENDI tugma umuman bosilmay qo'yadi (har qanday keyingi bosish
-    // "band" deb hisoblanib, hatto xato ham chiqarmasdan, e'tiborsiz
-    // qoldiriladi) - xuddi "tugma ishlamayapti" degan shikoyatga sabab
-    // bo'lgan holat shu edi. `fn()`ning o'zi HAM (promise qaytarishdan oldin)
-    // SINXRON xato berishi mumkinligi uchun (masalan DOM o'qishda), uni ham
-    // try/catch bilan o'raymiz - aks holda o'sha holatda `Promise.resolve(...)`
-    // qatoriga yetib ham bormay, `mainBtnBusy` baribir abadiy band qolar edi.
-    var result;
-    try {
-      result = fn();
-    } catch (err) {
-      result = Promise.reject(err);
-    }
-    Promise.resolve(result)
-      .catch(function (err) {
-        console.error("withMainButtonProgress xatolik:", err);
-        showToast("Kutilmagan xatolik yuz berdi. Qaytadan urinib ko'ring.");
-      })
-      .then(function () {
-        mainBtnBusy = false;
-        if (tg) tg.MainButton.hideProgress();
-      });
-  }
-
   if (tg) {
     tg.MainButton.onClick(function () {
-      // Bu yerda ham himoya qatlami: quyidagi funksiyalarning ba'zilari
-      // (masalan submitCheckoutForm) sinxron ishlaydi va DOM'dan
-      // to'g'ridan-to'g'ri o'qiydi - agar kutilmagan sabab bilan xato
-      // chiqsa, avval bu butunlay "jim" qolib ketardi (hech narsa
-      // bosilmagandek tuyulardi). Endi bunday holatda ham foydalanuvchiga
-      // kamida bitta tushunarli xabar chiqadi.
+      // Himoya qatlami: kutilmagan xato chiqsa ham, tugma "qotib
+      // qolmasligi" va foydalanuvchiga tushunarli xabar chiqishi uchun.
       try {
         var view = currentView();
-        if (mainBtnBusy) return;
         if (view === "detail" && state.detailProduct) { changeQty(state.detailProduct.id, 1); }
-        else if (view === "cart") { withMainButtonProgress(beginCheckout); }
-        else if (view === "checkout_form") { submitCheckoutForm(); }
-        else if (view === "checkout_promo") { withMainButtonProgress(submitPromoStep); }
-        else if (view === "checkout_success") { resetToGrid(); }
-        else if (view === "topup_form") { withMainButtonProgress(submitTopupForm); }
-        else if (view === "grid" && state.mainTab === "katalog") { pushView("cart"); }
-        else if (view === "grid" && state.mainTab === "custom") { withMainButtonProgress(submitCustomOrderForm); }
-        else if (view === "grid" && state.mainTab === "profile") { withMainButtonProgress(submitProfileForm); }
+        else if (view === "grid") { pushView("cart"); }
       } catch (err) {
         console.error("MainButton bosilganda kutilmagan xatolik:", err);
         showToast("Kutilmagan xatolik yuz berdi. Qaytadan urinib ko'ring.");
@@ -615,6 +410,16 @@
   };
 
   // ---------- Savat ----------
+  // MUHIM: bu yerda buyurtma TO'G'RIDAN-TO'G'RI yaratilmaydi va to'lov
+  // so'ralmaydi - buyurtma berish, to'lov usuli, promo-kod hammasi
+  // ishonchli Telegram CHAT oqimida (checkout.py) qoladi, chunki aynan
+  // shu joyning Mini App JS/webview orqali ishlashi muammoli chiqqan edi.
+  // Lekin qulaylik uchun "✅ Buyurtmani yakunlash" tugmasi bor - u
+  // buyurtma YARATMAYDI, faqat mijozning CHATIGA savat xulosasi va "✅
+  // Buyurtma berish" tugmasini yuborib (server orqali, /api/request_checkout),
+  // Mini App'ni yopadi - shundan keyingi hamma narsa (buyurtmani yaratish,
+  // to'lov) xuddi chatning o'zida "🛒 Savat" bosilgandagidek davom etadi.
+  var finishingCheckout = false;
   VIEW_RENDERERS.cart = function (el) {
     var pids = Object.keys(state.cart).filter(function (pid) { return state.cart[pid] > 0; });
     if (!pids.length) {
@@ -638,505 +443,44 @@
       );
     }).join("");
     el.innerHTML = '<div class="cart-list">' + rows + '</div><div class="cart-total">Jami: ' + fmtPrice(cartSubtotal()) + " so'm</div>" +
-      '<button class="page-cta" id="cart-checkout-btn">✅ Buyurtma berish — ' + fmtPrice(cartSubtotal()) + " so'm</button>";
+      '<button class="page-cta" id="cart-finish-btn">✅ Buyurtmani yakunlash</button>' +
+      '<div class="cart-hint">Tugma bosilganda savat xulosasi va "✅ Buyurtma berish" tugmasi chatingizga yuboriladi — shu yerdan davom etasiz.</div>';
     el.querySelectorAll(".cart-row").forEach(function (row) {
       var pid = Number(row.getAttribute("data-pid"));
       row.querySelector(".dec").onclick = function () { changeQty(pid, -1); };
       row.querySelector(".inc").onclick = function () { changeQty(pid, 1); };
     });
-    document.getElementById("cart-checkout-btn").onclick = function () { withMainButtonProgress(beginCheckout); };
+    document.getElementById("cart-finish-btn").onclick = finishCheckoutInChat;
   };
 
-  // ---------- Checkout: forma ----------
-  // MUHIM (foydalanuvchi so'rovi bilan tuzatildi): avval, agar profilda
-  // saqlangan ism/telefon/manzil bo'lsa, bot "🙋 O'zim uchun / 🎁 Sovg'a"
-  // degan tanlov ekranini ko'rsatib, "O'zim uchun" bosilganda manzilni
-  // QAYTA SO'RAMASDAN darhol keyingi bosqichga o'tardi - bu ba'zi
-  // foydalanuvchilarga "manzil so'ramadi" bo'lib tuyuldi. Endi bu oraliq
-  // ekran OLIB TASHLANDI: buyurtma berishda HAR DOIM ism/telefon/manzil
-  // formasi ko'rsatiladi - agar profilda saqlangan ma'lumot bo'lsa, faqat
-  // maydonlar OLDINDAN TO'LDIRILGAN holda chiqadi (xohlasa o'zgartiradi,
-  // xohlasa shundayligicha "Davom etish" bosadi) - bu ancha tushunarli va
-  // manzil har doim ko'rinadigan/tekshirib bo'ladigan qilib beradi.
-  function beginCheckout() {
-    if (cartCount() === 0) return Promise.resolve();
-    return loadProfile().then(function () {
-      var pr = state.profile || {};
-      state.checkout = {
-        full_name: pr.full_name || "", phone: pr.phone || "", address: pr.address || "",
-        promo_code: null, discount_percent: 0, discount_amount: 0,
-      };
-      pushView("checkout_form");
-    });
-  }
-
-  VIEW_RENDERERS.checkout_form = function (el) {
-    var c = state.checkout;
-    var hasSaved = c.full_name && c.phone && c.address;
-    el.innerHTML =
-      '<div class="screen">' +
-        '<div class="screen-title">Ma\'lumotlaringiz</div>' +
-        (hasSaved ? '<p style="color:var(--hint);font-size:12.5px;margin:-8px 0 14px">Saqlangan ma\'lumotlaringiz avtomatik to\'ldirildi - xohlasangiz o\'zgartiring.</p>' : '') +
-        '<div class="form-group"><label class="form-label">Ism-familiya</label>' +
-          '<input class="form-input" id="f-name" value="' + escapeHtml(c.full_name) + '" placeholder="Ism Familiya"></div>' +
-        '<div class="form-group"><label class="form-label">Telefon raqam</label>' +
-          '<input class="form-input" id="f-phone" value="' + escapeHtml(c.phone) + '" placeholder="+998 90 123 45 67" type="tel"></div>' +
-        '<div class="form-group"><label class="form-label">Yetkazib berish manzili</label>' +
-          '<input class="form-input" id="f-address" value="' + escapeHtml(c.address) + '" placeholder="Shahar, tuman, mo\'ljal"></div>' +
-        '<div class="form-error hidden" id="f-error"></div>' +
-        '<button class="page-cta" id="checkout-form-next-btn">Davom etish</button>' +
-      '</div>';
-    document.getElementById("checkout-form-next-btn").onclick = function () { submitCheckoutForm(); };
-  };
-
-  function submitCheckoutForm() {
-    var name = document.getElementById("f-name").value.trim();
-    var phone = document.getElementById("f-phone").value.trim();
-    var address = document.getElementById("f-address").value.trim();
-    var errEl = document.getElementById("f-error");
-    var problems = [];
-    if (name.length < 2) problems.push("to'liq ismingizni yozing");
-    if (phone.length < 7) problems.push("telefon raqamni to'g'ri kiriting");
-    if (address.length < 3) problems.push("manzilni kiriting");
-    if (problems.length) {
-      errEl.textContent = "Iltimos: " + problems.join(", ") + ".";
-      errEl.classList.remove("hidden");
-      return;
-    }
-    state.checkout.full_name = name;
-    state.checkout.phone = phone;
-    state.checkout.address = address;
-    pushView("checkout_promo");
-  }
-
-  // ---------- Checkout: promo-kod ----------
-  VIEW_RENDERERS.checkout_promo = function (el) {
-    var c = state.checkout;
-    el.innerHTML =
-      '<div class="screen">' +
-        '<div class="screen-title">Promo-kod (ixtiyoriy)</div>' +
-        '<div class="promo-row">' +
-          '<input class="form-input" id="p-code" placeholder="Masalan: YANGI10" value="' + escapeHtml(c.promo_code || "") + '">' +
-          '<button class="promo-check-btn" id="p-check">Tekshirish</button>' +
-        '</div>' +
-        '<div class="promo-result" id="p-result"></div>' +
-        '<button class="page-cta" id="promo-next-btn">Davom etish</button>' +
-      '</div>';
-
-    if (c.promo_code) showPromoResult(true, c.discount_percent, c.discount_amount, c.promo_code);
-
-    el.querySelector("#p-check").onclick = function () { checkPromoCode(); };
-    el.querySelector("#promo-next-btn").onclick = function () { withMainButtonProgress(submitPromoStep); };
-  };
-
-  function showPromoResult(valid, percent, amount, code) {
-    var el = document.getElementById("p-result");
-    if (!el) return;
-    if (valid) {
-      el.className = "promo-result ok";
-      el.textContent = "✅ \"" + code + "\" qabul qilindi: -" + percent + "% (−" + fmtPrice(amount) + " so'm)";
-    } else {
-      el.className = "promo-result bad";
-      el.textContent = "❌ Bu promo-kod topilmadi yoki muddati o'tgan.";
-    }
-  }
-
-  function checkPromoCode() {
-    var code = document.getElementById("p-code").value.trim().toUpperCase();
-    if (!code) {
-      state.checkout.promo_code = null;
-      state.checkout.discount_percent = 0;
-      state.checkout.discount_amount = 0;
-      var el = document.getElementById("p-result");
-      if (el) { el.className = "promo-result"; el.textContent = ""; }
-      return;
-    }
-    api("/api/promo/check", { method: "POST", body: JSON.stringify({ code: code }) }).then(function (r) {
-      if (r.ok && r.data.valid) {
-        state.checkout.promo_code = r.data.code;
-        state.checkout.discount_percent = r.data.discount_percent;
-        state.checkout.discount_amount = r.data.discount_amount;
-        showPromoResult(true, r.data.discount_percent, r.data.discount_amount, r.data.code);
-      } else {
-        state.checkout.promo_code = null;
-        state.checkout.discount_percent = 0;
-        state.checkout.discount_amount = 0;
-        showPromoResult(false);
-      }
-    });
-  }
-
-  function submitPromoStep() {
-    var codeInput = document.getElementById("p-code");
-    var typed = codeInput ? codeInput.value.trim().toUpperCase() : "";
-    if (typed && typed !== state.checkout.promo_code) {
-      return api("/api/promo/check", { method: "POST", body: JSON.stringify({ code: typed }) }).then(function (r) {
-        if (r.ok && r.data.valid) {
-          state.checkout.promo_code = r.data.code;
-          state.checkout.discount_percent = r.data.discount_percent;
-          state.checkout.discount_amount = r.data.discount_amount;
+  function finishCheckoutInChat() {
+    if (finishingCheckout) return;
+    finishingCheckout = true;
+    var btn = document.getElementById("cart-finish-btn");
+    if (btn) { btn.disabled = true; btn.textContent = "⏳ Yuborilmoqda..."; }
+    api("/api/request_checkout", { method: "POST" })
+      .then(function (r) {
+        if (r.ok) {
+          showToast("✅ Chatga yuborildi — shu yerdan davom eting");
+          if (tg) setTimeout(function () { tg.close(); }, 500);
         } else {
-          state.checkout.promo_code = null;
-          state.checkout.discount_percent = 0;
-          state.checkout.discount_amount = 0;
+          if (btn) { btn.disabled = false; btn.textContent = "✅ Buyurtmani yakunlash"; }
+          showToast("Yuborib bo'lmadi. Chatdagi \"🛒 Savat\" tugmasidan foydalaning.");
         }
-        return loadProfile().then(function () { pushView("checkout_payment"); });
-      });
-    } else {
-      return loadProfile().then(function () { pushView("checkout_payment"); });
-    }
-  }
-
-  // ---------- Checkout: to'lov usuli ----------
-  VIEW_RENDERERS.checkout_payment = function (el) {
-    var total = cartTotalAfterDiscount();
-    var balance = (state.profile && state.profile.balance) || 0;
-    var c = state.checkout;
-
-    var summary =
-      '<div class="summary-box">' +
-        '<div class="row"><span>Mahsulotlar</span><span>' + fmtPrice(cartSubtotal()) + " so'm</span></div>" +
-        (c.discount_amount ? '<div class="row"><span>Chegirma (' + escapeHtml(c.promo_code) + ')</span><span>−' + fmtPrice(c.discount_amount) + " so'm</span></div>" : "") +
-        '<div class="row total"><span>Jami</span><span>' + fmtPrice(total) + " so'm</span></div>" +
-      '</div>';
-
-    var options = "";
-    if (balance >= total && total > 0) {
-      options += '<button class="option-btn" id="pay-balance">💰 Hamyondan to\'lash<span class="sub">Joriy balans: ' + fmtPrice(balance) + " so'm</span></button>";
-    }
-    if (state.cardEnabled && total > 0) {
-      options += '<button class="option-btn" id="pay-card">💳 Karta orqali (Click/Payme)<span class="sub">Telegram ichida darhol to\'lash</span></button>';
-    }
-    options += '<button class="option-btn" id="pay-cash">💵 Naqd/karta (operator bilan)<span class="sub">Operator siz bilan bog\'lanadi</span></button>';
-
-    el.innerHTML =
-      '<div class="screen">' +
-        '<div class="screen-title">To\'lov usuli</div>' +
-        summary +
-        options +
-        '<div class="form-error hidden" id="pay-error"></div>' +
-      '</div>';
-
-    if (document.getElementById("pay-balance")) document.getElementById("pay-balance").onclick = function () { submitCheckout("balance"); };
-    if (document.getElementById("pay-card")) document.getElementById("pay-card").onclick = function () { submitCheckout("card"); };
-    document.getElementById("pay-cash").onclick = function () { submitCheckout("cash"); };
-  };
-
-  function setPaymentButtonsDisabled(disabled) {
-    ["pay-balance", "pay-card", "pay-cash"].forEach(function (id) {
-      var b = document.getElementById(id);
-      if (b) b.disabled = disabled;
-    });
-  }
-
-  function showPayError(text) {
-    var el = document.getElementById("pay-error");
-    if (!el) return;
-    el.textContent = text;
-    el.classList.remove("hidden");
-  }
-
-  var ERROR_MESSAGES = {
-    empty_cart: "Savatingiz bo'sh qolgan.",
-    insufficient_balance: "Hamyoningizda mablag' yetarli emas.",
-    invalid_input: "Ism/telefon/manzil to'ldirilmagan.",
-    card_unavailable: "Karta orqali to'lov hozircha sozlanmagan.",
-    invoice_failed: "To'lov oynasini ochib bo'lmadi.",
-  };
-
-  function submitCheckout(method) {
-    setPaymentButtonsDisabled(true);
-    var body = {
-      full_name: state.checkout.full_name,
-      phone: state.checkout.phone,
-      address: state.checkout.address,
-      promo_code: state.checkout.promo_code || null,
-      payment_method: method,
-    };
-    api("/api/checkout", { method: "POST", body: JSON.stringify(body) }).then(function (r) {
-      if (!r.ok) {
-        setPaymentButtonsDisabled(false);
-        showPayError(ERROR_MESSAGES[r.data && r.data.error] || "Xatolik yuz berdi. Qaytadan urinib ko'ring.");
-        if (r.data && r.data.error === "insufficient_balance") loadProfile().then(function () { if (currentView() === "checkout_payment") render(); });
-        return;
-      }
-      // Server buyurtmani yaratgan zahoti savatni allaqachon tozalagan
-      // (to'lov natijasidan qat'i nazar) - shu bilan mos holda darhol
-      // mahalliy holatni ham tozalaymiz, aks holda katalog/savat ko'rinishi
-      // serverdan uzilib qoladi.
-      state.cart = {};
-      if (r.data.status === "awaiting_payment" && r.data.invoice_link) {
-        if (!tg) { setPaymentButtonsDisabled(false); showPayError("To'lovni faqat Telegram ilovasi ichida amalga oshirish mumkin."); return; }
-        tg.openInvoice(r.data.invoice_link, function (status) {
-          setPaymentButtonsDisabled(false);
-          if (status === "paid") {
-            showCheckoutSuccess(r.data.order_id, true);
-          } else {
-            showPayError("To'lov amalga oshmadi (holat: " + status + "). Buyurtma #" + r.data.order_id + " \"to'lov kutilmoqda\" holatida - qaytadan urinib ko'rishingiz yoki boshqa usulni tanlashingiz mumkin.");
-          }
-        });
-      } else if (r.data.status === "confirmed") {
-        showCheckoutSuccess(r.data.order_id, false);
-      }
-    }).catch(function () {
-      setPaymentButtonsDisabled(false);
-      showPayError("Tarmoq xatosi. Qaytadan urinib ko'ring.");
-    });
-  }
-
-  // ---------- Checkout: muvaffaqiyat ----------
-  var lastOrderId = null;
-  var lastOrderPaid = false;
-
-  function showCheckoutSuccess(orderId, paid) {
-    lastOrderId = orderId;
-    lastOrderPaid = paid;
-    navStack = ["checkout_success"];
-    render();
-  }
-
-  VIEW_RENDERERS.checkout_success = function (el) {
-    el.innerHTML =
-      '<div class="center-screen">' +
-        '<div class="icon">✅</div>' +
-        '<h2>Buyurtmangiz qabul qilindi!</h2>' +
-        '<p>Buyurtma raqami: #' + lastOrderId + '<br>' +
-        (lastOrderPaid
-          ? "To'lov karta orqali muvaffaqiyatli amalga oshirildi."
-          : "Tez orada operator siz bilan bog'lanadi.") +
-        '</p>' +
-        '<button class="page-cta" id="success-done-btn">Davom etish</button>' +
-      '</div>';
-    document.getElementById("success-done-btn").onclick = function () { resetToGrid(); };
-  };
-
-  // ---------- Shaxsiy buyurtma (tab) ----------
-  function renderCustomTab(el) {
-    var f = state.customForm;
-    var pr = state.profile;
-    if (!f.full_name && pr && pr.full_name) {
-      f.full_name = pr.full_name; f.phone = pr.phone; f.address = pr.address;
-    }
-    el.innerHTML =
-      '<div class="screen-title" style="margin-top:14px">🎨 Shaxsiy buyurtma</div>' +
-      '<p style="color:var(--hint);font-size:13.5px;line-height:1.5;margin:0 0 14px">' +
-        "O'zingiz xohlagan rasmni yuboring (odam, uy hayvoni, logotip va h.k.) — hamkorlarimiz shu asosida noyob haykalcha yoki buyum tayyorlab berishadi." +
-      '</p>' +
-      '<div class="form-group"><label class="form-label">Rasm</label>' +
-        '<div id="custom-photo-preview">' + (f.photo ? '<img src="' + f.photo + '" style="width:100%;border-radius:12px">' : '') + '</div>' +
-        '<button class="option-btn" id="custom-photo-btn" style="margin-top:8px">' + (f.photo ? "🔄 Boshqa rasm tanlash" : "📷 Rasm tanlash") + '</button>' +
-        '<input type="file" id="custom-photo-input" accept="image/*" style="display:none"></div>' +
-      '<div class="form-group"><label class="form-label">Qanday ko\'rinishda tayyorlashni xohlaysiz?</label>' +
-        '<textarea class="form-input" id="custom-desc" style="min-height:70px;font-family:inherit" placeholder="Taxminiy o\'lcham, rang, uslub...">' + escapeHtml(f.description) + '</textarea></div>' +
-      '<div class="form-group"><label class="form-label">Ism-familiya</label>' +
-        '<input class="form-input" id="custom-name" value="' + escapeHtml(f.full_name) + '"></div>' +
-      '<div class="form-group"><label class="form-label">Telefon</label>' +
-        '<input class="form-input" id="custom-phone" value="' + escapeHtml(f.phone) + '" type="tel"></div>' +
-      '<div class="form-group"><label class="form-label">Manzil</label>' +
-        '<input class="form-input" id="custom-address" value="' + escapeHtml(f.address) + '"></div>' +
-      '<div class="form-error hidden" id="custom-error"></div>' +
-      '<button class="page-cta" id="custom-submit-btn">📤 So\'rovni yuborish</button>';
-
-    document.getElementById("custom-submit-btn").onclick = function () { withMainButtonProgress(submitCustomOrderForm); };
-    document.getElementById("custom-photo-btn").onclick = function () { document.getElementById("custom-photo-input").click(); };
-    document.getElementById("custom-photo-input").onchange = function (e) {
-      var file = e.target.files && e.target.files[0];
-      if (!file) return;
-      var reader = new FileReader();
-      reader.onload = function () {
-        f.photo = reader.result;
-        document.getElementById("custom-photo-preview").innerHTML = '<img src="' + f.photo + '" style="width:100%;border-radius:12px">';
-        document.getElementById("custom-photo-btn").textContent = "🔄 Boshqa rasm tanlash";
-      };
-      reader.readAsDataURL(file);
-    };
-  }
-
-  function submitCustomOrderForm() {
-    var f = state.customForm;
-    var description = document.getElementById("custom-desc").value.trim();
-    var full_name = document.getElementById("custom-name").value.trim();
-    var phone = document.getElementById("custom-phone").value.trim();
-    var address = document.getElementById("custom-address").value.trim();
-    var errEl = document.getElementById("custom-error");
-    var problems = [];
-    if (!f.photo) problems.push("rasm tanlang");
-    if (description.length < 3) problems.push("tavsifni yozing");
-    if (full_name.length < 2) problems.push("ismingizni yozing");
-    if (phone.length < 7) problems.push("telefon raqamni to'g'ri kiriting");
-    if (address.length < 3) problems.push("manzilni kiriting");
-    if (problems.length) {
-      errEl.textContent = "Iltimos: " + problems.join(", ") + ".";
-      errEl.classList.remove("hidden");
-      return Promise.resolve();
-    }
-    errEl.classList.add("hidden");
-    return api("/api/custom_order", {
-      method: "POST",
-      body: JSON.stringify({ photo: f.photo, description: description, full_name: full_name, phone: phone, address: address }),
-    }).then(function (r) {
-      if (r.ok) {
-        showToast("✅ So'rovingiz qabul qilindi!");
-        state.customForm = { photo: null, description: "", full_name: full_name, phone: phone, address: address };
-        switchMainTab("katalog");
-      } else {
-        errEl.textContent = "Xatolik yuz berdi. Qaytadan urinib ko'ring.";
-        errEl.classList.remove("hidden");
-      }
-    });
-  }
-
-  // ---------- Buyurtmalarim (tab) ----------
-  var ORDER_STATUS_LABELS = {
-    "yangi": "🕓 Kutilmoqda", "qabul qilindi": "✅ Qabul qilindi",
-    "tayyorlanmoqda": "🛠 Tayyorlanmoqda", "yetkazildi": "📦 Yetkazildi",
-    "to'lov kutilmoqda (karta)": "💳 To'lov kutilmoqda",
-    "to'landi (karta)": "💳 To'landi (karta)", "to'landi (hamyondan)": "💰 To'landi (hamyondan)",
-  };
-
-  function renderOrdersTab(el) {
-    el.innerHTML = '<div class="empty">Yuklanmoqda...</div>';
-    api("/api/orders").then(function (r) {
-      if (state.mainTab !== "orders") return; // shu orada boshqa tabga o'tib ulgurgan bo'lishi mumkin
-      if (!r.ok) { el.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
-      var orders = r.data.orders || [];
-      if (!orders.length) {
-        el.innerHTML = '<div class="empty">Sizda hali buyurtmalar yo\'q. Katalogdan mahsulot tanlab, birinchi buyurtmangizni bering!</div>';
-        return;
-      }
-      el.innerHTML = '<div class="screen-title" style="margin-top:14px">📦 Buyurtmalaringiz</div>' + orders.map(function (o) {
-        var items = [];
-        try { items = JSON.parse(o.items_json); } catch (e) {}
-        var itemsText = items.map(function (i) { return i.name + " x" + i.quantity; }).join(", ");
-        return (
-          '<div class="order-card">' +
-            '<div class="oc-title">#' + o.id + ' — ' + fmtPrice(o.total_price) + " so'm</div>" +
-            '<div class="oc-line">' + escapeHtml(itemsText) + '</div>' +
-            '<div class="oc-line">Holat: ' + (ORDER_STATUS_LABELS[o.status] || escapeHtml(o.status)) + '</div>' +
-          '</div>'
-        );
-      }).join("");
-    });
-  }
-
-  // ---------- Profil (tab) ----------
-  function renderProfileTab(el) {
-    el.innerHTML = '<div class="empty">Yuklanmoqda...</div>';
-    loadProfile().then(function () {
-      if (state.mainTab !== "profile") return;
-      var pr = state.profile || {};
-      el.innerHTML =
-        '<div class="screen-title" style="margin-top:14px">👤 Profil</div>' +
-        '<div class="profile-box"><div style="color:var(--hint);font-size:12.5px">Hamyon balansi</div>' +
-          '<div class="profile-balance">' + fmtPrice(pr.balance || 0) + " so'm</div>" +
-          '<button class="option-btn" id="topup-btn" style="margin-top:10px">💰 Hisobni to\'ldirish</button>' +
-        '</div>' +
-        '<div class="form-group"><label class="form-label">Ism-familiya</label><input class="form-input" id="pf-name" value="' + escapeHtml(pr.full_name || "") + '"></div>' +
-        '<div class="form-group"><label class="form-label">Telefon</label><input class="form-input" id="pf-phone" value="' + escapeHtml(pr.phone || "") + '" type="tel"></div>' +
-        '<div class="form-group"><label class="form-label">Manzil</label><input class="form-input" id="pf-address" value="' + escapeHtml(pr.address || "") + '"></div>' +
-        '<div class="form-error hidden" id="pf-error"></div>' +
-        '<button class="page-cta" id="profile-save-btn">💾 Saqlash</button>' +
-        '<div class="section-title">☎️ Aloqa</div>' +
-        '<div class="profile-box" style="white-space:pre-wrap;font-size:13.5px">' + escapeHtml(state.contactInfo) + '</div>';
-      document.getElementById("topup-btn").onclick = function () { pushView("topup_form"); };
-      document.getElementById("profile-save-btn").onclick = function () { withMainButtonProgress(submitProfileForm); };
-    });
-  }
-
-  function submitProfileForm() {
-    var full_name = document.getElementById("pf-name").value.trim();
-    var phone = document.getElementById("pf-phone").value.trim();
-    var address = document.getElementById("pf-address").value.trim();
-    var errEl = document.getElementById("pf-error");
-    var problems = [];
-    if (full_name.length < 2) problems.push("ismingizni yozing");
-    if (phone.length < 7) problems.push("telefon raqamni to'g'ri kiriting");
-    if (address.length < 3) problems.push("manzilni kiriting");
-    if (problems.length) {
-      errEl.textContent = "Iltimos: " + problems.join(", ") + ".";
-      errEl.classList.remove("hidden");
-      return Promise.resolve();
-    }
-    errEl.classList.add("hidden");
-    return api("/api/profile", {
-      method: "POST",
-      body: JSON.stringify({ full_name: full_name, phone: phone, address: address }),
-    }).then(function (r) {
-      if (r.ok) {
-        showToast("✅ Saqlandi");
-        state.profile = Object.assign({}, state.profile, { full_name: full_name, phone: phone, address: address });
-      } else {
-        errEl.textContent = "Xatolik yuz berdi. Qaytadan urinib ko'ring.";
-        errEl.classList.remove("hidden");
-      }
-    });
-  }
-
-  // ---------- Hisobni to'ldirish (profil ichidan ochiladigan overlay) ----------
-  VIEW_RENDERERS.topup_form = function (el) {
-    var f = state.topupForm;
-    el.innerHTML =
-      '<div class="screen">' +
-        '<div class="screen-title">💰 Hisobni to\'ldirish</div>' +
-        '<div class="form-group"><label class="form-label">Summasi (so\'m)</label>' +
-          '<input class="form-input" id="tp-amount" type="number" value="' + escapeHtml(String(f.amount || "")) + '" placeholder="masalan: 100000"></div>' +
-        '<div class="summary-box" style="white-space:pre-wrap">' + escapeHtml(state.paymentInfo) + '</div>' +
-        '<div class="form-group"><label class="form-label">Chek skrinshoti (ixtiyoriy)</label>' +
-          '<div id="tp-photo-preview">' + (f.screenshot ? '<img src="' + f.screenshot + '" style="width:100%;border-radius:12px">' : '') + '</div>' +
-          '<button class="option-btn" id="tp-photo-btn" style="margin-top:8px">' + (f.screenshot ? "🔄 Boshqa rasm" : "📎 Skrinshot biriktirish") + '</button>' +
-          '<input type="file" id="tp-photo-input" accept="image/*" style="display:none"></div>' +
-        '<div class="form-error hidden" id="tp-error"></div>' +
-        '<button class="page-cta" id="topup-submit-btn">💳 So\'rov yuborish</button>' +
-      '</div>';
-    document.getElementById("topup-submit-btn").onclick = function () { withMainButtonProgress(submitTopupForm); };
-    document.getElementById("tp-photo-btn").onclick = function () { document.getElementById("tp-photo-input").click(); };
-    document.getElementById("tp-photo-input").onchange = function (e) {
-      var file = e.target.files && e.target.files[0];
-      if (!file) return;
-      var reader = new FileReader();
-      reader.onload = function () {
-        f.screenshot = reader.result;
-        document.getElementById("tp-photo-preview").innerHTML = '<img src="' + f.screenshot + '" style="width:100%;border-radius:12px">';
-        document.getElementById("tp-photo-btn").textContent = "🔄 Boshqa rasm";
-      };
-      reader.readAsDataURL(file);
-    };
-  };
-
-  function submitTopupForm() {
-    var amountStr = document.getElementById("tp-amount").value.trim();
-    var amount = parseInt(amountStr, 10);
-    var errEl = document.getElementById("tp-error");
-    if (!amount || amount <= 0) {
-      errEl.textContent = "Iltimos, to'g'ri summa kiriting.";
-      errEl.classList.remove("hidden");
-      return Promise.resolve();
-    }
-    errEl.classList.add("hidden");
-    var body = { amount: amount };
-    if (state.topupForm.screenshot) body.screenshot = state.topupForm.screenshot;
-    return api("/api/topup", { method: "POST", body: JSON.stringify(body) }).then(function (r) {
-      if (r.ok) {
-        showToast("✅ So'rovingiz yuborildi");
-        state.topupForm = { amount: "", screenshot: null };
-        popView();
-        loadProfile().then(function () {
-          if (state.mainTab === "profile") renderProfileTab(document.getElementById("tabcontent"));
-        });
-      } else {
-        errEl.textContent = "Xatolik yuz berdi. Qaytadan urinib ko'ring.";
-        errEl.classList.remove("hidden");
-      }
-    });
+      })
+      .catch(function () {
+        if (btn) { btn.disabled = false; btn.textContent = "✅ Buyurtmani yakunlash"; }
+        showToast("Yuborib bo'lmadi. Chatdagi \"🛒 Savat\" tugmasidan foydalaning.");
+      })
+      .then(function () { finishingCheckout = false; });
   }
 
   // ---------- Boshlash ----------
-  renderBottomNav();
   loadCatalog()
     .then(function () {
       activeCategory = state.categories[0] || null;
       renderTabs(); renderGrid();
-      return Promise.all([loadCart(), loadConfig()]);
+      return loadCart();
     })
     .then(function () { renderGrid(); updateMainButton(); })
     .catch(function () {

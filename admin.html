@@ -125,10 +125,14 @@
   function photoUrl(fileId) { return "/api/photo/" + encodeURIComponent(fileId); }
 
   var STATUS_LABELS = {
-    "yangi": "🕓 Kutilmoqda", "qabul qilindi": "✅ Qabul qilindi",
-    "tayyorlanmoqda": "🛠 Tayyorlanmoqda", "yetkazildi": "📦 Yetkazildi",
+    "yangi": "🕓 Yangi",
     "to'lov kutilmoqda (karta)": "💳 To'lov kutilmoqda",
-    "to'landi (karta)": "💳 To'landi (karta)", "to'landi (hamyondan)": "💰 To'landi (hamyondan)",
+    "to'landi (karta)": "💳 To'landi (karta)",
+    "to'landi (hamyondan)": "💰 To'landi (hamyondan)",
+    "qabul qilindi": "🛠 Yig'ilmoqda",
+    "chiqarildi": "🚚 Chiqarib yuborilgan",
+    "arxiv": "📁 Yetkazildi (arxiv)",
+    "muammo": "⚠️ Muammo",
   };
 
   var state = { categories: [] };
@@ -162,37 +166,100 @@
     else if (activeTab === "products") loadProducts();
   }
 
-  // ---------- Buyurtmalar ----------
+  // ---------- Buyurtmalar (bosqichli: Qabul qilish -> Yig'ish -> Chiqarib yuborilgan -> Arxiv/Muammo) ----------
+  var ORDER_STAGES = [
+    { key: "new", label: "🆕 Qabul qilish" },
+    { key: "accepted", label: "🛠 Yig'ish" },
+    { key: "shipped", label: "🚚 Chiqarib yuborilgan" },
+    { key: "final", label: "📁 Arxiv / Muammo" },
+  ];
+  var STAGE_EMPTY_TEXT = {
+    new: "Hozircha yangi buyurtma yo'q. 🎉",
+    accepted: "Hozircha yig'ilayotgan buyurtma yo'q.",
+    shipped: "Hozircha yo'lda buyurtma yo'q.",
+    final: "Hozircha arxivlangan yoki muammoli buyurtma yo'q.",
+  };
+  var ORDER_ACTION_DONE_TEXT = {
+    accept: "✅ Qabul qilindi", ship: "🚚 Chiqarib yuborildi",
+    archive: "📁 Arxivlandi", problem: "⚠️ Muammo deb belgilandi",
+  };
+  var activeOrderStage = "new";
+
   function loadOrders() {
-    api("/admin/api/orders?open=1").then(function (r) {
-      var content = document.getElementById("content");
-      if (!r.ok) { content.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
+    var content = document.getElementById("content");
+    content.innerHTML =
+      '<div id="stage-tabs" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:10px;scrollbar-width:none">' +
+        ORDER_STAGES.map(function (s) {
+          return '<button class="tab' + (s.key === activeOrderStage ? " active" : "") + '" data-stage="' + s.key + '" style="flex:none">' + s.label + '</button>';
+        }).join("") +
+      '</div>' +
+      '<div id="stage-content"><div class="empty">Yuklanmoqda...</div></div>';
+    content.querySelectorAll("[data-stage]").forEach(function (btn) {
+      btn.onclick = function () {
+        activeOrderStage = btn.getAttribute("data-stage");
+        loadOrders();
+      };
+    });
+    loadOrderStage(activeOrderStage);
+  }
+
+  function renderOrderCard(o, stage) {
+    var items = [];
+    try { items = JSON.parse(o.items_json); } catch (e) {}
+    var itemsText = items.map(function (i) { return i.name + " x" + i.quantity; }).join(", ");
+    var statusLabel = STATUS_LABELS[o.status] || o.status;
+    var actionsHtml = "";
+    if (stage === "new") {
+      actionsHtml =
+        '<div class="card-actions">' +
+          '<button class="card-btn" data-order-action="accept">✅ Qabul qilish</button>' +
+          '<button class="card-btn danger" data-order-action="problem">⚠️ Muammo</button>' +
+        '</div>';
+    } else if (stage === "accepted") {
+      actionsHtml =
+        '<div class="card-actions">' +
+          '<button class="card-btn" data-order-action="ship">🚚 Chiqarib yubordim</button>' +
+          '<button class="card-btn danger" data-order-action="problem">⚠️ Muammo</button>' +
+        '</div>';
+    } else if (stage === "shipped") {
+      actionsHtml =
+        '<div class="card-actions">' +
+          '<button class="card-btn" data-order-action="archive">✅ Yetkazildi</button>' +
+          '<button class="card-btn danger" data-order-action="problem">⚠️ Muammo</button>' +
+        '</div>';
+    }
+    // stage === "final" uchun amal tugmasi yo'q - bu yakuniy holat
+    return (
+      '<div class="card" data-id="' + o.id + '">' +
+        '<div class="card-title">#' + o.id + ' — ' + fmtPrice(o.total_price) + " so'm</div>" +
+        '<div class="card-line">' + escapeHtml(itemsText) + '</div>' +
+        '<div class="card-line">👤 ' + escapeHtml(o.full_name || "") + ' · 📱 ' + escapeHtml(o.phone || "") + '</div>' +
+        '<div class="card-line">📍 ' + escapeHtml(o.address || "") + '</div>' +
+        '<div class="card-line">Holat: ' + statusLabel + '</div>' +
+        actionsHtml +
+      '</div>'
+    );
+  }
+
+  function loadOrderStage(stage) {
+    api("/admin/api/orders/stage/" + stage).then(function (r) {
+      // Shu orada foydalanuvchi boshqa bo'limga/tabga o'tib ulgurgan bo'lishi mumkin
+      if (activeTab !== "orders" || activeOrderStage !== stage) return;
+      var stageContent = document.getElementById("stage-content");
+      if (!stageContent) return;
+      if (!r.ok) { stageContent.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
       var orders = r.data.orders || [];
-      if (!orders.length) { content.innerHTML = '<div class="empty">Hozircha yangi buyurtma yo\'q. 🎉</div>'; return; }
-      content.innerHTML = orders.map(function (o) {
-        var items = [];
-        try { items = JSON.parse(o.items_json); } catch (e) {}
-        var itemsText = items.map(function (i) { return i.name + " x" + i.quantity; }).join(", ");
-        var statusLabel = STATUS_LABELS[o.status] || o.status;
-        var canAccept = o.status !== "qabul qilindi" && o.status !== "yetkazildi";
-        return (
-          '<div class="card" data-id="' + o.id + '">' +
-            '<div class="card-title">#' + o.id + ' — ' + fmtPrice(o.total_price) + " so'm</div>" +
-            '<div class="card-line">' + escapeHtml(itemsText) + '</div>' +
-            '<div class="card-line">👤 ' + escapeHtml(o.full_name || "") + ' · 📱 ' + escapeHtml(o.phone || "") + '</div>' +
-            '<div class="card-line">📍 ' + escapeHtml(o.address || "") + '</div>' +
-            '<div class="card-line">Holat: ' + statusLabel + '</div>' +
-            (canAccept ? '<div class="card-actions"><button class="card-btn" data-action="accept">✅ Qabul qilish</button></div>' : '') +
-          '</div>'
-        );
-      }).join("");
-      content.querySelectorAll('[data-action="accept"]').forEach(function (btn) {
+      if (!orders.length) { stageContent.innerHTML = '<div class="empty">' + STAGE_EMPTY_TEXT[stage] + '</div>'; return; }
+      stageContent.innerHTML = orders.map(function (o) { return renderOrderCard(o, stage); }).join("");
+      stageContent.querySelectorAll("[data-order-action]").forEach(function (btn) {
         btn.onclick = function () {
-          var id = btn.closest(".card").getAttribute("data-id");
-          btn.disabled = true;
-          api("/admin/api/orders/" + id + "/accept", { method: "POST" }).then(function (r) {
-            if (r.ok) { showToast("Qabul qilindi"); loadOrders(); }
-            else { btn.disabled = false; showToast("Xatolik yuz berdi."); }
+          var card = btn.closest(".card");
+          var id = card.getAttribute("data-id");
+          var action = btn.getAttribute("data-order-action");
+          card.querySelectorAll(".card-btn").forEach(function (b) { b.disabled = true; });
+          api("/admin/api/orders/" + id + "/" + action, { method: "POST" }).then(function (r2) {
+            if (r2.ok) { showToast(ORDER_ACTION_DONE_TEXT[action] || "Belgilandi"); loadOrderStage(stage); }
+            else { card.querySelectorAll(".card-btn").forEach(function (b) { b.disabled = false; }); showToast("Xatolik yuz berdi."); }
           });
         };
       });
