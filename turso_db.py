@@ -20,6 +20,14 @@ Ishlash tartibi:
   tushgan/diskni tozalagan taqdirda ham, oxirgi yozuvlar allaqachon
   bulutda xavfsiz saqlangan bo'ladi. Qo'shimcha xavfsizlik uchun fonda
   davriy sinxronlash ham ishlaydi (pastga qarang, start_periodic_sync).
+- MUHIM (xavfsizlik to'ri): agar TURSO_DATABASE_URL/TURSO_AUTH_TOKEN
+  NOTO'G'RI bo'lsa (masalan token muddati o'tgan, xato nusxalangan yoki
+  Turso tomonidan bekor qilingan) - bot BUTUNLAY ishdan to'xtab qolmaydi.
+  Dastlabki ulanish muvaffaqiyatsiz tugasa, xatoni "Logs"ga aniq yozib,
+  avtomatik ravishda oddiy mahalliy fayl rejimiga tushib qoladi (Turso
+  to'g'rilangunicha). Aks holda bitta xato ADMIN_IDS/tokenlarni to'g'ri
+  yozganingizga qaramay butun mijozlar oqimini (buyurtma berish, katalog,
+  admin panel - hammasi) to'xtatib qo'yishi mumkin edi.
 """
 import asyncio
 import logging
@@ -31,6 +39,7 @@ from config import DB_PATH, TURSO_AUTH_TOKEN, TURSO_DATABASE_URL
 logger = logging.getLogger("figo3d_bot.db")
 
 _TURSO_ENABLED = bool(TURSO_DATABASE_URL and TURSO_AUTH_TOKEN)
+_turso_broken = False  # dastlabki ulanish muvaffaqiyatsiz tugasa True bo'ladi
 
 _conn = None
 _lock = asyncio.Lock()
@@ -72,8 +81,25 @@ def _wrap_row(row, description):
 
 
 def _open_sync_conn():
-    if _TURSO_ENABLED:
-        return libsql.connect(DB_PATH, sync_url=TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
+    """DIQQAT: `libsql.connect(..., sync_url=...)` chaqiruvining o'zi ICHKARIDA
+    darhol Turso bilan bog'lanib, dastlabki sinxronlashga urinadi - shuning
+    uchun token/manzil noto'g'ri bo'lsa, xato AYNAN shu qatorda (keyingi
+    alohida `.sync()` chaqiruvida emas) chiqadi. Shu sababli bu funksiyaning
+    o'zi ham xatoni tutib, mahalliy (Turso'siz) ulanishga tushib qoladi -
+    aks holda noto'g'ri token butun botni ishga tushmay qo'yardi."""
+    global _turso_broken
+    if _TURSO_ENABLED and not _turso_broken:
+        try:
+            return libsql.connect(DB_PATH, sync_url=TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
+        except Exception:
+            _turso_broken = True
+            logger.exception(
+                "Turso bilan ULANIB BO'LMADI (TURSO_DATABASE_URL yoki TURSO_AUTH_TOKEN "
+                "noto'g'ri bo'lishi mumkin - Render'ning Environment Variables bo'limini "
+                "tekshiring). Bot HOZIRCHA oddiy mahalliy fayl bilan davom etadi (hech narsa "
+                "buzilmaydi, faqat Turso'ga sinxronlash to'xtaydi) - tuzatib, qayta deploy "
+                "qilganingizda avtomatik tiklanadi."
+            )
     return libsql.connect(DB_PATH)
 
 
@@ -81,7 +107,7 @@ async def _ensure_conn():
     global _conn
     if _conn is None:
         _conn = await asyncio.to_thread(_open_sync_conn)
-        if _TURSO_ENABLED:
+        if _TURSO_ENABLED and not _turso_broken:
             try:
                 await asyncio.to_thread(_conn.sync)
                 logger.info("Turso bilan dastlabki sinxronizatsiya muvaffaqiyatli.")
@@ -125,7 +151,7 @@ class _ConnWrapper:
 
     async def commit(self):
         await asyncio.to_thread(self._conn.commit)
-        if _TURSO_ENABLED:
+        if _TURSO_ENABLED and not _turso_broken:
             try:
                 await asyncio.to_thread(self._conn.sync)
             except Exception:
@@ -158,11 +184,16 @@ async def start_periodic_sync(interval_seconds: int = 25):
     keyingi sinxronlash allaqachon ishlaydi, lekin agar u vaqtincha
     muvaffaqiyatsiz tugasa (masalan tarmoq uzilib qolsa), shu davriy vazifa
     keyingi urinishda baribir bulutga yetkazib beradi. Turso sozlanmagan
-    bo'lsa hech narsa qilmaydi."""
+    bo'lsa, yoki dastlabki ulanish allaqachon muvaffaqiyatsiz tugagan bo'lsa
+    (masalan noto'g'ri token - qayta urinib, loglarni "ifloslashning" hojati
+    yo'q, chunki token faqat qayta deploy qilingandagina o'qib olinadi),
+    hech narsa qilmaydi."""
     if not _TURSO_ENABLED:
         return
     while True:
         await asyncio.sleep(interval_seconds)
+        if _turso_broken:
+            continue
         try:
             conn = await _ensure_conn()
             await asyncio.to_thread(conn.sync)

@@ -194,9 +194,17 @@ umuman ko'rinmaydi, chatdagi eski `/admin` usuli esa ishlayveradi.
 
 Agar buyurtmalarni siz bilan birga boshqa odam ham (masalan 3D-print
 hamkoringiz) ko'rib, qabul qilishini xohlasangiz — Render'ning Environment
-Variables bo'limida `ADMIN_IDS` nomi bilan ularning Telegram ID
+Variables bo'limida **YANGI** o'zgaruvchi sifatida `ADMIN_IDS` nomi bilan
+(bu `ADMIN_CHAT_ID`dan BOSHQA, alohida nom) ularning Telegram ID
 raqamlarini vergul bilan ajratib qo'shing (masalan: `111111111,222222222`).
-`ADMIN_CHAT_ID`'ni o'zgartirish shart emas, u avtomatik qo'shiladi.
+
+⚠️ **Muhim:** `ADMIN_CHAT_ID`ni qayta yozmang/o'zgartirmang — u sizda
+allaqachon bor, Render esa bir xil nomli o'zgaruvchini ikki marta
+qo'shishga ruxsat bermaydi ("Duplicate key... is not allowed" degan xato
+shundan). Ikkinchi (va undan ko'p) odamlar UCHUN har doim `ADMIN_IDS`
+degan **BOSHQA** nom ishlatiladi — `ADMIN_CHAT_ID` esa o'zgarishsiz qoladi,
+u avtomatik ravishda `ADMIN_IDS` ro'yxatiga qo'shib olinadi.
+
 Shundan so'ng: yangi buyurtma, shaxsiy buyurtma so'rovi va hisob to'ldirish
 so'rovi haqidagi xabarlar **HAMMA** adminlarga yuboriladi, va hammasi
 `/admin` buyrug'i hamda admin veb-paneliga kira oladi.
@@ -367,13 +375,36 @@ mahalliy fayl bilan ishlayveradi (lekin yuqoridagi yo'qolish xavfi
 qoladi). Bepul reja: 500 million o'qish/oy, 10 million yozish/oy, 5GB joy —
 kichik-o'rta do'kon uchun yetarlicha.
 
-⚠️ **Muhim (halol ogohlantirish):** Turso integratsiyasi kodi yozilgan va
-mahalliy sinovdan o'tgan, lekin men (Claude) hali sizning haqiqiy Turso
-akkountingiz bilan sinab ko'rmadim — buning uchun sizning shaxsiy
-`TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN`'ingiz kerak, ular esa faqat siz
-akkount ochganingizdan keyin paydo bo'ladi. Shuning uchun yuqoridagi
-qadamlarni bajarib, botni qayta ishga tushirgandan so'ng, Render'ning
-"Logs" bo'limida `Turso bilan dastlabki sinxronizatsiya muvaffaqiyatli`
-degan qatorni ko'rganingizga ishonch hosil qiling, va bir marta sinov
-buyurtma berib/mahsulot qo'shib ko'ring — muammo chiqsa menga ayting,
-birga tuzatamiz.
+✅ **Xavfsizlik to'ri qo'shildi:** endi agar `TURSO_DATABASE_URL`/
+`TURSO_AUTH_TOKEN` noto'g'ri bo'lsa (masalan token eskirgan/bekor qilingan
+bo'lsa), bot BUTUNLAY ishdan to'xtab qolmaydi — xatoni "Logs"ga aniq yozib,
+avtomatik ravishda oddiy mahalliy fayl rejimiga tushib, ishlashda davom
+etadi (Turso to'g'rilanguncha). Shunday bo'lsa, "Logs" bo'limida
+`Turso bilan ULANIB BO'LMADI` degan qatorni ko'rasiz — bu holatda pastdagi
+"Turso xatosi chiqsa" bo'limiga qarang.
+
+Ulanish muvaffaqiyatli bo'lsa, "Logs" bo'limida
+`Turso bilan dastlabki sinxronizatsiya muvaffaqiyatli` degan qatorni
+ko'rasiz — shundan so'ng bir marta sinov buyurtma berib/mahsulot qo'shib
+ko'ring, muammo chiqsa menga ayting.
+
+#### Turso xatosi chiqsa (masalan "invalid JWT token")
+
+Agar Logs'da token/ulanish bilan bog'liq xato ko'rinsa (masalan
+`invalid JWT token: role was invalidated after token was issued` yoki
+`401 Unauthorized`) — bu odatda token Turso tomonida bekor qilingan yoki
+noto'g'ri nusxalangan degani. Turso'ning o'zi tokenlarni faqat siz
+(yoki Turso paneli) aniq buyruq bergandagina bekor qiladi — masalan bitta
+tokenni ikki marta ustma-ust "yaratish/rotate qilish" natijasida avvalgisi
+avtomatik bekor bo'lishi mumkin. Tuzatish:
+
+1. [turso.tech](https://turso.tech) saytida bazangizga kiring
+2. Yangi (butunlay FRESH) **Auth Token** yarating — eskisiga tegmang, yangi
+   nusxalab oling
+3. Render'da `TURSO_AUTH_TOKEN` qiymatini shu yangi token bilan
+   ALMASHTIRING (eskisini butunlay o'chirib, yangisini joylashtiring —
+   boshida/oxirida bo'sh joy qolmasligiga e'tibor bering)
+4. **Save Changes** — qayta deploy bo'lgach, Logs'ni qayta tekshiring
+
+Bu davrda ham (token tuzatilmagunicha) bot mijozlar uchun to'liq ishlayveradi
+— faqat ma'lumotlar Turso'ga emas, mahalliy faylga saqlanadi.
