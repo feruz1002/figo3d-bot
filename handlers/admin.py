@@ -1,8 +1,16 @@
 """Admin (yoki 3D-print hamkor) uchun buyruqlar:
-- Buyurtmani 'Qabul qildim' deb belgilash
+- Buyurtmani bosqichma-bosqich yuritish: Qabul qilish -> Yig'ish -> Chiqarib
+  yuborilgan -> Arxiv (yoki istalgan bosqichda Muammo deb belgilash)
 - Shaxsiy buyurtma bo'yicha mijoz bilan bog'langanini belgilash
 - Yangi promo-kod yaratish (/promo buyrug'i orqali)
-"""
+
+DIQQAT: har bir bosqich o'tishda xabarning `reply_markup`i ANIQ (aniq
+qiymat bilan) qayta yuboriladi - agar `reply_markup` berilmasa, Telegram
+buni "klaviaturani o'zgarishsiz qoldirish" deb tushunadi, ya'ni ESKI
+tugma (masalan "✅ Qabul qildim") xabarda QOLIB KETADI va admin uni
+yana bossa, chalkashlik chiqishi mumkin edi. Shuning uchun har safar
+KEYINGI bosqichga mos klaviatura (yoki yakunda bo'sh klaviatura)
+ANIQ beriladi."""
 from aiogram import Router, F, Bot
 from aiogram.filters import Command, CommandObject
 from aiogram.types import CallbackQuery, Message
@@ -10,6 +18,11 @@ from aiogram.types import CallbackQuery, Message
 import admin_service
 import db
 from config import is_admin as _is_admin
+from keyboards import (
+    admin_order_archive_keyboard,
+    admin_order_shipping_keyboard,
+    empty_keyboard,
+)
 
 admin_router = Router()
 
@@ -28,8 +41,74 @@ async def order_accept(callback: CallbackQuery, bot: Bot):
 
     # html_text - Telegram formatlashini (qalin harflar va h.k.) HTML ko'rinishida qayta tiklaydi
     old_text = callback.message.html_text or ""
-    await callback.message.edit_text(old_text + "\n\n✅ <b>Qabul qilindi</b>")
+    await callback.message.edit_text(
+        old_text + "\n\n✅ <b>Qabul qilindi</b> — yig'ilmoqda",
+        reply_markup=admin_order_shipping_keyboard(order_id),
+    )
     await admin_service.notify_customer_order_accepted(bot, order)
+    await callback.answer("Belgilandi")
+
+
+@admin_router.callback_query(F.data.startswith("order_ship:"))
+async def order_ship(callback: CallbackQuery, bot: Bot):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+
+    order_id = int(callback.data.split(":", 1)[1])
+    order, reason = await admin_service.ship_order(order_id)
+    if order is None:
+        await callback.answer("Buyurtma topilmadi", show_alert=True)
+        return
+
+    old_text = callback.message.html_text or ""
+    await callback.message.edit_text(
+        old_text + "\n\n🚚 <b>Chiqarib yuborildi</b>",
+        reply_markup=admin_order_archive_keyboard(order_id),
+    )
+    await admin_service.notify_customer_order_shipped(bot, order)
+    await callback.answer("Belgilandi")
+
+
+@admin_router.callback_query(F.data.startswith("order_archive:"))
+async def order_archive(callback: CallbackQuery, bot: Bot):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+
+    order_id = int(callback.data.split(":", 1)[1])
+    order, reason = await admin_service.archive_order(order_id)
+    if order is None:
+        await callback.answer("Buyurtma topilmadi", show_alert=True)
+        return
+
+    old_text = callback.message.html_text or ""
+    await callback.message.edit_text(
+        old_text + "\n\n📁 <b>Yetkazildi (arxivlandi)</b>",
+        reply_markup=empty_keyboard(),
+    )
+    await admin_service.notify_customer_order_archived(bot, order)
+    await callback.answer("Arxivlandi")
+
+
+@admin_router.callback_query(F.data.startswith("order_problem:"))
+async def order_problem(callback: CallbackQuery, bot: Bot):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+
+    order_id = int(callback.data.split(":", 1)[1])
+    order, reason = await admin_service.flag_order_problem(order_id)
+    if order is None:
+        await callback.answer("Buyurtma topilmadi", show_alert=True)
+        return
+
+    old_text = callback.message.html_text or ""
+    await callback.message.edit_text(
+        old_text + "\n\n⚠️ <b>Muammo deb belgilandi</b>",
+        reply_markup=empty_keyboard(),
+    )
+    await admin_service.notify_customer_order_problem(bot, order)
     await callback.answer("Belgilandi")
 
 

@@ -410,12 +410,16 @@
   };
 
   // ---------- Savat ----------
-  // MUHIM (foydalanuvchi so'rovi bilan o'zgartirildi): bu yerda ENDI
-  // "Buyurtma berish" tugmasi YO'Q - buyurtma berish, to'lov usuli,
-  // promo-kod - hammasi endi Telegram CHATning o'zida ("🛒 Savat"
-  // tugmasi orqali) ishlaydi, chunki u aynan shu yerda muammo (savat/
-  // buyurtma "qotib qolishi") chiqarayotgan edi. Bu yerda faqat ko'rish
-  // va miqdorni o'zgartirish qoladi.
+  // MUHIM: bu yerda buyurtma TO'G'RIDAN-TO'G'RI yaratilmaydi va to'lov
+  // so'ralmaydi - buyurtma berish, to'lov usuli, promo-kod hammasi
+  // ishonchli Telegram CHAT oqimida (checkout.py) qoladi, chunki aynan
+  // shu joyning Mini App JS/webview orqali ishlashi muammoli chiqqan edi.
+  // Lekin qulaylik uchun "✅ Buyurtmani yakunlash" tugmasi bor - u
+  // buyurtma YARATMAYDI, faqat mijozning CHATIGA savat xulosasi va "✅
+  // Buyurtma berish" tugmasini yuborib (server orqali, /api/request_checkout),
+  // Mini App'ni yopadi - shundan keyingi hamma narsa (buyurtmani yaratish,
+  // to'lov) xuddi chatning o'zida "🛒 Savat" bosilgandagidek davom etadi.
+  var finishingCheckout = false;
   VIEW_RENDERERS.cart = function (el) {
     var pids = Object.keys(state.cart).filter(function (pid) { return state.cart[pid] > 0; });
     if (!pids.length) {
@@ -439,13 +443,37 @@
       );
     }).join("");
     el.innerHTML = '<div class="cart-list">' + rows + '</div><div class="cart-total">Jami: ' + fmtPrice(cartSubtotal()) + " so'm</div>" +
-      '<div class="cart-hint">Buyurtmani rasmiylashtirish uchun bu oynani yoping va Telegram xabar oynasidagi <b>"🛒 Savat"</b> tugmasini bosing — savatingiz o\'sha yerda ham xuddi shunday ko\'rinadi.</div>';
+      '<button class="page-cta" id="cart-finish-btn">✅ Buyurtmani yakunlash</button>' +
+      '<div class="cart-hint">Tugma bosilganda savat xulosasi va "✅ Buyurtma berish" tugmasi chatingizga yuboriladi — shu yerdan davom etasiz.</div>';
     el.querySelectorAll(".cart-row").forEach(function (row) {
       var pid = Number(row.getAttribute("data-pid"));
       row.querySelector(".dec").onclick = function () { changeQty(pid, -1); };
       row.querySelector(".inc").onclick = function () { changeQty(pid, 1); };
     });
+    document.getElementById("cart-finish-btn").onclick = finishCheckoutInChat;
   };
+
+  function finishCheckoutInChat() {
+    if (finishingCheckout) return;
+    finishingCheckout = true;
+    var btn = document.getElementById("cart-finish-btn");
+    if (btn) { btn.disabled = true; btn.textContent = "⏳ Yuborilmoqda..."; }
+    api("/api/request_checkout", { method: "POST" })
+      .then(function (r) {
+        if (r.ok) {
+          showToast("✅ Chatga yuborildi — shu yerdan davom eting");
+          if (tg) setTimeout(function () { tg.close(); }, 500);
+        } else {
+          if (btn) { btn.disabled = false; btn.textContent = "✅ Buyurtmani yakunlash"; }
+          showToast("Yuborib bo'lmadi. Chatdagi \"🛒 Savat\" tugmasidan foydalaning.");
+        }
+      })
+      .catch(function () {
+        if (btn) { btn.disabled = false; btn.textContent = "✅ Buyurtmani yakunlash"; }
+        showToast("Yuborib bo'lmadi. Chatdagi \"🛒 Savat\" tugmasidan foydalaning.");
+      })
+      .then(function () { finishingCheckout = false; });
+  }
 
   // ---------- Boshlash ----------
   loadCatalog()

@@ -5,15 +5,9 @@ from aiogram.types import Message
 import db
 from handlers.catalog import format_price
 from keyboards import BTN_ORDERS
+from order_service import CUSTOMER_STATUS_LABELS
 
 orders_router = Router()
-
-STATUS_LABELS = {
-    "yangi": "🕓 Kutilmoqda",
-    "qabul qilindi": "✅ Qabul qilindi",
-    "tayyorlanmoqda": "🛠 Tayyorlanmoqda",
-    "yetkazildi": "📦 Yetkazildi",
-}
 
 
 @orders_router.message(F.text == BTN_ORDERS)
@@ -25,7 +19,7 @@ async def show_orders(message: Message):
 
     lines = ["📦 <b>Buyurtmalaringiz:</b>\n"]
     for order in orders:
-        status_label = STATUS_LABELS.get(order["status"], order["status"])
+        status_label = CUSTOMER_STATUS_LABELS.get(order["status"], order["status"])
         lines.append(
             f"#{order['id']} — {format_price(order['total_price'])} so'm — {status_label}"
         )
