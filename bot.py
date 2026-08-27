@@ -25,8 +25,10 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 from aiohttp import web
 
 import db
+from admin_webapp_api import register_admin_routes
 from config import BOT_TOKEN, RENDER_EXTERNAL_URL, PORT, WEBAPP_URL
 from handlers import all_routers
+from turso_db import start_periodic_sync
 from webapp_api import register_webapp_routes
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -34,10 +36,19 @@ logger = logging.getLogger("figo3d_bot")
 
 WEBHOOK_PATH = "/webhook"
 WEBAPP_INDEX_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp", "index.html")
+ADMIN_INDEX_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp", "admin.html")
+
+# Rasm yuklashda (admin panelda mahsulot rasmi qo'shishda) so'rov standart
+# 2MB'dan katta bo'lishi mumkin - shuning uchun chegarani oshiramiz.
+MAX_REQUEST_SIZE = 20 * 1024 * 1024
 
 
 async def on_startup(bot: Bot):
     await db.init_db()
+    # Turso sozlangan bo'lsa, fonda davriy sinxronlashni boshlab qo'yamiz -
+    # bu har yozuvdan keyingi darhol sinxronlashga qo'shimcha xavfsizlik
+    # chorasi (Turso sozlanmagan bo'lsa hech narsa qilmaydi, darhol qaytadi).
+    asyncio.create_task(start_periodic_sync())
     if RENDER_EXTERNAL_URL:
         webhook_url = RENDER_EXTERNAL_URL.rstrip("/") + WEBHOOK_PATH
         await bot.set_webhook(webhook_url, drop_pending_updates=True)
@@ -74,12 +85,13 @@ def build_web_app(bot: Bot, dp: Dispatcher) -> web.Application:
     (Mini App sahifasi + API) - bularning barchasi bitta server ichida
     ishlaydi, shuning uchun Mini App'ning API'ga so'rovlari CORS muammosiz
     ishlaydi (bir xil manzildan)."""
-    app = web.Application()
+    app = web.Application(client_max_size=MAX_REQUEST_SIZE)
     app["bot"] = bot
     app.router.add_get("/", health_check)
     SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
     setup_application(app, dp, bot=bot)
     register_webapp_routes(app, WEBAPP_INDEX_PATH)
+    register_admin_routes(app, ADMIN_INDEX_PATH)
     return app
 
 

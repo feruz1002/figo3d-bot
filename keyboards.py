@@ -8,6 +8,7 @@ va tekis (kvadratsimon) ko'rinadigan qilib joylashtirilgan.
 """
 from aiogram.types import (
     ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
     KeyboardButton,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
@@ -31,19 +32,20 @@ BTN_CANCEL = "❌ Bekor qilish"
 BTN_SKIP_PROOF = "📎 Skrinshotsiz yuborish"
 
 
-def main_menu_keyboard() -> ReplyKeyboardMarkup:
-    # (resize_keyboard=True Telegram'ga mavjud joyni to'liq egallashni aytadi)
-    builder = ReplyKeyboardBuilder()
+def main_menu_keyboard():
     if WEBAPP_URL:
-        # Production'da (Render, https mavjud) "Katalog" haqiqiy veb-do'kon
-        # (Mini App) sifatida ochiladi - rasm-kartochkalar, tab bo'limlar,
-        # savat va buyurtma berish HAM shu ichida. Shuning uchun alohida
-        # "Savat" tugmasi endi kerak emas - shu bilan menyu ham ixchamroq.
-        builder.row(KeyboardButton(text=BTN_CATALOG, web_app=WebAppInfo(url=WEBAPP_URL)))
-    else:
-        # Mahalliy sinovda (https yo'q) avvalgi tugmali ko'rinishga tushadi -
-        # bu holatda "Savat" alohida tugma sifatida kerak.
-        builder.row(KeyboardButton(text=BTN_CATALOG), KeyboardButton(text=BTN_CART))
+        # Production'da (Render, https mavjud) KATALOG, SAVAT, BUYURTMA
+        # BERISH, PROFIL, BUYURTMALAR TARIXI, SHAXSIY BUYURTMA va ALOQA -
+        # BARCHASI bitta veb-do'kon (Mini App) ichida (pastki tab'lar
+        # orqali). Shuning uchun pastdagi matnli tugmalar endi umuman
+        # kerak emas - ular ko'rinishni "eskicha" qilib turardi. Kirish
+        # nuqtasi - xabar yozish maydoni yonidagi doimiy "🛍 Do'kon" tugmasi
+        # (bot.py'da MenuButtonWebApp orqali o'rnatiladi).
+        return ReplyKeyboardRemove()
+    # Mahalliy sinovda (https yo'q joyda) avvalgi tugmali ko'rinishga
+    # tushadi - bu holatda hamma narsa chatda (eski usulda) ishlaydi.
+    builder = ReplyKeyboardBuilder()
+    builder.row(KeyboardButton(text=BTN_CATALOG), KeyboardButton(text=BTN_CART))
     builder.row(KeyboardButton(text=BTN_ORDERS), KeyboardButton(text=BTN_PROFILE))
     builder.row(KeyboardButton(text=BTN_CUSTOM), KeyboardButton(text=BTN_CONTACT))
     return builder.as_markup(resize_keyboard=True)

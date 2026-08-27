@@ -8,7 +8,8 @@ from aiogram import Bot
 from aiogram.types import LabeledPrice
 
 import db
-from config import ADMIN_CHAT_ID, PAYMENT_PROVIDER_TOKEN
+from admin_notify import notify_admins
+from config import ADMIN_IDS, PAYMENT_PROVIDER_TOKEN
 from keyboards import admin_order_keyboard
 
 
@@ -84,9 +85,37 @@ async def create_card_invoice_link(bot: Bot, order_id: int, item_count: int, tot
     )
 
 
+async def notify_customer_order_placed(bot: Bot, order_id: int):
+    """Mini App orqali (chatga chiqmasdan) berilgan buyurtmalar uchun -
+    mijozning o'ziga ham buyurtma qabul qilingani haqida alohida xabar
+    yuboramiz. Bu ikki sabab bilan muhim: (1) Mini App ekrani yopilgach
+    "buyurtma ketdimi-yo'qmi" degan noaniqlik qolmasin, (2) chatda doimiy
+    yozib qoluvchi tasdiq/hujjat bo'lsin. Karta orqali to'langan
+    buyurtmalar buni Telegram'ning o'z "successful_payment" xabari orqali
+    allaqachon olishadi, shuning uchun bu funksiya faqat naqd/hamyon
+    (cash/balance) orqali berilgan buyurtmalar uchun chaqiriladi."""
+    order = await db.get_order(order_id)
+    if not order:
+        return
+    try:
+        await bot.send_message(
+            order["user_id"],
+            f"✅ Buyurtmangiz qabul qilindi! Buyurtma raqami: #{order_id}\n\n"
+            f"💰 Jami: {format_price(order['total_price'])} so'm\n\n"
+            "Tez orada operator siz bilan bog'lanadi. Holatini \"📦 "
+            "Buyurtmalarim\" bo'limidan kuzatib borishingiz mumkin.",
+        )
+    except Exception:
+        # Mijoz botni bloklagan yoki hali /start bosmagan bo'lishi mumkin -
+        # bu holatda ham buyurtmaning o'zi bazada saqlanib qolaveradi.
+        pass
+
+
 async def notify_admin_new_order(bot: Bot, order_id: int, payment_method: str):
-    """payment_method: "balance" | "cash" | "card" | "card_paid" (successful_payment kelganda)."""
-    if not ADMIN_CHAT_ID:
+    """payment_method: "balance" | "cash" | "card" | "card_paid" (successful_payment kelganda).
+    ADMIN_IDS ro'yxatidagi HAMMASIGA xabar yuboriladi (bir nechta admin
+    bo'lishi mumkin)."""
+    if not ADMIN_IDS:
         return
     order = await db.get_order(order_id)
     if not order:
@@ -108,8 +137,4 @@ async def notify_admin_new_order(bot: Bot, order_id: int, payment_method: str):
         f"📱 {order['phone']}\n"
         f"📍 {order['address']}"
     )
-    try:
-        await bot.send_message(ADMIN_CHAT_ID, admin_text, reply_markup=admin_order_keyboard(order_id))
-    except Exception:
-        # Admin hali botga /start bosmagan bo'lishi mumkin - bot unga yoza olmaydi.
-        pass
+    await notify_admins(bot, text=admin_text, reply_markup=admin_order_keyboard(order_id))

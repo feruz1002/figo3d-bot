@@ -24,10 +24,8 @@ Bu yerda jadvallar:
 import json
 from datetime import datetime, timezone
 
-import aiosqlite
-
-from config import DB_PATH
 from products import SEED_PRODUCTS
+from turso_db import get_db_connection
 
 CREATE_TABLES_SQL = """
 CREATE TABLE IF NOT EXISTS products (
@@ -134,7 +132,7 @@ async def _add_column_if_missing(conn, table: str, column_def: str):
 
 async def init_db():
     """Bot birinchi marta ishga tushganda jadvallarni yaratadi (agar hali yo'q bo'lsa)."""
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         await conn.executescript(CREATE_TABLES_SQL)
         await conn.commit()
         # Eski (promo qo'shilishidan oldin yaratilgan) orders jadvali bo'lsa ham ishlashi uchun:
@@ -182,7 +180,7 @@ async def _row_to_product(conn, row) -> dict:
 async def get_categories() -> list:
     """Barcha faol bo'limlar ro'yxatini qaytaradi (birinchi qo'shilgan mahsulot
     tartibida)."""
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         cursor = await conn.execute(
             "SELECT category FROM products WHERE active = 1 GROUP BY category ORDER BY MIN(id)"
         )
@@ -191,8 +189,7 @@ async def get_categories() -> list:
 
 
 async def get_products_by_category(category: str) -> list:
-    async with aiosqlite.connect(DB_PATH) as conn:
-        conn.row_factory = aiosqlite.Row
+    async with get_db_connection() as conn:
         cursor = await conn.execute(
             "SELECT * FROM products WHERE category = ? AND active = 1 ORDER BY id", (category,)
         )
@@ -201,8 +198,7 @@ async def get_products_by_category(category: str) -> list:
 
 
 async def get_product_by_id(product_id: int):
-    async with aiosqlite.connect(DB_PATH) as conn:
-        conn.row_factory = aiosqlite.Row
+    async with get_db_connection() as conn:
         cursor = await conn.execute(
             "SELECT * FROM products WHERE id = ? AND active = 1", (product_id,)
         )
@@ -215,8 +211,7 @@ async def get_product_by_id(product_id: int):
 async def list_active_products() -> list:
     """Admin uchun: barcha faol mahsulotlar ro'yxati (rasmsiz, ro'yxat/o'chirish
     ko'rinishi uchun)."""
-    async with aiosqlite.connect(DB_PATH) as conn:
-        conn.row_factory = aiosqlite.Row
+    async with get_db_connection() as conn:
         cursor = await conn.execute(
             "SELECT * FROM products WHERE active = 1 ORDER BY category, id"
         )
@@ -226,7 +221,7 @@ async def list_active_products() -> list:
 
 async def create_product(category: str, name: str, description: str, price: int) -> int:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         cursor = await conn.execute(
             """INSERT INTO products (category, name, description, price, active, created_at)
                VALUES (?, ?, ?, ?, 1, ?)""",
@@ -237,7 +232,7 @@ async def create_product(category: str, name: str, description: str, price: int)
 
 
 async def add_product_photo(product_id: int, file_id: str, position: int = 0):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         await conn.execute(
             "INSERT INTO product_photos (product_id, file_id, position) VALUES (?, ?, ?)",
             (product_id, file_id, position),
@@ -246,7 +241,7 @@ async def add_product_photo(product_id: int, file_id: str, position: int = 0):
 
 
 async def set_product_video(product_id: int, file_id: str):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         await conn.execute(
             "UPDATE products SET video_file_id = ? WHERE id = ?", (file_id, product_id)
         )
@@ -256,7 +251,7 @@ async def set_product_video(product_id: int, file_id: str):
 async def deactivate_product(product_id: int):
     """Mahsulotni butunlay o'chirmaydi (eski buyurtmalar/sharhlar uzilib
     qolmasligi uchun) - faqat katalogdan yashiradi."""
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         await conn.execute("UPDATE products SET active = 0 WHERE id = ?", (product_id,))
         await conn.commit()
 
@@ -264,7 +259,7 @@ async def deactivate_product(product_id: int):
 # ---------- SAVAT (CART) ----------
 
 async def add_to_cart(user_id: int, product_id: int, quantity: int = 1):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         cursor = await conn.execute(
             "SELECT id, quantity FROM cart_items WHERE user_id = ? AND product_id = ?",
             (user_id, product_id),
@@ -285,7 +280,7 @@ async def add_to_cart(user_id: int, product_id: int, quantity: int = 1):
 
 async def get_cart(user_id: int):
     """Foydalanuvchi savatini qaytaradi: [{product: {...}, quantity: N}, ...]"""
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         cursor = await conn.execute(
             "SELECT product_id, quantity FROM cart_items WHERE user_id = ?",
             (user_id,),
@@ -306,13 +301,13 @@ async def get_cart_total(user_id: int) -> int:
 
 
 async def clear_cart(user_id: int):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         await conn.execute("DELETE FROM cart_items WHERE user_id = ?", (user_id,))
         await conn.commit()
 
 
 async def remove_from_cart(user_id: int, product_id: int):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         await conn.execute(
             "DELETE FROM cart_items WHERE user_id = ? AND product_id = ?",
             (user_id, product_id),
@@ -321,7 +316,7 @@ async def remove_from_cart(user_id: int, product_id: int):
 
 
 async def get_cart_item_quantity(user_id: int, product_id: int) -> int:
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         cursor = await conn.execute(
             "SELECT quantity FROM cart_items WHERE user_id = ? AND product_id = ?",
             (user_id, product_id),
@@ -335,7 +330,7 @@ async def decrease_cart_item(user_id: int, product_id: int, amount: int = 1) -> 
     Qolgan (yangi) miqdorni qaytaradi (0 = savatda qolmadi)."""
     current = await get_cart_item_quantity(user_id, product_id)
     new_qty = current - amount
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         if new_qty <= 0:
             await conn.execute(
                 "DELETE FROM cart_items WHERE user_id = ? AND product_id = ?",
@@ -355,7 +350,7 @@ async def set_cart_item_quantity(user_id: int, product_id: int, quantity: int) -
     """Miqdorni to'g'ridan-to'g'ri berilgan songa o'rnatadi (masalan veb-do'kondagi
     ➖/➕ bosqichlari uchun qulay). 0 yoki kamiga o'rnatilsa, butunlay o'chiradi.
     Yakuniy (haqiqiy) miqdorni qaytaradi."""
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         if quantity <= 0:
             await conn.execute(
                 "DELETE FROM cart_items WHERE user_id = ? AND product_id = ?",
@@ -403,7 +398,7 @@ async def create_order(
         for item in cart
     ]
 
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         cursor = await conn.execute(
             """INSERT INTO orders
                (user_id, full_name, phone, address, items_json, total_price, status,
@@ -432,15 +427,14 @@ async def create_order(
 
 
 async def get_order(order_id: int):
-    async with aiosqlite.connect(DB_PATH) as conn:
-        conn.row_factory = aiosqlite.Row
+    async with get_db_connection() as conn:
         cursor = await conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,))
         row = await cursor.fetchone()
         return dict(row) if row else None
 
 
 async def update_order_status(order_id: int, status: str):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         await conn.execute(
             "UPDATE orders SET status = ? WHERE id = ?", (status, order_id)
         )
@@ -448,8 +442,7 @@ async def update_order_status(order_id: int, status: str):
 
 
 async def get_user_orders(user_id: int, limit: int = 10):
-    async with aiosqlite.connect(DB_PATH) as conn:
-        conn.row_factory = aiosqlite.Row
+    async with get_db_connection() as conn:
         cursor = await conn.execute(
             "SELECT * FROM orders WHERE user_id = ? ORDER BY id DESC LIMIT ?",
             (user_id, limit),
@@ -458,10 +451,26 @@ async def get_user_orders(user_id: int, limit: int = 10):
         return [dict(r) for r in rows]
 
 
+async def get_all_orders(limit: int = 50, open_only: bool = False):
+    """Admin panel uchun: barcha (yoki faqat hali "qabul qilindi"ga
+    o'tmagan) buyurtmalar ro'yxati, eng yangisidan boshlab."""
+    async with get_db_connection() as conn:
+        if open_only:
+            cursor = await conn.execute(
+                "SELECT * FROM orders WHERE status NOT IN ('qabul qilindi', 'yetkazildi') "
+                "ORDER BY id DESC LIMIT ?",
+                (limit,),
+            )
+        else:
+            cursor = await conn.execute("SELECT * FROM orders ORDER BY id DESC LIMIT ?", (limit,))
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
 # ---------- SHARHLAR (REVIEWS) ----------
 
 async def add_review(product_id: int, user_id: int, user_name: str, rating: int, comment: str | None):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         await conn.execute(
             """INSERT INTO reviews (product_id, user_id, user_name, rating, comment, created_at)
                VALUES (?, ?, ?, ?, ?, ?)""",
@@ -479,7 +488,7 @@ async def add_review(product_id: int, user_id: int, user_name: str, rating: int,
 
 async def get_product_rating(product_id: int) -> tuple[float, int]:
     """(o'rtacha_baho, sharhlar_soni) qaytaradi. Sharh bo'lmasa (0.0, 0)."""
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         cursor = await conn.execute(
             "SELECT AVG(rating), COUNT(*) FROM reviews WHERE product_id = ?", (product_id,)
         )
@@ -488,8 +497,7 @@ async def get_product_rating(product_id: int) -> tuple[float, int]:
 
 
 async def get_reviews(product_id: int, limit: int = 5):
-    async with aiosqlite.connect(DB_PATH) as conn:
-        conn.row_factory = aiosqlite.Row
+    async with get_db_connection() as conn:
         cursor = await conn.execute(
             "SELECT * FROM reviews WHERE product_id = ? ORDER BY id DESC LIMIT ?",
             (product_id, limit),
@@ -501,7 +509,7 @@ async def get_reviews(product_id: int, limit: int = 5):
 # ---------- PROMO-KODLAR ----------
 
 async def create_promo(code: str, discount_percent: int, max_uses: int | None = None):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         await conn.execute(
             """INSERT INTO promo_codes (code, discount_percent, max_uses, used_count, active)
                VALUES (?, ?, ?, 0, 1)
@@ -515,8 +523,7 @@ async def create_promo(code: str, discount_percent: int, max_uses: int | None = 
 
 
 async def get_promo(code: str):
-    async with aiosqlite.connect(DB_PATH) as conn:
-        conn.row_factory = aiosqlite.Row
+    async with get_db_connection() as conn:
         cursor = await conn.execute(
             "SELECT * FROM promo_codes WHERE code = ? AND active = 1", (code.upper(),)
         )
@@ -525,7 +532,7 @@ async def get_promo(code: str):
 
 
 async def increment_promo_usage(code: str):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         await conn.execute(
             "UPDATE promo_codes SET used_count = used_count + 1 WHERE code = ?",
             (code.upper(),),
@@ -538,7 +545,7 @@ async def increment_promo_usage(code: str):
 async def create_custom_order(
     user_id: int, photo_file_id: str, description: str, full_name: str, phone: str, address: str
 ) -> int:
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         cursor = await conn.execute(
             """INSERT INTO custom_orders
                (user_id, photo_file_id, description, full_name, phone, address, status, created_at)
@@ -558,15 +565,14 @@ async def create_custom_order(
 
 
 async def get_custom_order(order_id: int):
-    async with aiosqlite.connect(DB_PATH) as conn:
-        conn.row_factory = aiosqlite.Row
+    async with get_db_connection() as conn:
         cursor = await conn.execute("SELECT * FROM custom_orders WHERE id = ?", (order_id,))
         row = await cursor.fetchone()
         return dict(row) if row else None
 
 
 async def update_custom_order_status(order_id: int, status: str):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         await conn.execute(
             "UPDATE custom_orders SET status = ? WHERE id = ?", (status, order_id)
         )
@@ -576,8 +582,7 @@ async def update_custom_order_status(order_id: int, status: str):
 # ---------- FOYDALANUVCHI PROFILI (ism/telefon/manzil + hamyon) ----------
 
 async def get_user_profile(user_id: int):
-    async with aiosqlite.connect(DB_PATH) as conn:
-        conn.row_factory = aiosqlite.Row
+    async with get_db_connection() as conn:
         cursor = await conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
         row = await cursor.fetchone()
         return dict(row) if row else None
@@ -590,7 +595,7 @@ async def upsert_user_profile(
     (None bo'lmagan) maydonlar o'zgaradi - boshqalari eskicha qoladi.
     Balansga tegmaydi."""
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         await conn.execute(
             """INSERT INTO users (user_id, full_name, phone, address, balance, updated_at)
                VALUES (?, ?, ?, ?, 0, ?)
@@ -613,7 +618,7 @@ async def adjust_balance(user_id: int, delta: int) -> int:
     """Balansni delta ga o'zgartiradi (manfiy son - kamaytirish uchun).
     Yangilangan balansni qaytaradi."""
     await upsert_user_profile(user_id)  # profil hali yo'q bo'lsa, yaratib qo'yadi
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         await conn.execute(
             "UPDATE users SET balance = balance + ? WHERE user_id = ?", (delta, user_id)
         )
@@ -626,7 +631,7 @@ async def adjust_balance(user_id: int, delta: int) -> int:
 # ---------- HISOBNI TO'LDIRISH SO'ROVLARI ----------
 
 async def create_topup_request(user_id: int, amount: int, screenshot_file_id: str | None) -> int:
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         cursor = await conn.execute(
             """INSERT INTO topup_requests (user_id, amount, screenshot_file_id, status, created_at)
                VALUES (?, ?, ?, 'kutilmoqda', ?)""",
@@ -637,16 +642,39 @@ async def create_topup_request(user_id: int, amount: int, screenshot_file_id: st
 
 
 async def get_topup_request(request_id: int):
-    async with aiosqlite.connect(DB_PATH) as conn:
-        conn.row_factory = aiosqlite.Row
+    async with get_db_connection() as conn:
         cursor = await conn.execute("SELECT * FROM topup_requests WHERE id = ?", (request_id,))
         row = await cursor.fetchone()
         return dict(row) if row else None
 
 
 async def update_topup_status(request_id: int, status: str):
-    async with aiosqlite.connect(DB_PATH) as conn:
+    async with get_db_connection() as conn:
         await conn.execute(
             "UPDATE topup_requests SET status = ? WHERE id = ?", (status, request_id)
         )
         await conn.commit()
+
+
+async def get_pending_topup_requests(limit: int = 50):
+    """Admin panel uchun: hali ko'rib chiqilmagan (kutilmoqda) hisob
+    to'ldirish so'rovlari."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT * FROM topup_requests WHERE status = 'kutilmoqda' ORDER BY id DESC LIMIT ?",
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def get_open_custom_orders(limit: int = 50):
+    """Admin panel uchun: hali "bog'lanildi" deb belgilanmagan shaxsiy
+    buyurtma so'rovlari."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT * FROM custom_orders WHERE status != ? ORDER BY id DESC LIMIT ?",
+            ("bog'lanildi", limit),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]

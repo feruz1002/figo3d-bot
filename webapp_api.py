@@ -5,11 +5,15 @@ Rasm/video proksi nima uchun kerak: mahsulot rasmlari bazada Telegram
 yuklab olinadi, oddiy <img src="..."> bilan to'g'ridan-to'g'ri ko'rsatib
 bo'lmaydi. Shuning uchun bu yerda serverning o'zi (tokenini oshkor
 qilmasdan) rasmni Telegramdan yuklab, brauzerga uzatib beradi."""
+import base64
+
+from aiogram.types import BufferedInputFile
 from aiohttp import web
 
 import db
 import order_service
-from config import BOT_TOKEN, PAYMENT_PROVIDER_TOKEN
+from admin_notify import notify_admins
+from config import BOT_TOKEN, CONTACT_INFO, PAYMENT_INFO, PAYMENT_PROVIDER_TOKEN
 from webapp_auth import validate_init_data
 
 
@@ -71,8 +75,13 @@ async def api_cart_set_qty(request: web.Request):
 
 
 async def api_config(request: web.Request):
-    """Mini App yuklanganda: qaysi to'lov usullari yoqilganini bilishi uchun."""
-    return web.json_response({"card_enabled": bool(PAYMENT_PROVIDER_TOKEN)})
+    """Mini App yuklanganda: qaysi to'lov usullari yoqilganini, "Aloqa" matni
+    va hisob to'ldirish rekvizitlarini bilishi uchun."""
+    return web.json_response({
+        "card_enabled": bool(PAYMENT_PROVIDER_TOKEN),
+        "contact_info": CONTACT_INFO,
+        "payment_info": PAYMENT_INFO,
+    })
 
 
 async def api_profile(request: web.Request):
@@ -87,6 +96,148 @@ async def api_profile(request: web.Request):
         "address": profile["address"] if profile else None,
         "balance": profile["balance"] if profile else 0,
     })
+
+
+def _decode_photo(data_url: str) -> bytes:
+    if "," in data_url:
+        data_url = data_url.split(",", 1)[1]
+    return base64.b64decode(data_url)
+
+
+async def _upload_photo_get_file_id(bot, filename: str, photo_data_url: str):
+    """Brauzerdan kelgan base64 rasmni Telegram'ga yuklab, keyinchalik
+    saqlash/qayta yuborish uchun ishlatiladigan "file_id"ni qaytaradi.
+    Buning uchun rasm birinchi adminning shaxsiy chatiga yuboriladi (bu
+    ADMIN_IDS bo'sh bo'lmasligini talab qiladi)."""
+    from config import ADMIN_IDS
+
+    if not ADMIN_IDS:
+        raise RuntimeError("ADMIN_IDS sozlanmagan - rasm yuklab bo'lmadi")
+    raw = _decode_photo(photo_data_url)
+    if len(raw) > 10 * 1024 * 1024:
+        raise ValueError("photo_too_large")
+    input_file = BufferedInputFile(raw, filename=filename)
+    msg = await bot.send_photo(ADMIN_IDS[0], photo=input_file)
+    return msg.photo[-1].file_id
+
+
+async def api_profile_update(request: web.Request):
+    user_id = _authed_user_id(request)
+    if user_id is None:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+
+    full_name = _valid_str(body.get("full_name"), 2)
+    phone = _valid_str(body.get("phone"), 7)
+    address = _valid_str(body.get("address"), 3)
+    if not full_name or not phone or not address:
+        return web.json_response({"error": "invalid_input"}, status=400)
+
+    await db.upsert_user_profile(user_id, full_name=full_name, phone=phone, address=address)
+    return web.json_response({"ok": True})
+
+
+async def api_orders(request: web.Request):
+    user_id = _authed_user_id(request)
+    if user_id is None:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    orders = await db.get_user_orders(user_id, limit=20)
+    return web.json_response({"orders": orders})
+
+
+async def api_custom_order(request: web.Request):
+    user_id = _authed_user_id(request)
+    if user_id is None:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+
+    description = _valid_str(body.get("description"), 3)
+    full_name = _valid_str(body.get("full_name"), 2)
+    phone = _valid_str(body.get("phone"), 7)
+    address = _valid_str(body.get("address"), 3)
+    photo_data_url = body.get("photo")
+    if not (description and full_name and phone and address and photo_data_url):
+        return web.json_response({"error": "invalid_input"}, status=400)
+
+    bot = request.app["bot"]
+    try:
+        photo_file_id = await _upload_photo_get_file_id(bot, "custom_order.jpg", photo_data_url)
+    except ValueError:
+        return web.json_response({"error": "photo_too_large"}, status=400)
+    except Exception:
+        return web.json_response({"error": "photo_upload_failed"}, status=502)
+
+    custom_order_id = await db.create_custom_order(
+        user_id=user_id, photo_file_id=photo_file_id, description=description,
+        full_name=full_name, phone=phone, address=address,
+    )
+    await db.upsert_user_profile(user_id, full_name=full_name, phone=phone, address=address)
+
+    caption = (
+        f"🎨 Yangi SHAXSIY buyurtma so'rovi #{custom_order_id}\n\n"
+        f"Tavsif: {description}\n\n"
+        f"Ism: {full_name}\n"
+        f"Tel: {phone}\n"
+        f"Manzil: {address}\n\n"
+        "Rasmni ko'rib, narxni kelishib, mijoz bilan bog'laning."
+    )
+    from keyboards import custom_admin_keyboard
+    await notify_admins(bot, photo=photo_file_id, caption=caption, reply_markup=custom_admin_keyboard(custom_order_id))
+
+    return web.json_response({"ok": True, "custom_order_id": custom_order_id})
+
+
+async def api_topup(request: web.Request):
+    user_id = _authed_user_id(request)
+    if user_id is None:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+
+    try:
+        amount = int(body.get("amount"))
+    except (TypeError, ValueError):
+        return web.json_response({"error": "invalid_input"}, status=400)
+    if amount <= 0:
+        return web.json_response({"error": "invalid_input"}, status=400)
+
+    photo_data_url = body.get("screenshot")
+    bot = request.app["bot"]
+    screenshot_file_id = None
+    if photo_data_url:
+        try:
+            screenshot_file_id = await _upload_photo_get_file_id(bot, "topup_proof.jpg", photo_data_url)
+        except ValueError:
+            return web.json_response({"error": "photo_too_large"}, status=400)
+        except Exception:
+            return web.json_response({"error": "photo_upload_failed"}, status=502)
+
+    request_id = await db.create_topup_request(user_id, amount, screenshot_file_id)
+
+    from handlers.catalog import format_price
+    from keyboards import topup_admin_keyboard
+    caption = (
+        f"💰 Yangi hisob to'ldirish so'rovi #{request_id}\n\n"
+        f"Foydalanuvchi ID: {user_id}\n"
+        f"Summasi: {format_price(amount)} so'm"
+    )
+    if screenshot_file_id:
+        await notify_admins(bot, photo=screenshot_file_id, caption=caption, reply_markup=topup_admin_keyboard(request_id))
+    else:
+        await notify_admins(bot, text=caption + "\n\n(Skrinshot yuborilmagan)", reply_markup=topup_admin_keyboard(request_id))
+
+    return web.json_response({"ok": True, "request_id": request_id})
 
 
 async def api_promo_check(request: web.Request):
@@ -183,6 +334,7 @@ async def api_checkout(request: web.Request):
         return web.json_response({"order_id": order_id, "status": "awaiting_payment", "invoice_link": link, "total": total})
 
     await order_service.notify_admin_new_order(request.app["bot"], order_id, payment_method)
+    await order_service.notify_customer_order_placed(request.app["bot"], order_id)
     return web.json_response({"order_id": order_id, "status": "confirmed", "total": total})
 
 
@@ -212,6 +364,10 @@ def register_webapp_routes(app: web.Application, webapp_index_path: str):
     app.router.add_get("/api/cart", api_cart)
     app.router.add_post("/api/cart/set_qty", api_cart_set_qty)
     app.router.add_get("/api/profile", api_profile)
+    app.router.add_post("/api/profile", api_profile_update)
+    app.router.add_get("/api/orders", api_orders)
+    app.router.add_post("/api/custom_order", api_custom_order)
+    app.router.add_post("/api/topup", api_topup)
     app.router.add_post("/api/promo/check", api_promo_check)
     app.router.add_post("/api/checkout", api_checkout)
     app.router.add_get("/api/photo/{file_id}", api_photo)

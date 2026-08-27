@@ -8,7 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 import db
-from config import ADMIN_CHAT_ID
+from admin_notify import notify_admins
 from handlers.states import CustomOrderStates
 from keyboards import (
     BTN_CUSTOM,
@@ -129,21 +129,17 @@ async def process_custom_address(message: Message, state: FSMContext, bot: Bot):
         reply_markup=main_menu_keyboard(),
     )
 
-    if ADMIN_CHAT_ID:
-        caption = (
-            f"🎨 Yangi SHAXSIY buyurtma so'rovi #{custom_order_id}\n\n"
-            f"Tavsif: {data['description']}\n\n"
-            f"Ism: {data['full_name']}\n"
-            f"Tel: {data['phone']}\n"
-            f"Manzil: {address}\n\n"
-            "Rasmni ko'rib, narxni kelishib, mijoz bilan bog'laning."
-        )
-        try:
-            await bot.send_photo(
-                ADMIN_CHAT_ID,
-                photo=data["photo_file_id"],
-                caption=caption,
-                reply_markup=custom_admin_keyboard(custom_order_id),
-            )
-        except Exception:
-            pass
+    caption = (
+        f"🎨 Yangi SHAXSIY buyurtma so'rovi #{custom_order_id}\n\n"
+        f"Tavsif: {data['description']}\n\n"
+        f"Ism: {data['full_name']}\n"
+        f"Tel: {data['phone']}\n"
+        f"Manzil: {address}\n\n"
+        "Rasmni ko'rib, narxni kelishib, mijoz bilan bog'laning."
+    )
+    await notify_admins(
+        bot,
+        photo=data["photo_file_id"],
+        caption=caption,
+        reply_markup=custom_admin_keyboard(custom_order_id),
+    )

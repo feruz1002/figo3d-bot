@@ -23,7 +23,7 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     -webkit-tap-highlight-color: transparent;
   }
-  #app { min-height: 100vh; padding-bottom: 96px; }
+  #app { min-height: 100vh; padding-bottom: 150px; }
   header { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 12px 14px 0; }
   header h1 { margin: 0 0 10px; font-size: 20px; font-weight: 700; }
   #tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; scrollbar-width: none; }
@@ -123,6 +123,44 @@
   .center-screen .icon { font-size: 52px; margin-bottom: 16px; }
   .center-screen h2 { font-size: 19px; margin: 0 0 8px; }
   .center-screen p { color: var(--hint); font-size: 14.5px; line-height: 1.5; margin: 0; }
+
+  #toast {
+    position: fixed; left: 14px; right: 14px; bottom: 14px; z-index: 50;
+    background: #1c1c1e; color: #ffffff; padding: 13px 16px; border-radius: 12px;
+    font-size: 13.5px; line-height: 1.4; box-shadow: 0 4px 18px rgba(0,0,0,0.25);
+    transform: translateY(140%); transition: transform 0.25s ease;
+  }
+  #toast.show { transform: translateY(0); }
+
+  .btn-spinner {
+    display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff;
+    animation: spin 0.7s linear infinite; vertical-align: -2px; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #bottomnav {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
+    display: flex; background: var(--bg); border-top: 1px solid rgba(128,128,128,0.18);
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+  }
+  .navbtn {
+    flex: 1; border: none; background: transparent; color: var(--hint);
+    font-size: 10.5px; padding: 6px 2px 2px; display: flex; flex-direction: column;
+    align-items: center; gap: 3px;
+  }
+  .navbtn .navicon { font-size: 20px; }
+  .navbtn.active { color: var(--button); }
+  #tabcontent { padding: 4px 14px 90px; }
+  #tabcontent.hidden { display: none; }
+  #grid.hidden, #tabs.hidden { display: none; }
+
+  .profile-box { background: var(--secondary-bg); border-radius: 14px; padding: 14px; margin-bottom: 14px; }
+  .profile-balance { font-size: 17px; font-weight: 700; margin-top: 4px; }
+  .order-card { background: var(--secondary-bg); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
+  .order-card .oc-title { font-size: 14px; font-weight: 700; margin-bottom: 3px; }
+  .order-card .oc-line { font-size: 12.5px; color: var(--hint); line-height: 1.5; }
+  .section-title { font-size: 13px; font-weight: 700; margin: 18px 0 8px; color: var(--hint); text-transform: uppercase; letter-spacing: 0.3px; }
 </style>
 </head>
 <body>
@@ -132,8 +170,11 @@
     <div id="tabs"></div>
   </header>
   <main id="grid"></main>
+  <div id="tabcontent" class="hidden"></div>
   <div id="overlay" class="hidden"></div>
 </div>
+<nav id="bottomnav"></nav>
+<div id="toast"></div>
 
 <script>
 (function () {
@@ -162,10 +203,15 @@
     categories: [], products: [], cart: {},
     detailProduct: null,
     cardEnabled: false,
+    contactInfo: "", paymentInfo: "",
     profile: null,
+    orders: null,
+    mainTab: "katalog", // "katalog" | "custom" | "orders" | "profile"
+    customForm: { photo: null, description: "", full_name: "", phone: "", address: "" },
+    topupForm: { amount: "", screenshot: null },
     checkout: { full_name: "", phone: "", address: "", promo_code: null, discount_percent: 0, discount_amount: 0 },
   };
-  var navStack = []; // bo'sh = "grid" (asosiy) ko'rinish
+  var navStack = []; // bo'sh = joriy mainTab'ning asosiy ko'rinishi
 
   function fmtPrice(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
   function escapeHtml(s) {
@@ -175,16 +221,47 @@
   }
   function initDataStr() { return tg ? tg.initData : ""; }
 
-  // {ok, status, data} qaytaradi - xato holatini ham chaqiruvchi o'zi ko'rib chiqishi mumkin
+  // Bitta joyda ko'rinadigan xato/ogohlantirish xabari - tarmoq/server
+  // muammosi YUZ BERGANDA hech narsa ko'rsatmasdan "jim" qolib ketmaslik
+  // uchun (aynan shu narsa avvalgi xato sababi edi: sekin/uxlab qolgan
+  // Render server javob bermaganda hech qanday xabar chiqmasdi).
+  var toastTimer = null;
+  function showToast(text) {
+    var el = document.getElementById("toast");
+    el.textContent = text;
+    el.classList.add("show");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove("show"); }, 5000);
+  }
+
+  // {ok, status, data} qaytaradi - xato holatini ham chaqiruvchi o'zi ko'rib chiqishi mumkin.
+  // Render'ning bepul tarifi uzoq ishlatilmasa "uxlab qoladi" va birinchi
+  // so'rovga javob berish 30-60 soniyagacha cho'zilishi mumkin - shuning
+  // uchun 45 soniyagacha kutamiz (darhol "ishlamayapti" deb hisoblamaymiz),
+  // lekin abadiy osilib qolmasligi uchun shu muddatdan keyin to'xtatamiz.
   function api(path, opts) {
     opts = opts || {};
     var headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
     if (initDataStr()) headers["X-Telegram-Init-Data"] = initDataStr();
-    return fetch(path, Object.assign({}, opts, { headers: headers }))
+    var controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    var timeoutId = controller ? setTimeout(function () { controller.abort(); }, 45000) : null;
+    return fetch(path, Object.assign({}, opts, { headers: headers, signal: controller ? controller.signal : undefined }))
       .then(function (res) {
+        if (timeoutId) clearTimeout(timeoutId);
         return res.json().catch(function () { return {}; }).then(function (data) {
           return { ok: res.ok, status: res.status, data: data };
         });
+      })
+      .catch(function (err) {
+        if (timeoutId) clearTimeout(timeoutId);
+        var isAbort = err && err.name === "AbortError";
+        showToast(
+          isAbort
+            ? "Server javob bermayapti (uxlab qolgan bo'lishi mumkin). Biroz kutib, qaytadan urinib ko'ring."
+            : "Internet aloqasida muammo. Qaytadan urinib ko'ring."
+        );
+        if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("error");
+        return { ok: false, status: 0, data: { error: "network" } };
       });
   }
 
@@ -194,7 +271,61 @@
   function currentView() { return navStack.length ? navStack[navStack.length - 1] : "grid"; }
   function pushView(name) { navStack.push(name); render(); }
   function popView() { if (navStack.length) navStack.pop(); render(); }
-  function resetToGrid() { navStack = []; render(); renderGrid(); }
+  function resetToGrid() { navStack = []; state.mainTab = "katalog"; renderBottomNav(); switchTabView(); render(); renderGrid(); }
+
+  // ---------- Asosiy tab (pastki navigatsiya): Katalog / Shaxsiy / Buyurtmalar / Profil ----------
+  var MAIN_TABS = [
+    { key: "katalog", icon: "🗂", label: "Katalog" },
+    { key: "custom", icon: "🎨", label: "Shaxsiy" },
+    { key: "orders", icon: "📦", label: "Buyurtmalar" },
+    { key: "profile", icon: "👤", label: "Profil" },
+  ];
+
+  function renderBottomNav() {
+    var el = document.getElementById("bottomnav");
+    el.innerHTML = MAIN_TABS.map(function (t) {
+      return (
+        '<button class="navbtn' + (state.mainTab === t.key ? " active" : "") + '" data-tab="' + t.key + '">' +
+          '<span class="navicon">' + t.icon + '</span><span>' + t.label + '</span>' +
+        '</button>'
+      );
+    }).join("");
+    el.querySelectorAll(".navbtn").forEach(function (btn) {
+      btn.onclick = function () { switchMainTab(btn.getAttribute("data-tab")); };
+    });
+  }
+
+  function switchTabView() {
+    var grid = document.getElementById("grid");
+    var tabsEl = document.getElementById("tabs");
+    var tabcontent = document.getElementById("tabcontent");
+    if (state.mainTab === "katalog") {
+      grid.classList.remove("hidden");
+      tabsEl.classList.remove("hidden");
+      tabcontent.classList.add("hidden");
+    } else {
+      grid.classList.add("hidden");
+      tabsEl.classList.add("hidden");
+      tabcontent.classList.remove("hidden");
+      renderTabContent();
+    }
+  }
+
+  function switchMainTab(tab) {
+    if (tab === state.mainTab && navStack.length === 0) return;
+    navStack = [];
+    state.mainTab = tab;
+    renderBottomNav();
+    switchTabView();
+    render();
+  }
+
+  function renderTabContent() {
+    var el = document.getElementById("tabcontent");
+    if (state.mainTab === "custom") renderCustomTab(el);
+    else if (state.mainTab === "orders") renderOrdersTab(el);
+    else if (state.mainTab === "profile") renderProfileTab(el);
+  }
 
   if (tg) {
     tg.BackButton.onClick(function () { popView(); });
@@ -231,7 +362,11 @@
     });
   }
   function loadConfig() {
-    return api("/api/config").then(function (r) { state.cardEnabled = !!(r.data && r.data.card_enabled); });
+    return api("/api/config").then(function (r) {
+      state.cardEnabled = !!(r.data && r.data.card_enabled);
+      state.contactInfo = (r.data && r.data.contact_info) || "";
+      state.paymentInfo = (r.data && r.data.payment_info) || "";
+    });
   }
   function loadProfile() {
     return api("/api/profile").then(function (r) { if (r.ok) state.profile = r.data; });
@@ -340,24 +475,55 @@
       tg.MainButton.setText("Davom etish"); tg.MainButton.show();
     } else if (view === "checkout_success") {
       tg.MainButton.setText("Davom etish"); tg.MainButton.show();
+    } else if (view === "topup_form") {
+      tg.MainButton.setText("💳 So'rov yuborish"); tg.MainButton.show();
     } else if (view === "grid") {
-      var c = cartCount();
-      if (c > 0) { tg.MainButton.setText("🛒 Savat — " + c + " ta, " + fmtPrice(cartSubtotal()) + " so'm"); tg.MainButton.show(); }
-      else tg.MainButton.hide();
+      if (state.mainTab === "katalog") {
+        var c = cartCount();
+        if (c > 0) { tg.MainButton.setText("🛒 Savat — " + c + " ta, " + fmtPrice(cartSubtotal()) + " so'm"); tg.MainButton.show(); }
+        else tg.MainButton.hide();
+      } else if (state.mainTab === "custom") {
+        tg.MainButton.setText("📤 So'rovni yuborish"); tg.MainButton.show();
+      } else if (state.mainTab === "profile") {
+        tg.MainButton.setText("💾 Saqlash"); tg.MainButton.show();
+      } else {
+        tg.MainButton.hide();
+      }
     } else {
       tg.MainButton.hide();
     }
   }
 
+  // Tarmoq so'rovi ketayotganda MainButton'ni "band" deb belgilaymiz - bu
+  // ikki narsa uchun kerak: (1) foydalanuvchi tugmani qayta-qayta bosib,
+  // bitta buyurtmani ikki marta yubormasligi uchun, (2) Telegram'ning o'z
+  // "aylanuvchi" indikatorini ko'rsatib, sekin (masalan Render uxlab
+  // qolgandan keyingi birinchi) so'rov paytida ekran "muzlab qolgandek"
+  // ko'rinmasligi uchun.
+  var mainBtnBusy = false;
+  function withMainButtonProgress(fn) {
+    if (mainBtnBusy) return;
+    mainBtnBusy = true;
+    if (tg) tg.MainButton.showProgress(true);
+    Promise.resolve(fn()).then(function () {
+      mainBtnBusy = false;
+      if (tg) tg.MainButton.hideProgress();
+    });
+  }
+
   if (tg) {
     tg.MainButton.onClick(function () {
       var view = currentView();
+      if (mainBtnBusy) return;
       if (view === "detail" && state.detailProduct) { changeQty(state.detailProduct.id, 1); }
-      else if (view === "cart") { beginCheckout(); }
+      else if (view === "cart") { withMainButtonProgress(beginCheckout); }
       else if (view === "checkout_form") { submitCheckoutForm(); }
-      else if (view === "checkout_promo") { submitPromoStep(); }
+      else if (view === "checkout_promo") { withMainButtonProgress(submitPromoStep); }
       else if (view === "checkout_success") { resetToGrid(); }
-      else if (view === "grid") { pushView("cart"); }
+      else if (view === "topup_form") { withMainButtonProgress(submitTopupForm); }
+      else if (view === "grid" && state.mainTab === "katalog") { pushView("cart"); }
+      else if (view === "grid" && state.mainTab === "custom") { withMainButtonProgress(submitCustomOrderForm); }
+      else if (view === "grid" && state.mainTab === "profile") { withMainButtonProgress(submitProfileForm); }
     });
   }
 
@@ -432,9 +598,9 @@
 
   // ---------- Checkout: profil tanlovi ----------
   function beginCheckout() {
-    if (cartCount() === 0) return;
+    if (cartCount() === 0) return Promise.resolve();
     state.checkout = { full_name: "", phone: "", address: "", promo_code: null, discount_percent: 0, discount_amount: 0 };
-    loadProfile().then(function () {
+    return loadProfile().then(function () {
       var pr = state.profile;
       var hasSaved = pr && pr.full_name && pr.phone && pr.address;
       if (hasSaved) pushView("checkout_profile");
@@ -558,7 +724,7 @@
     var codeInput = document.getElementById("p-code");
     var typed = codeInput ? codeInput.value.trim().toUpperCase() : "";
     if (typed && typed !== state.checkout.promo_code) {
-      api("/api/promo/check", { method: "POST", body: JSON.stringify({ code: typed }) }).then(function (r) {
+      return api("/api/promo/check", { method: "POST", body: JSON.stringify({ code: typed }) }).then(function (r) {
         if (r.ok && r.data.valid) {
           state.checkout.promo_code = r.data.code;
           state.checkout.discount_percent = r.data.discount_percent;
@@ -568,10 +734,10 @@
           state.checkout.discount_percent = 0;
           state.checkout.discount_amount = 0;
         }
-        loadProfile().then(function () { pushView("checkout_payment"); });
+        return loadProfile().then(function () { pushView("checkout_payment"); });
       });
     } else {
-      loadProfile().then(function () { pushView("checkout_payment"); });
+      return loadProfile().then(function () { pushView("checkout_payment"); });
     }
   }
 
@@ -696,7 +862,222 @@
       '</div>';
   };
 
+  // ---------- Shaxsiy buyurtma (tab) ----------
+  function renderCustomTab(el) {
+    var f = state.customForm;
+    var pr = state.profile;
+    if (!f.full_name && pr && pr.full_name) {
+      f.full_name = pr.full_name; f.phone = pr.phone; f.address = pr.address;
+    }
+    el.innerHTML =
+      '<div class="screen-title" style="margin-top:14px">🎨 Shaxsiy buyurtma</div>' +
+      '<p style="color:var(--hint);font-size:13.5px;line-height:1.5;margin:0 0 14px">' +
+        "O'zingiz xohlagan rasmni yuboring (odam, uy hayvoni, logotip va h.k.) — hamkorlarimiz shu asosida noyob haykalcha yoki buyum tayyorlab berishadi." +
+      '</p>' +
+      '<div class="form-group"><label class="form-label">Rasm</label>' +
+        '<div id="custom-photo-preview">' + (f.photo ? '<img src="' + f.photo + '" style="width:100%;border-radius:12px">' : '') + '</div>' +
+        '<button class="option-btn" id="custom-photo-btn" style="margin-top:8px">' + (f.photo ? "🔄 Boshqa rasm tanlash" : "📷 Rasm tanlash") + '</button>' +
+        '<input type="file" id="custom-photo-input" accept="image/*" style="display:none"></div>' +
+      '<div class="form-group"><label class="form-label">Qanday ko\'rinishda tayyorlashni xohlaysiz?</label>' +
+        '<textarea class="form-input" id="custom-desc" style="min-height:70px;font-family:inherit" placeholder="Taxminiy o\'lcham, rang, uslub...">' + escapeHtml(f.description) + '</textarea></div>' +
+      '<div class="form-group"><label class="form-label">Ism-familiya</label>' +
+        '<input class="form-input" id="custom-name" value="' + escapeHtml(f.full_name) + '"></div>' +
+      '<div class="form-group"><label class="form-label">Telefon</label>' +
+        '<input class="form-input" id="custom-phone" value="' + escapeHtml(f.phone) + '" type="tel"></div>' +
+      '<div class="form-group"><label class="form-label">Manzil</label>' +
+        '<input class="form-input" id="custom-address" value="' + escapeHtml(f.address) + '"></div>' +
+      '<div class="form-error hidden" id="custom-error"></div>';
+
+    document.getElementById("custom-photo-btn").onclick = function () { document.getElementById("custom-photo-input").click(); };
+    document.getElementById("custom-photo-input").onchange = function (e) {
+      var file = e.target.files && e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        f.photo = reader.result;
+        document.getElementById("custom-photo-preview").innerHTML = '<img src="' + f.photo + '" style="width:100%;border-radius:12px">';
+        document.getElementById("custom-photo-btn").textContent = "🔄 Boshqa rasm tanlash";
+      };
+      reader.readAsDataURL(file);
+    };
+  }
+
+  function submitCustomOrderForm() {
+    var f = state.customForm;
+    var description = document.getElementById("custom-desc").value.trim();
+    var full_name = document.getElementById("custom-name").value.trim();
+    var phone = document.getElementById("custom-phone").value.trim();
+    var address = document.getElementById("custom-address").value.trim();
+    var errEl = document.getElementById("custom-error");
+    var problems = [];
+    if (!f.photo) problems.push("rasm tanlang");
+    if (description.length < 3) problems.push("tavsifni yozing");
+    if (full_name.length < 2) problems.push("ismingizni yozing");
+    if (phone.length < 7) problems.push("telefon raqamni to'g'ri kiriting");
+    if (address.length < 3) problems.push("manzilni kiriting");
+    if (problems.length) {
+      errEl.textContent = "Iltimos: " + problems.join(", ") + ".";
+      errEl.classList.remove("hidden");
+      return Promise.resolve();
+    }
+    errEl.classList.add("hidden");
+    return api("/api/custom_order", {
+      method: "POST",
+      body: JSON.stringify({ photo: f.photo, description: description, full_name: full_name, phone: phone, address: address }),
+    }).then(function (r) {
+      if (r.ok) {
+        showToast("✅ So'rovingiz qabul qilindi!");
+        state.customForm = { photo: null, description: "", full_name: full_name, phone: phone, address: address };
+        switchMainTab("katalog");
+      } else {
+        errEl.textContent = "Xatolik yuz berdi. Qaytadan urinib ko'ring.";
+        errEl.classList.remove("hidden");
+      }
+    });
+  }
+
+  // ---------- Buyurtmalarim (tab) ----------
+  var ORDER_STATUS_LABELS = {
+    "yangi": "🕓 Kutilmoqda", "qabul qilindi": "✅ Qabul qilindi",
+    "tayyorlanmoqda": "🛠 Tayyorlanmoqda", "yetkazildi": "📦 Yetkazildi",
+    "to'lov kutilmoqda (karta)": "💳 To'lov kutilmoqda",
+    "to'landi (karta)": "💳 To'landi (karta)", "to'landi (hamyondan)": "💰 To'landi (hamyondan)",
+  };
+
+  function renderOrdersTab(el) {
+    el.innerHTML = '<div class="empty">Yuklanmoqda...</div>';
+    api("/api/orders").then(function (r) {
+      if (state.mainTab !== "orders") return; // shu orada boshqa tabga o'tib ulgurgan bo'lishi mumkin
+      if (!r.ok) { el.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
+      var orders = r.data.orders || [];
+      if (!orders.length) {
+        el.innerHTML = '<div class="empty">Sizda hali buyurtmalar yo\'q. Katalogdan mahsulot tanlab, birinchi buyurtmangizni bering!</div>';
+        return;
+      }
+      el.innerHTML = '<div class="screen-title" style="margin-top:14px">📦 Buyurtmalaringiz</div>' + orders.map(function (o) {
+        var items = [];
+        try { items = JSON.parse(o.items_json); } catch (e) {}
+        var itemsText = items.map(function (i) { return i.name + " x" + i.quantity; }).join(", ");
+        return (
+          '<div class="order-card">' +
+            '<div class="oc-title">#' + o.id + ' — ' + fmtPrice(o.total_price) + " so'm</div>" +
+            '<div class="oc-line">' + escapeHtml(itemsText) + '</div>' +
+            '<div class="oc-line">Holat: ' + (ORDER_STATUS_LABELS[o.status] || escapeHtml(o.status)) + '</div>' +
+          '</div>'
+        );
+      }).join("");
+    });
+  }
+
+  // ---------- Profil (tab) ----------
+  function renderProfileTab(el) {
+    el.innerHTML = '<div class="empty">Yuklanmoqda...</div>';
+    loadProfile().then(function () {
+      if (state.mainTab !== "profile") return;
+      var pr = state.profile || {};
+      el.innerHTML =
+        '<div class="screen-title" style="margin-top:14px">👤 Profil</div>' +
+        '<div class="profile-box"><div style="color:var(--hint);font-size:12.5px">Hamyon balansi</div>' +
+          '<div class="profile-balance">' + fmtPrice(pr.balance || 0) + " so'm</div>" +
+          '<button class="option-btn" id="topup-btn" style="margin-top:10px">💰 Hisobni to\'ldirish</button>' +
+        '</div>' +
+        '<div class="form-group"><label class="form-label">Ism-familiya</label><input class="form-input" id="pf-name" value="' + escapeHtml(pr.full_name || "") + '"></div>' +
+        '<div class="form-group"><label class="form-label">Telefon</label><input class="form-input" id="pf-phone" value="' + escapeHtml(pr.phone || "") + '" type="tel"></div>' +
+        '<div class="form-group"><label class="form-label">Manzil</label><input class="form-input" id="pf-address" value="' + escapeHtml(pr.address || "") + '"></div>' +
+        '<div class="form-error hidden" id="pf-error"></div>' +
+        '<div class="section-title">☎️ Aloqa</div>' +
+        '<div class="profile-box" style="white-space:pre-wrap;font-size:13.5px">' + escapeHtml(state.contactInfo) + '</div>';
+      document.getElementById("topup-btn").onclick = function () { pushView("topup_form"); };
+    });
+  }
+
+  function submitProfileForm() {
+    var full_name = document.getElementById("pf-name").value.trim();
+    var phone = document.getElementById("pf-phone").value.trim();
+    var address = document.getElementById("pf-address").value.trim();
+    var errEl = document.getElementById("pf-error");
+    var problems = [];
+    if (full_name.length < 2) problems.push("ismingizni yozing");
+    if (phone.length < 7) problems.push("telefon raqamni to'g'ri kiriting");
+    if (address.length < 3) problems.push("manzilni kiriting");
+    if (problems.length) {
+      errEl.textContent = "Iltimos: " + problems.join(", ") + ".";
+      errEl.classList.remove("hidden");
+      return Promise.resolve();
+    }
+    errEl.classList.add("hidden");
+    return api("/api/profile", {
+      method: "POST",
+      body: JSON.stringify({ full_name: full_name, phone: phone, address: address }),
+    }).then(function (r) {
+      if (r.ok) {
+        showToast("✅ Saqlandi");
+        state.profile = Object.assign({}, state.profile, { full_name: full_name, phone: phone, address: address });
+      } else {
+        errEl.textContent = "Xatolik yuz berdi. Qaytadan urinib ko'ring.";
+        errEl.classList.remove("hidden");
+      }
+    });
+  }
+
+  // ---------- Hisobni to'ldirish (profil ichidan ochiladigan overlay) ----------
+  VIEW_RENDERERS.topup_form = function (el) {
+    var f = state.topupForm;
+    el.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">💰 Hisobni to\'ldirish</div>' +
+        '<div class="form-group"><label class="form-label">Summasi (so\'m)</label>' +
+          '<input class="form-input" id="tp-amount" type="number" value="' + escapeHtml(String(f.amount || "")) + '" placeholder="masalan: 100000"></div>' +
+        '<div class="summary-box" style="white-space:pre-wrap">' + escapeHtml(state.paymentInfo) + '</div>' +
+        '<div class="form-group"><label class="form-label">Chek skrinshoti (ixtiyoriy)</label>' +
+          '<div id="tp-photo-preview">' + (f.screenshot ? '<img src="' + f.screenshot + '" style="width:100%;border-radius:12px">' : '') + '</div>' +
+          '<button class="option-btn" id="tp-photo-btn" style="margin-top:8px">' + (f.screenshot ? "🔄 Boshqa rasm" : "📎 Skrinshot biriktirish") + '</button>' +
+          '<input type="file" id="tp-photo-input" accept="image/*" style="display:none"></div>' +
+        '<div class="form-error hidden" id="tp-error"></div>' +
+      '</div>';
+    document.getElementById("tp-photo-btn").onclick = function () { document.getElementById("tp-photo-input").click(); };
+    document.getElementById("tp-photo-input").onchange = function (e) {
+      var file = e.target.files && e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        f.screenshot = reader.result;
+        document.getElementById("tp-photo-preview").innerHTML = '<img src="' + f.screenshot + '" style="width:100%;border-radius:12px">';
+        document.getElementById("tp-photo-btn").textContent = "🔄 Boshqa rasm";
+      };
+      reader.readAsDataURL(file);
+    };
+  };
+
+  function submitTopupForm() {
+    var amountStr = document.getElementById("tp-amount").value.trim();
+    var amount = parseInt(amountStr, 10);
+    var errEl = document.getElementById("tp-error");
+    if (!amount || amount <= 0) {
+      errEl.textContent = "Iltimos, to'g'ri summa kiriting.";
+      errEl.classList.remove("hidden");
+      return Promise.resolve();
+    }
+    errEl.classList.add("hidden");
+    var body = { amount: amount };
+    if (state.topupForm.screenshot) body.screenshot = state.topupForm.screenshot;
+    return api("/api/topup", { method: "POST", body: JSON.stringify(body) }).then(function (r) {
+      if (r.ok) {
+        showToast("✅ So'rovingiz yuborildi");
+        state.topupForm = { amount: "", screenshot: null };
+        popView();
+        loadProfile().then(function () {
+          if (state.mainTab === "profile") renderProfileTab(document.getElementById("tabcontent"));
+        });
+      } else {
+        errEl.textContent = "Xatolik yuz berdi. Qaytadan urinib ko'ring.";
+        errEl.classList.remove("hidden");
+      }
+    });
+  }
+
   // ---------- Boshlash ----------
+  renderBottomNav();
   loadCatalog()
     .then(function () {
       activeCategory = state.categories[0] || null;

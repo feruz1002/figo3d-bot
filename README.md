@@ -4,17 +4,20 @@ Bu bot mijozlarga 3D-print qilingan haykalcha, kalitcha va sovg'a buyumlarini
 katalogdan tanlab, buyurtma berish imkonini beradi. Buyurtma qabul qilingach,
 sizga (adminga) avtomatik xabar keladi.
 
-**Hozircha ishlaydigan qism:** **veb-do'kon (Mini App)** — "🗂 Katalog"
-tugmasi endi zamonaviy, rasmli-kartochkali veb-sahifa ko'rinishida ochiladi
-(eski tugmali menyu emas); katalog (ko'p rasm/video bilan, endi to'liq
-**bot orqali** boshqariladi — /admin), savat (miqdorni ➕/➖ qilish bilan) —
-**va endi butun buyurtma berish jarayoni HAM** (kimga: o'zimga/sovg'a, ism/
-telefon/manzil, promo-kod, to'lov usuli — hamyon/karta/naqd) **to'liq shu
-veb-sahifa ichida**, chatga chiqmasdan. Bundan tashqari: mijoz sharhlari va
-reytingi, shaxsiy (o'z rasmidan) buyurtma so'rovi, shaxsiy profil (ism/
-telefon/manzilni saqlash va qayta ishlatish), ichki hamyon (balans),
-Telegram ichida karta orqali to'lov (Click/Payme ulangach), admin
-xabarnomasi.
+**Hozircha ishlaydigan qism:** Endi **hammasi bitta veb-do'kon (Mini App)
+ichida** — pastdagi eski matnli tugmalar butunlay olib tashlandi (production
+rejimida). Xabar yozish maydoni yonidagi doimiy **"🛍 Do'kon"** tugmasini
+bosgan mijoz — katalog, savat, **butun buyurtma berish jarayoni** (ism/
+telefon/manzil, promo-kod, to'lov usuli — hamyon/karta/naqd), **profil**
+(ism/telefon/manzilni saqlash), **buyurtmalar tarixi**, **shaxsiy (o'z
+rasmidan) buyurtma so'rovi** va **aloqa ma'lumotlari** — bularning
+BARCHASINI pastki tab (yorliq) navigatsiyasi orqali, chatga umuman
+chiqmasdan ishlatadi. Bundan tashqari: mijoz sharhlari va reytingi, ichki
+hamyon (balans), Telegram ichida karta orqali to'lov (Click/Payme
+ulangach), **bir nechta admin/hamkorga ruxsat berish**, va — eng
+muhimi — endi **admin veb-paneli** orqali buyurtmalarni, hisob to'ldirish
+so'rovlarini va mahsulotlarni chatga yozmasdan, chiroyli veb-sahifadan
+boshqarish mumkin (pastda "Admin veb-paneli" bo'limiga qarang).
 
 **Keyingi bosqichda qo'shiladi:** hozircha hisobni to'ldirish (hamyon)
 qo'lda admin tasdig'i bilan ishlaydi (mijoz to'lov qilib, chekining
@@ -72,6 +75,14 @@ akkaunt va repository (loyiha "papkasi") kerak.
 5. Pastroqda **Environment Variables** bo'limini toping va qo'shing:
    - `BOT_TOKEN` = 1-qadamda olgan tokeningiz
    - `ADMIN_CHAT_ID` = 2-qadamda olgan ID raqamingiz
+   - `ADMIN_IDS` = **ixtiyoriy.** Yana boshqa odamlarga (masalan 3D-print
+     hamkoringizga) ham admin ruxsati bermoqchi bo'lsangiz, ularning ID
+     raqamlarini vergul bilan ajratib shu yerga yozing (masalan:
+     `111111111,222222222`) — pastda "Bir nechta admin qo'shish" bo'limiga
+     qarang
+   - `CONTACT_INFO` = **ixtiyoriy.** Mini App'ning "Aloqa" bo'limida
+     mijozlarga ko'rsatiladigan matn (masalan: `@figo3d_support yoki +998 90
+     123 45 67`)
    - `PAYMENT_INFO` = mijozlarga ko'rsatiladigan to'lov rekvizitlaringiz
      (masalan: `Karta: 8600 1234 5678 9012 - F. Familiya (Payme/Click ham shu
      kartaga)`) — bu hisobni to'ldirish so'rovida mijozga ko'rsatiladi
@@ -79,6 +90,12 @@ akkaunt va repository (loyiha "papkasi") kerak.
      tokenini olganingizda shu nom bilan qo'shasiz (pastda "Click/Payme
      to'lovini ulash" bo'limiga qarang) — token yo'qligida bot avvalgidek
      hamyon/naqd usullari bilan ishlayveradi, hech narsa buzilmaydi
+   - `TURSO_DATABASE_URL` va `TURSO_AUTH_TOKEN` = **tavsiya etiladi**,
+     lekin ixtiyoriy — ma'lumotlaringiz (buyurtmalar, hamyon balanslari,
+     mahsulotlar) Render diski tozalanganda ham yo'qolib qolmasligi uchun.
+     Pastda **"Ma'lumotlar bazasini doimiy saqlash (Turso)"** bo'limida
+     qadam-baqadam tushuntirilgan — hozircha bo'sh qoldirsangiz ham bot
+     ishlayveradi (avvalgidek, faqat mahalliy fayl bilan)
 6. **Create Web Service** tugmasini bosing
 
 Render avtomatik ravishda kodni yuklab oladi, kerakli kutubxonalarni
@@ -106,36 +123,83 @@ mahsulotlaringizni (rasmlari bilan) qo'shishni boshlashingiz mumkin — pastda
 
 ## Yangi imkoniyatlar qanday ishlatiladi
 
-### 🛍 Veb-do'kon (Mini App) — endi TO'LIQ shu yerda, buyurtma berish ham
+### 🛍 Veb-do'kon (Mini App) — endi hammasi shu yerda: katalog, buyurtma, profil, buyurtmalar, aloqa
 
-Endi "🗂 Katalog" tugmasi eski tugma-menyu o'rniga haqiqiy **veb-sahifa**
-sifatida ochiladi (Telegram buni "Mini App" deb ataydi) — rasm-kartochkalar
-2 ustunli to'r ko'rinishida, bo'limlar tepada tab (yorliq) sifatida, mahsulot
-ustiga bosilganda katta rasm + bir necha rasm bo'lsa suriladigan galereya,
-Telegram'ning o'z pastki tugmasi (masalan "🛒 Savat — 3 ta, 450 000 so'm")
-orqali savatni ko'rish. Bundan tashqari, xabar yozish maydoni yonida doimiy
-**"🛍 Do'kon"** tugmasi ham paydo bo'ladi — istalgan vaqtda shu orqali ham
-ochish mumkin.
+Xabar yozish maydoni yonidagi doimiy **"🛍 Do'kon"** tugmasi haqiqiy
+**veb-sahifa** sifatida ochiladi (Telegram buni "Mini App" deb ataydi).
+Pastida 4 ta tab (yorliq) bor:
 
-Sizning so'rovingizga ko'ra (buyurtmalarni chatga chiqmasdan, to'liq Mini
-App orqali qilish), endi **butun buyurtma berish jarayoni** shu veb-sahifa
-ichida: savatdan "✅ Buyurtma berish" → "🙋 O'zim uchun" (saqlangan
-ma'lumotdan) yoki "🎁 Sovg'a / boshqa manzil" (yangi ism/telefon/manzil) →
-promo-kod (ixtiyoriy, darhol tekshiriladi) → to'lov usuli (hamyon/karta/
-naqd) → "✅ Buyurtmangiz qabul qilindi!" ekrani — hammasi bitta oqimda,
-chatga umuman chiqmasdan. Karta orqali to'lov tanlansa, Telegram'ning o'z
-to'lov oynasi shu Mini App ichida ochiladi (`openInvoice`). Shu bilan
-birga, endi kerak bo'lmagani uchun bosh menyudan alohida **"🛒 Savat"**
-tugmasi olib tashlandi — savat va buyurtma to'liq "🗂 Katalog" (veb-do'kon)
-ichida.
+- **🗂 Katalog** — rasm-kartochkalar 2 ustunli to'r ko'rinishida, bo'limlar
+  tepada tab sifatida, mahsulot ustiga bosilganda katta rasm + galereya,
+  savat va **butun buyurtma berish jarayoni** (kimga: o'zimga/sovg'a, ism/
+  telefon/manzil, promo-kod, to'lov usuli — hamyon/karta/naqd) — hammasi
+  shu yerda, chatga chiqmasdan. Karta orqali to'lov tanlansa, Telegram'ning
+  o'z to'lov oynasi shu Mini App ichida ochiladi (`openInvoice`)
+- **🎨 Shaxsiy** — mijoz o'z rasmini yuklab, shaxsiy buyurtma so'rovi yuboradi
+- **📦 Buyurtmalar** — mijozning oldingi buyurtmalari va ularning holati
+  (kutilmoqda / qabul qilindi / tayyorlanmoqda / yetkazildi)
+- **👤 Profil** — ism/telefon/manzilni saqlash-yangilash, hamyon balansi,
+  "💰 Hisobni to'ldirish" va aloqa ma'lumotlari (`CONTACT_INFO`) — hammasi
+  shu bitta bo'limda
+
+**Muhim (tuzatilgan xato):** avval Mini App'dan buyurtma berilganda ba'zan
+hech qanday tasdiq xabari chiqmay, adminga ham xabar bormay qolishi mumkin
+edi (asosiy sabab — Render bepul rejasi 15 daqiqadan keyin botni
+"uxlatib qo'yadi", va shu tufayli birinchi so'rov 30-60 soniya kechikishi
+mumkin edi — agar shu payt tarmoq vaqtinchalik javob bermasa, xabar
+sizga ham, mijozga ham yetib bormasdi). Endi har bir so'rov 45 soniyagacha
+kutadi va MUVAFFAQIYATSIZ bo'lsa mijozga darhol tushunarli xabar (toast)
+chiqadi — jim qolib ketish yo'q. Bundan tashqari, endi naqd/hamyon orqali
+berilgan har bir buyurtmada **mijozning o'ziga ham** alohida "✅ Buyurtmangiz
+qabul qilindi!" tasdiq xabari yuboriladi (avval faqat adminga yuborilardi).
 
 **Muhim:** bu faqat Render'da (haqiqiy https manzil bilan) ishlaydi —
 mahalliy kompyuteringizda sinaganingizda (https yo'q joyda) bot avvalgi
-tugmali katalog+savat ko'rinishiga avtomatik tushib qoladi (o'sha holatda
-"🛒 Savat" tugmasi ham qayta ko'rinadi, buyurtma berish esa chatda davom
-etadi) — hech narsa buzilmaydi. Deploy qilgach ishlamay qolsa, ehtimol
+tugmali ko'rinishga avtomatik tushib qoladi (buyurtma berish esa chatda
+davom etadi) — hech narsa buzilmaydi. Deploy qilgach ishlamay qolsa, ehtimol
 @BotFather'da `/setdomain` orqali domeningizni tasdiqlash kerak bo'lishi
 mumkin — shunday bo'lsa menga xabar bering, birga hal qilamiz.
+
+### Admin veb-paneli — buyurtma/mahsulotlarni chatsiz, veb-sahifadan boshqarish
+
+Endi `/admin` buyrug'ini yozganda chiqadigan xabarda **"🖥 Boshqaruv panelini
+ochish"** tugmasi bor — bu ham xuddi mijozlar do'koni kabi veb-sahifa
+(Mini App) ko'rinishida ochiladi, lekin FAQAT sizga (va ruxsat bergan
+hamkorlaringizga) mo'ljallangan. Tab'lari:
+
+- **Buyurtmalar** — hali "qabul qilindi"ga o'tmagan buyurtmalar ro'yxati,
+  har birida "✅ Qabul qildim" tugmasi
+- **Shaxsiy** — hali javob berilmagan shaxsiy buyurtma so'rovlari (rasm bilan)
+- **To'ldirish** — kutilayotgan hisob to'ldirish so'rovlari, "✅ Tasdiqlash"/
+  "❌ Rad etish" tugmalari bilan
+- **Mahsulotlar** — mavjud mahsulotlar ro'yxati + pastki o'ng burchakdagi
+  "➕" tugmasi orqali yangi mahsulot qo'shish (bir nechta rasm bilan birga)
+
+**Xavfsizlik:** panelga FAQAT `ADMIN_CHAT_ID`/`ADMIN_IDS` ro'yxatidagi
+Telegram ID'lar kira oladi — Telegram'ning o'zi imzolab yuboradigan
+maxfiy ma'lumot (`initData`) har bir so'rovda serverning o'zida tekshiriladi,
+shuning uchun havolani bilib olgan boshqa odam ham kira olmaydi. Chatdagi
+eski usul (`/admin` orqali mahsulot qo'shish, buyurtma tugmalari va h.k.)
+ham avvalgidek ishlayveradi — ikkalasidan xohlaganingizni ishlatishingiz
+mumkin, ikkalasi bir xil ma'lumot bilan ishlaydi.
+
+**Bu — yangi imkoniyat, ishlatishdan oldin diqqat bilan sinab ko'ring**
+(masalan bitta sinov mahsulot qo'shib-o'chirib ko'ring), ayniqsa real
+buyurtmalar/to'lovlarni tasdiqlashdan oldin. Va mijozlar do'koni kabi, bu
+ham faqat Render'da (haqiqiy https manzil bilan) ishlaydi — mahalliy
+kompyuteringizda sinaganingizda "🖥 Boshqaruv panelini ochish" tugmasi
+umuman ko'rinmaydi, chatdagi eski `/admin` usuli esa ishlayveradi.
+
+### Bir nechta admin qo'shish
+
+Agar buyurtmalarni siz bilan birga boshqa odam ham (masalan 3D-print
+hamkoringiz) ko'rib, qabul qilishini xohlasangiz — Render'ning Environment
+Variables bo'limida `ADMIN_IDS` nomi bilan ularning Telegram ID
+raqamlarini vergul bilan ajratib qo'shing (masalan: `111111111,222222222`).
+`ADMIN_CHAT_ID`'ni o'zgartirish shart emas, u avtomatik qo'shiladi.
+Shundan so'ng: yangi buyurtma, shaxsiy buyurtma so'rovi va hisob to'ldirish
+so'rovi haqidagi xabarlar **HAMMA** adminlarga yuboriladi, va hammasi
+`/admin` buyrug'i hamda admin veb-paneliga kira oladi.
 
 ### Savat: miqdorni ➕/➖ qilish
 
@@ -148,28 +212,28 @@ kamaytirish yoki oshirish mumkin (0 ga tushsa, mahsulot savatdan butunlay
 o'chadi). Butunlay o'chirish uchun bir necha marta ➖ bosish kifoya, yoki
 "🗑 Savatni tozalash" bilan hammasini bir yo'la tozalash mumkin.
 
-### Tugmalar
+### Pastki tugmalar butunlay olib tashlandi
 
-Bosh menyu tugmalari 2 tadan qilib, tekis qatorlarga joylashtirilgan (
-Buyurtmalarim/Profil, Shaxsiy buyurtma/Aloqa) — bir ustunga tizilgan avvalgi
-ko'rinishdan ko'ra ancha ixcham va ko'zga yoqimli. "🗂 Katalog" endi o'zi
-alohida qatorda, chunki u orqali ochiladigan veb-do'kon savat va buyurtma
-berishni ham o'z ichiga oladi ("🛒 Savat" tugmasi shu sababli olib
-tashlangan — yuqoridagi Mini App bo'limiga qarang). (Eslatma: tugma shrifti/
-piksel o'lchamini bot dasturi orqali o'zgartirib bo'lmaydi — bu faqat
-Telegram ilovasining o'zi belgilaydi, bot faqat tugmalarning necha ustunga
-joylashishini belgilay oladi.)
+Avval bosh menyuda pastda doimiy matnli tugmalar (Katalog, Buyurtmalarim,
+Profil va h.k.) turardi — bu ko'rinishni "eskicha" va tor qilib turardi,
+degan fikringiz asosida ular Render'da (production'da) **butunlay olib
+tashlandi**. Endi yagona kirish nuqtasi — xabar yozish maydoni yonidagi
+doimiy **"🛍 Do'kon"** tugmasi, undan keyin esa yuqorida tasvirlangan Mini
+App ichidagi pastki tab'lar (Katalog/Shaxsiy/Buyurtmalar/Profil). Mahalliy
+sinovda (https yo'q joyda) bot avvalgidek eski tugmali ko'rinishga tushib
+qoladi — bu faqat siz kodni o'zingizning kompyuteringizda sinab
+ko'rmoqchi bo'lsangiz kerak bo'ladi, real foydalanuvchilarga taalluqli emas.
 
 ### Shaxsiy profil va o'zim/sovg'a tanlovi
 
-"👤 Profil" tugmasi orqali mijoz o'z ism-familiyasi, telefon raqami va
-manzilini bir marta kiritib saqlab qo'yishi mumkin ("✏️ Ma'lumotlarni
-yangilash" orqali). Keyingi safar buyurtma berayotganda, agar saqlangan
-ma'lumot bo'lsa, bot avtomatik so'raydi: "🙋 O'zim uchun (saqlangan
-ma'lumot)" — shu tugma bilan qayta yozmasdan davom etadi, yoki "🎁 Sovg'a /
-boshqa manzil" — shu holda ism/telefon/manzilni har safargidek qo'lda
-kiritadi (masalan do'stiga sovg'a yuborayotganda). Har bir muvaffaqiyatli
-buyurtmadan so'ng eng oxirgi kiritilgan ma'lumot profilga saqlanib qoladi.
+Mini App'dagi "👤 Profil" tab'i orqali mijoz o'z ism-familiyasi, telefon
+raqami va manzilini bir marta kiritib saqlab qo'yishi mumkin. Keyingi safar
+buyurtma berayotganda, agar saqlangan ma'lumot bo'lsa, bot avtomatik
+so'raydi: "🙋 O'zim uchun (saqlangan ma'lumot)" — shu tugma bilan qayta
+yozmasdan davom etadi, yoki "🎁 Sovg'a / boshqa manzil" — shu holda ism/
+telefon/manzilni har safargidek qo'lda kiritadi (masalan do'stiga sovg'a
+yuborayotganda). Har bir muvaffaqiyatli buyurtmadan so'ng eng oxirgi
+kiritilgan ma'lumot profilga saqlanib qoladi.
 
 ### Ichki hamyon (balans) tizimi
 
@@ -274,30 +338,42 @@ usullaridan foydalanaveradi.
 
 ---
 
-## Muhim eslatma: ma'lumotlar bazasi haqida
+## Ma'lumotlar bazasini doimiy saqlash (Turso)
 
 Render'ning **bepul** tarifida disk "doimiy" emas — bot qayta ishga
-tushganda (masalan, GitHub'ga yangi kod yuklaganingizda) `figo3d.db` fayli
-(demak barcha buyurtmalar, sharhlar, promo-kodlar, **mijozlarning hamyon
-balanslari, saqlangan profillari va ENDI mahsulotlar/rasmlar ham**)
-tozalanib ketishi mumkin.
+tushganda (masalan, uzoq vaqt ishlatilmay qolgach, yoki texnik sabablarga
+ko'ra) `figo3d.db` fayli (demak barcha buyurtmalar, sharhlar, promo-kodlar,
+mijozlarning hamyon balanslari, saqlangan profillari va mahsulotlar/
+rasmlar) tozalanib ketishi mumkin edi.
 
-⚠️ Mahsulotlar endi (avvalgi products.py fayli o'rniga) shu bazada
-saqlanayotgani va bot ichida "pul" (hamyon balansi) ham borligi uchun bu
-masala avvalgidan ham muhimroq. Amalda: oddiy kodni yangilash/qayta deploy
-qilish (masalan men yuborgan tuzatishlarni joylashtirish) odatda bazaga
-tegmaydi — sizning "rasmlar yo'qolib turishi" muammoingiz aslida shundan
-emas, balki `products.py` faylini har safar to'liq qayta yuklashdan kelib
-chiqqan edi (yuqorida tushuntirilgan), va bu endi butunlay bartaraf etildi.
-Lekin Render ba'zan (masalan uzoq vaqt servis to'xtab qolgach, yoki texnik
-sabablarga ko'ra) diskni to'liq tozalashi ham mumkin — shuning uchun real
-mijozlar pul kiritishni boshlashidan OLDIN, buni albatta hal qilish kerak —
-masalan Render'ning pullik "Persistent Disk" xizmatiga yoki tashqi bazaga
-(masalan bepul Postgres taklif qiluvchi xizmatlarga) o'tish orqali. Tayyor
-bo'lganingizda shu masalani birga hal qilamiz.
+✅ **Bu endi hal qilindi** — bot endi ixtiyoriy ravishda **Turso** (bepul,
+doimiy, SQLite-mos bulut baza) bilan ishlay oladi: har bir yozuvdan
+(buyurtma, profil, mahsulot va h.k.) so'ng ma'lumot darhol bulutga ham
+nusxalanadi, shuning uchun Render diski tozalansa ham hech narsa
+yo'qolmaydi. Sozlash ixtiyoriy va tez:
 
-**Eslatma:** hozircha shu holida qoldirishga qaror qilgandik — demak
-mahsulot/rasm qo'shgandan keyin, agar bot uzoq vaqt (masalan bir kechada)
-ishlatilmay qolsa, ba'zan qayta qo'shishga to'g'ri kelishi mumkin. Fikringiz
-o'zgarsa yoki real mijozlar bilan ishlay boshlasangiz, menga ayting — bepul
-tashqi bazaga (Turso) ko'chirib, bu muammoni butunlay yo'q qilib beraman.
+1. [turso.tech](https://turso.tech) saytida bepul akkaunt oching (kredit
+   karta talab qilinmaydi)
+2. Yangi baza (database) yarating
+3. Baza sahifasidan **"Database URL"** (`libsql://...` bilan boshlanadi) va
+   **"Auth Token"**ni nusxalab oling
+4. Render'ning **Environment Variables** bo'limiga qo'shing:
+   - `TURSO_DATABASE_URL` = nusxalagan Database URL
+   - `TURSO_AUTH_TOKEN` = nusxalagan Auth Token
+5. **Save Changes** — Render botni avtomatik qayta ishga tushiradi
+
+Ikkalasini ham bo'sh qoldirsangiz — muammo emas, bot avvalgidek faqat
+mahalliy fayl bilan ishlayveradi (lekin yuqoridagi yo'qolish xavfi
+qoladi). Bepul reja: 500 million o'qish/oy, 10 million yozish/oy, 5GB joy —
+kichik-o'rta do'kon uchun yetarlicha.
+
+⚠️ **Muhim (halol ogohlantirish):** Turso integratsiyasi kodi yozilgan va
+mahalliy sinovdan o'tgan, lekin men (Claude) hali sizning haqiqiy Turso
+akkountingiz bilan sinab ko'rmadim — buning uchun sizning shaxsiy
+`TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN`'ingiz kerak, ular esa faqat siz
+akkount ochganingizdan keyin paydo bo'ladi. Shuning uchun yuqoridagi
+qadamlarni bajarib, botni qayta ishga tushirgandan so'ng, Render'ning
+"Logs" bo'limida `Turso bilan dastlabki sinxronizatsiya muvaffaqiyatli`
+degan qatorni ko'rganingizga ishonch hosil qiling, va bir marta sinov
+buyurtma berib/mahsulot qo'shib ko'ring — muammo chiqsa menga ayting,
+birga tuzatamiz.

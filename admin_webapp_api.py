@@ -1,0 +1,209 @@
+"""Admin boshqaruv paneli (Mini App) uchun JSON API.
+
+XAVFSIZLIK: har bir so'rov ikki bosqichda tekshiriladi - (1) Telegram
+initData imzosi haqiqiyligi (webapp_auth.validate_init_data - soxta ID
+yuborib bo'lmasligi uchun), (2) shu ID config.ADMIN_IDS ro'yxatidami
+(is_admin) - ikkalasi ham to'g'ri bo'lmasa 401/403 qaytariladi. Shunday
+qilib panelga FAQAT ruxsat etilgan Telegram ID'lar kira oladi, hatto
+havolani bilib olgan boshqa odam ham kira olmaydi."""
+import base64
+
+from aiogram.types import BufferedInputFile
+from aiohttp import web
+
+import admin_service
+import db
+from config import BOT_TOKEN, is_admin
+from webapp_auth import validate_init_data
+
+
+def _authed_admin_id(request: web.Request):
+    init_data = request.headers.get("X-Telegram-Init-Data", "")
+    data = validate_init_data(init_data, BOT_TOKEN)
+    if not data or not data.get("user"):
+        return None
+    user_id = data["user"].get("id")
+    if not is_admin(user_id):
+        return None
+    return user_id
+
+
+def _unauthorized():
+    return web.json_response({"error": "unauthorized"}, status=401)
+
+
+async def admin_page(request: web.Request):
+    return web.FileResponse(request.app["admin_index_path"])
+
+
+async def api_admin_orders(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    open_only = request.query.get("open") == "1"
+    orders = await db.get_all_orders(limit=100, open_only=open_only)
+    return web.json_response({"orders": orders})
+
+
+async def api_admin_order_accept(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        order_id = int(request.match_info["order_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    order, reason = await admin_service.accept_order(order_id)
+    if order is None:
+        return web.json_response({"error": reason}, status=404)
+    await admin_service.notify_customer_order_accepted(request.app["bot"], order)
+    return web.json_response({"ok": True})
+
+
+async def api_admin_custom_orders(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    orders = await db.get_open_custom_orders(limit=100)
+    return web.json_response({"orders": orders})
+
+
+async def api_admin_custom_order_contacted(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        custom_order_id = int(request.match_info["order_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    order, reason = await admin_service.mark_custom_order_contacted(custom_order_id)
+    if order is None:
+        return web.json_response({"error": reason}, status=404)
+    return web.json_response({"ok": True})
+
+
+async def api_admin_topups(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    topups = await db.get_pending_topup_requests(limit=100)
+    return web.json_response({"topups": topups})
+
+
+async def api_admin_topup_approve(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        request_id = int(request.match_info["request_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    req, new_balance, reason = await admin_service.approve_topup(request_id)
+    if req is None:
+        status = 409 if reason == "already_processed" else 404
+        return web.json_response({"error": reason}, status=status)
+    await admin_service.notify_customer_topup_approved(request.app["bot"], req, new_balance)
+    return web.json_response({"ok": True})
+
+
+async def api_admin_topup_reject(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        request_id = int(request.match_info["request_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    req, reason = await admin_service.reject_topup(request_id)
+    if req is None:
+        status = 409 if reason == "already_processed" else 404
+        return web.json_response({"error": reason}, status=status)
+    await admin_service.notify_customer_topup_rejected(request.app["bot"], req)
+    return web.json_response({"ok": True})
+
+
+async def api_admin_products(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    products = await db.list_active_products()
+    # Har biriga rasm(lar)ini ham qo'shamiz (webapp'dagi kabi photo proksi orqali ko'rsatish uchun)
+    result = []
+    for p in products:
+        product = await db.get_product_by_id(p["id"])
+        result.append(product or {**p, "photos": []})
+    return web.json_response({"products": result})
+
+
+def _decode_photo(data_url: str) -> bytes:
+    if "," in data_url:
+        data_url = data_url.split(",", 1)[1]
+    return base64.b64decode(data_url)
+
+
+async def api_admin_product_create(request: web.Request):
+    admin_id = _authed_admin_id(request)
+    if admin_id is None:
+        return _unauthorized()
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+
+    category = (body.get("category") or "").strip()
+    name = (body.get("name") or "").strip()
+    description = (body.get("description") or "").strip()
+    photos = body.get("photos") or []
+
+    try:
+        price = int(body.get("price"))
+    except (TypeError, ValueError):
+        return web.json_response({"error": "invalid_input"}, status=400)
+
+    if not category or not name or price <= 0:
+        return web.json_response({"error": "invalid_input"}, status=400)
+    if not isinstance(photos, list) or not photos:
+        return web.json_response({"error": "photo_required"}, status=400)
+    if len(photos) > 8:
+        return web.json_response({"error": "too_many_photos"}, status=400)
+
+    bot = request.app["bot"]
+    file_ids = []
+    for i, photo_data_url in enumerate(photos):
+        try:
+            raw = _decode_photo(photo_data_url)
+            if len(raw) > 10 * 1024 * 1024:
+                return web.json_response({"error": "photo_too_large"}, status=400)
+            input_file = BufferedInputFile(raw, filename=f"product_{i}.jpg")
+            msg = await bot.send_photo(
+                admin_id, photo=input_file,
+                caption="🗂 Admin panel orqali qo'shilayotgan mahsulot rasmi" if i == 0 else None,
+            )
+            file_ids.append(msg.photo[-1].file_id)
+        except Exception:
+            return web.json_response({"error": "photo_upload_failed"}, status=502)
+
+    product_id = await db.create_product(category, name, description, price)
+    for position, file_id in enumerate(file_ids):
+        await db.add_product_photo(product_id, file_id, position)
+
+    return web.json_response({"ok": True, "product_id": product_id})
+
+
+async def api_admin_product_delete(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        product_id = int(request.match_info["product_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    await db.deactivate_product(product_id)
+    return web.json_response({"ok": True})
+
+
+def register_admin_routes(app: web.Application, admin_index_path: str):
+    app["admin_index_path"] = admin_index_path
+    app.router.add_get("/admin-panel", admin_page)
+    app.router.add_get("/admin/api/orders", api_admin_orders)
+    app.router.add_post("/admin/api/orders/{order_id}/accept", api_admin_order_accept)
+    app.router.add_get("/admin/api/custom_orders", api_admin_custom_orders)
+    app.router.add_post("/admin/api/custom_orders/{order_id}/contacted", api_admin_custom_order_contacted)
+    app.router.add_get("/admin/api/topups", api_admin_topups)
+    app.router.add_post("/admin/api/topups/{request_id}/approve", api_admin_topup_approve)
+    app.router.add_post("/admin/api/topups/{request_id}/reject", api_admin_topup_reject)
+    app.router.add_get("/admin/api/products", api_admin_products)
+    app.router.add_post("/admin/api/products", api_admin_product_create)
+    app.router.add_post("/admin/api/products/{product_id}/delete", api_admin_product_delete)

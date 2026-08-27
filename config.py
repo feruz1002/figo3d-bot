@@ -18,9 +18,32 @@ if not BOT_TOKEN:
         "(yoki Render'da Environment Variables bo'limiga qo'shganingizni tekshiring)."
     )
 
-# Buyurtma xabarlari yuboriladigan admin ID (majburiy emas, lekin tavsiya etiladi)
+# Buyurtma xabarlari yuboriladigan va /admin buyrug'i hamda admin veb-paneliga
+# kira oladigan odam(lar). Endi BIR NECHTA odamga ruxsat berish mumkin
+# (masalan siz + 3D-print hamkoringiz) - Render'ning Environment Variables
+# bo'limida ADMIN_IDS nomi bilan vergul orqali ajratilgan ID'lar ro'yxatini
+# qo'shing (masalan: "123456789,987654321"). Eski ADMIN_CHAT_ID (bitta ID)
+# hamon ishlayveradi - ikkalasi ham qo'shilib, umumiy ro'yxat hosil bo'ladi,
+# shuning uchun avvalgi sozlamangizni o'zgartirish shart emas.
 _admin_raw = os.getenv("ADMIN_CHAT_ID", "").strip()
-ADMIN_CHAT_ID = int(_admin_raw) if _admin_raw else None
+_admin_ids_raw = os.getenv("ADMIN_IDS", "").strip()
+_admin_ids_set = set()
+if _admin_raw:
+    _admin_ids_set.add(int(_admin_raw))
+for _part in _admin_ids_raw.split(","):
+    _part = _part.strip()
+    if _part:
+        _admin_ids_set.add(int(_part))
+ADMIN_IDS = sorted(_admin_ids_set)
+
+# Orqaga moslik uchun: ba'zi eski kod qismlari yagona "birinchi admin" ID
+# raqamini kutadi (masalan buyurtma tasdiqlash xabari ostidagi tugma h.k.).
+ADMIN_CHAT_ID = ADMIN_IDS[0] if ADMIN_IDS else None
+
+
+def is_admin(user_id: int) -> bool:
+    """Shu Telegram ID admin (yoki ruxsat etilgan hamkor) ro'yxatidami?"""
+    return user_id in ADMIN_IDS
 
 # Render avtomatik beradigan tashqi manzil (masalan: https://figo3d.onrender.com)
 # Mahalliy kompyuterda bu bo'sh bo'ladi -> bot polling rejimida ishlaydi.
@@ -32,11 +55,30 @@ RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL", "").strip()
 # avvalgi (tugmali) katalog ko'rinishiga tushadi.
 WEBAPP_URL = (RENDER_EXTERNAL_URL.rstrip("/") + "/webapp") if RENDER_EXTERNAL_URL else None
 
+# Admin boshqaruv paneli (Mini App) manzili - xuddi WEBAPP_URL kabi, faqat
+# Render'da (https bilan) ishlaydi. Kirish config.ADMIN_IDS ro'yxati orqali
+# cheklanadi (webapp_auth.py + admin_webapp_api.py'ga qarang).
+ADMIN_PANEL_URL = (RENDER_EXTERNAL_URL.rstrip("/") + "/admin-panel") if RENDER_EXTERNAL_URL else None
+
 # Render har doim shu portni beradi; mahalliy sinovda ishlatilmaydi
 PORT = int(os.getenv("PORT", "8080"))
 
-# Ma'lumotlar bazasi fayli (savat va buyurtmalar shu yerda saqlanadi)
+# Ma'lumotlar bazasi fayli - bu doim mahalliy nusxa (tezkor o'qish/yozish
+# uchun), pastdagi Turso sozlansa esa har yozuvdan keyin avtomatik ravishda
+# doimiy (Render diskiga bog'liq bo'lmagan) bulutga ham nusxalanadi.
 DB_PATH = os.getenv("DB_PATH", "figo3d.db")
+
+# Turso (bepul, doimiy SQLite-mos bulut baza) - Render'ning bepul diski
+# vaqti-vaqti bilan tozalanib turishi mumkinligi uchun (masalan uzoq vaqt
+# ishlatilmay qolgach), buyurtmalar/hamyon/mahsulotlar YO'QOLIB QOLMASLIGI
+# uchun qo'shildi. Sozlash: turso.tech saytida bepul akkaunt oching, yangi
+# baza yarating, undan "Database URL" va "Auth Token" oling, Render'ning
+# Environment Variables bo'limiga TURSO_DATABASE_URL va TURSO_AUTH_TOKEN
+# nomlari bilan qo'shing. Ikkalasi ham bo'sh bo'lsa - muammo emas, bot
+# avvalgidek faqat mahalliy fayl bilan ishlayveradi (lekin Render diski
+# tozalansa, ma'lumot yo'qolish xavfi qoladi).
+TURSO_DATABASE_URL = os.getenv("TURSO_DATABASE_URL", "").strip() or None
+TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "").strip() or None
 
 # Hisobni to'ldirish (hamyon) uchun mijozga ko'rsatiladigan to'lov rekvizitlari
 # (masalan karta raqamingiz). Render'ning Environment Variables bo'limida
@@ -55,3 +97,13 @@ PAYMENT_INFO = os.getenv(
 # muammo emas: "Karta orqali to'lash" tugmasi shunchaki ko'rinmaydi, mijozlar
 # avvalgidek hamyon yoki naqd/karta (operator bilan) orqali to'laydi.
 PAYMENT_PROVIDER_TOKEN = os.getenv("PAYMENT_PROVIDER_TOKEN", "").strip() or None
+
+# "Aloqa" bo'limida mijozlarga ko'rsatiladigan matn (Mini App ichida).
+# Render'ning Environment Variables bo'limida CONTACT_INFO nomi bilan
+# qo'shing - masalan: "@figo3d_support yoki +998 90 123 45 67".
+CONTACT_INFO = os.getenv(
+    "CONTACT_INFO",
+    "Savol yoki takliflaringiz bo'lsa yozing: @sizning_username\n\n"
+    "(Admin: buni Render'ning Environment Variables bo'limida CONTACT_INFO "
+    "nomi bilan o'zingizning haqiqiy aloqa ma'lumotingizga almashtiring.)",
+)

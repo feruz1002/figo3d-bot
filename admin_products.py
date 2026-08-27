@@ -5,15 +5,15 @@ faylini qo'lda tahrirlash, GitHub'ga yuklash va qayta deploy qilish SHART EMAS.
 Mahsulot va uning rasmlari to'g'ridan-to'g'ri shu bot orqali bazaga saqlanadi va
 darhol (qayta ishga tushirmasdan) katalogda ko'rinadi.
 
-Buyruq: /admin (faqat ADMIN_CHAT_ID uchun ishlaydi)."""
+Buyruq: /admin (faqat config.ADMIN_IDS ro'yxatidagilar uchun ishlaydi)."""
 from aiogram import Router, F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, KeyboardButton, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, KeyboardButton, Message, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
 import db
-from config import ADMIN_CHAT_ID
+from config import ADMIN_PANEL_URL, is_admin as _is_admin
 from handlers.catalog import format_price
 from handlers.states import AdminProductStates
 from keyboards import BTN_CANCEL, cancel_only_keyboard, main_menu_keyboard
@@ -24,12 +24,13 @@ BTN_DONE_PHOTOS = "✅ Rasmlar tayyor"
 BTN_SKIP_VIDEO = "➡️ Videosiz davom etish"
 
 
-def _is_admin(user_id: int) -> bool:
-    return ADMIN_CHAT_ID is not None and user_id == ADMIN_CHAT_ID
-
-
 def _admin_panel_keyboard():
     builder = InlineKeyboardBuilder()
+    if ADMIN_PANEL_URL:
+        # Buyurtmalar, hisob to'ldirish so'rovlari va mahsulotlarni bitta
+        # chiroyli veb-sahifadan boshqarish - faqat Render'da (https bilan)
+        # ishlaydi, chatdagi eski usul (pastdagi ikkita tugma) hamon ishlayveradi.
+        builder.row(InlineKeyboardButton(text="🖥 Boshqaruv panelini ochish", web_app=WebAppInfo(url=ADMIN_PANEL_URL)))
     builder.button(text="➕ Yangi mahsulot qo'shish", callback_data="admin_add_product")
     builder.button(text="📋 Mahsulotlar ro'yxati", callback_data="admin_list_products")
     builder.adjust(1)

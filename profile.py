@@ -6,7 +6,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 import db
-from config import ADMIN_CHAT_ID, PAYMENT_INFO
+from admin_notify import notify_admins
+from config import PAYMENT_INFO
 from handlers.catalog import format_price
 from handlers.states import ProfileEditStates, TopupStates
 from keyboards import (
@@ -147,27 +148,21 @@ async def _submit_topup_request(message: Message, state: FSMContext, bot: Bot, s
         reply_markup=main_menu_keyboard(),
     )
 
-    if not ADMIN_CHAT_ID:
-        return
-
     caption = (
         f"💰 Yangi hisob to'ldirish so'rovi #{request_id}\n\n"
         f"Foydalanuvchi ID: {message.from_user.id}\n"
         f"Summasi: {format_price(amount)} so'm"
     )
-    try:
-        if screenshot_file_id:
-            await bot.send_photo(
-                ADMIN_CHAT_ID, photo=screenshot_file_id, caption=caption,
-                reply_markup=topup_admin_keyboard(request_id),
-            )
-        else:
-            await bot.send_message(
-                ADMIN_CHAT_ID, caption + "\n\n(Skrinshot yuborilmagan)",
-                reply_markup=topup_admin_keyboard(request_id),
-            )
-    except Exception:
-        pass
+    if screenshot_file_id:
+        await notify_admins(
+            bot, photo=screenshot_file_id, caption=caption,
+            reply_markup=topup_admin_keyboard(request_id),
+        )
+    else:
+        await notify_admins(
+            bot, text=caption + "\n\n(Skrinshot yuborilmagan)",
+            reply_markup=topup_admin_keyboard(request_id),
+        )
 
 
 @profile_router.message(TopupStates.waiting_proof, F.photo)
