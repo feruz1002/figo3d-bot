@@ -33,8 +33,20 @@ def _unauthorized():
     return web.json_response({"error": "unauthorized"}, status=401)
 
 
+# MUHIM: xuddi mijozning Mini App sahifasidagi kabi (webapp_api.py'dagi
+# izohga qarang) - Telegram WebView admin panel HTML/JS faylini ham
+# keshlab qo'yishi mumkin, shuning uchun kodni yangilab qayta deploy
+# qilingandan keyin ham admin ESKI ko'rinishni ko'rishda davom etishi
+# mumkin edi. Shu sabab bu sahifa ham har doim "keshlanmasin" deb ANIQ
+# belgilanadi.
+_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+}
+
+
 async def admin_page(request: web.Request):
-    return web.FileResponse(request.app["admin_index_path"])
+    return web.FileResponse(request.app["admin_index_path"], headers=_NO_CACHE_HEADERS)
 
 
 async def api_admin_orders(request: web.Request):

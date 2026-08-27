@@ -393,8 +393,23 @@ async def api_photo(request: web.Request):
     )
 
 
+# MUHIM: Mini App sahifasini (HTML+JS) Telegram'ning ichki WebView'i (va
+# ba'zan mobil brauzerlar) juda "yopishqoq" kesh (cache) qiladi - kodni
+# yangilab, GitHub'ga yuklab, Render qayta deploy qilgandan keyin ham
+# foydalanuvchi ESKI versiyani ko'rishda davom etishi mumkin, chunki
+# qurilma hali eski HTML/JS faylni o'z keshidan ko'rsatib turadi. Buni
+# oldini olish uchun bu sahifani HAR DOIM "keshlanmasin" deb ANIQ
+# belgilaymiz - shunda brauzer/WebView har safar serverdan yangi nusxani
+# so'raydi (o'zgarish darhol ko'rinadi, foydalanuvchi ilovani qo'lda
+# tozalashi shart bo'lmaydi).
+_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+}
+
+
 async def webapp_page(request: web.Request):
-    return web.FileResponse(request.app["webapp_index_path"])
+    return web.FileResponse(request.app["webapp_index_path"], headers=_NO_CACHE_HEADERS)
 
 
 def register_webapp_routes(app: web.Application, webapp_index_path: str):
