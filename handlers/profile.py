@@ -7,7 +7,7 @@ from aiogram.types import CallbackQuery, Message
 
 import db
 from admin_notify import notify_admins
-from config import PAYMENT_INFO
+from config import PAYMENT_INFO, is_admin
 from handlers.catalog import format_price
 from handlers.states import ProfileEditStates, TopupStates
 from keyboards import (
@@ -56,7 +56,7 @@ async def start_edit_profile(callback: CallbackQuery, state: FSMContext):
 @profile_router.message(F.text == BTN_CANCEL, StateFilter(ProfileEditStates))
 async def cancel_edit_profile(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("Bekor qilindi.", reply_markup=main_menu_keyboard())
+    await message.answer("Bekor qilindi.", reply_markup=main_menu_keyboard(is_admin=is_admin(message.from_user.id)))
 
 
 @profile_router.message(ProfileEditStates.waiting_name)
@@ -94,7 +94,7 @@ async def edit_profile_address(message: Message, state: FSMContext):
     )
     await state.clear()
     profile = await db.get_user_profile(message.from_user.id)
-    await message.answer("✅ Ma'lumotlaringiz yangilandi!", reply_markup=main_menu_keyboard())
+    await message.answer("✅ Ma'lumotlaringiz yangilandi!", reply_markup=main_menu_keyboard(is_admin=is_admin(message.from_user.id)))
     await message.answer(_profile_text(profile), reply_markup=profile_keyboard())
 
 
@@ -113,7 +113,7 @@ async def start_topup(callback: CallbackQuery, state: FSMContext):
 @profile_router.message(F.text == BTN_CANCEL, StateFilter(TopupStates))
 async def cancel_topup(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("Bekor qilindi.", reply_markup=main_menu_keyboard())
+    await message.answer("Bekor qilindi.", reply_markup=main_menu_keyboard(is_admin=is_admin(message.from_user.id)))
 
 
 @profile_router.message(TopupStates.waiting_amount)
@@ -145,7 +145,7 @@ async def _submit_topup_request(message: Message, state: FSMContext, bot: Bot, s
     await message.answer(
         f"✅ So'rovingiz (#{request_id}) yuborildi. Operator tasdiqlagach, "
         f"{format_price(amount)} so'm hamyoningizga qo'shiladi.",
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_menu_keyboard(is_admin=is_admin(message.from_user.id)),
     )
 
     caption = (

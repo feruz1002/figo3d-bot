@@ -4,7 +4,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message
 
 import db
-from config import WEBAPP_URL
+from config import WEBAPP_URL, is_admin
 from keyboards import main_menu_keyboard
 
 start_router = Router()
@@ -41,4 +41,6 @@ async def cmd_start(message: Message):
             "orqali mahsulotlarni veb-ko'rinishda ham ko'rishingiz mumkin.\n\n"
         )
     text += "Boshlash uchun pastdagi tugmalardan birini bosing 👇"
-    await message.answer(text, reply_markup=main_menu_keyboard())
+    await message.answer(
+        text, reply_markup=main_menu_keyboard(is_admin=is_admin(message.from_user.id))
+    )

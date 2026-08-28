@@ -98,14 +98,16 @@ async def notify_customer_order_problem(bot, order):
 async def get_dashboard_stats() -> dict:
     """Admin panelning "📊 Statistika" bo'limi uchun umumiy ko'rsatkichlar:
     botni ko'rgan/xarid qilgan odamlar soni, jami buyurtmalar, eng ko'p
-    buyurtma qilinayotgan mahsulotlar va viloyat bo'yicha taqsimot (manzil
-    matnidan taxminan aniqlangan)."""
-    total_users, customers, order_count, top_products, addresses = (
+    buyurtma qilinayotgan mahsulotlar, viloyat bo'yicha taqsimot (manzil
+    matnidan taxminan aniqlangan) va pul bo'yicha to'liq hisobot (jami,
+    arxivlangan, kutilayotgan, bugun/hafta/oy, to'lov usuli bo'yicha)."""
+    total_users, customers, order_count, top_products, addresses, revenue = (
         await db.get_total_bot_users(),
         await db.get_customer_count(),
         await db.get_order_count(),
         await db.get_top_products(limit=8),
         await db.get_all_order_addresses(),
+        await db.get_revenue_report(),
     )
 
     region_counts: dict[str, int] = {}
@@ -117,12 +119,36 @@ async def get_dashboard_stats() -> dict:
         region_counts.items(), key=lambda kv: (kv[0] == "Aniqlanmadi", -kv[1])
     )
 
+    # Frontend uchun to'lov usuli kodlarini o'qiladigan nomga aylantiramiz
+    revenue_by_payment = [
+        {
+            "method": item["method"],
+            "label": order_service.PAYMENT_METHOD_REPORT_LABELS.get(
+                item["method"], item["method"]
+            ),
+            "count": item["count"],
+            "total": item["total"],
+        }
+        for item in revenue.get("by_payment", [])
+    ]
+
     return {
         "total_users": total_users,
         "customers": customers,
         "order_count": order_count,
         "top_products": top_products,
         "regions": [{"name": name, "count": count} for name, count in regions_sorted],
+        "revenue": {
+            "total": revenue["total"],
+            "archived_total": revenue["archived_total"],
+            "pending_total": revenue["pending_total"],
+            "today_total": revenue["today_total"],
+            "week_total": revenue["week_total"],
+            "month_total": revenue["month_total"],
+            "order_count": revenue["order_count"],
+            "average_order_value": revenue["average_order_value"],
+            "by_payment": revenue_by_payment,
+        },
     }
 
 

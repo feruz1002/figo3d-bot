@@ -199,7 +199,10 @@ async def api_custom_order(request: web.Request):
         "Rasmni ko'rib, narxni kelishib, mijoz bilan bog'laning."
     )
     from keyboards import custom_admin_keyboard
-    await notify_admins(bot, photo=photo_file_id, caption=caption, reply_markup=custom_admin_keyboard(custom_order_id))
+    await notify_admins(
+        bot, photo=photo_file_id, caption=caption,
+        reply_markup=custom_admin_keyboard(custom_order_id, user_id),
+    )
 
     return web.json_response({"ok": True, "custom_order_id": custom_order_id})
 

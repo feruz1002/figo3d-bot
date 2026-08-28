@@ -22,7 +22,7 @@ Bu yerda jadvallar:
   topup_requests  - hamyonni to'ldirish so'rovlari (admin tasdig'i kutiladi)
 """
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from products import SEED_PRODUCTS
 from turso_db import get_db_connection
@@ -140,6 +140,13 @@ async def init_db():
         await _add_column_if_missing(conn, "orders", "discount_amount INTEGER NOT NULL DEFAULT 0")
         # 27-avgust: "Muammo" bosqichida admin yozadigan sabab (izoh) uchun.
         await _add_column_if_missing(conn, "orders", "problem_reason TEXT")
+        # 28-avgust: moliyaviy hisobotda to'lov usuli bo'yicha taqsimot
+        # ko'rsatish uchun - AVVAL to'lov usuli faqat "status" ichida
+        # (masalan "to'landi (karta)") vaqtinchalik saqlanardi va buyurtma
+        # bosqichdan o'tgach (masalan "qabul qilindi"ga o'tgach) bu
+        # ma'lumot BUTUNLAY yo'qolib qolardi. Endi alohida ustunda doimiy
+        # saqlanadi.
+        await _add_column_if_missing(conn, "orders", "payment_method TEXT")
         # 27-avgust: "katalog ichida katalog" (kichik bo'lim) uchun - ixtiyoriy,
         # bo'sh (NULL) bo'lsa mahsulot to'g'ridan-to'g'ri bo'lim ichida turadi.
         await _add_column_if_missing(conn, "products", "subcategory TEXT")
@@ -420,9 +427,13 @@ async def create_order(
     address: str,
     promo_code: str | None = None,
     discount_amount: int = 0,
+    payment_method: str | None = None,
 ) -> int:
     """Savatdagi mahsulotlar asosida buyurtma yaratadi va savatni tozalaydi.
-    Yaratilgan buyurtma ID raqamini qaytaradi."""
+    Yaratilgan buyurtma ID raqamini qaytaradi. `payment_method` - "balance" |
+    "cash" | "card" (moliyaviy hisobotda to'lov usuli bo'yicha taqsimot
+    uchun saqlanadi - status keyinchalik o'zgarsa ham bu maydon
+    o'zgarmaydi)."""
     cart = await get_cart(user_id)
     subtotal = sum(item["product"]["price"] * item["quantity"] for item in cart)
     total_price = max(subtotal - discount_amount, 0)
@@ -439,8 +450,8 @@ async def create_order(
         cursor = await conn.execute(
             """INSERT INTO orders
                (user_id, full_name, phone, address, items_json, total_price, status,
-                created_at, promo_code, discount_amount)
-               VALUES (?, ?, ?, ?, ?, ?, 'yangi', ?, ?, ?)""",
+                created_at, promo_code, discount_amount, payment_method)
+               VALUES (?, ?, ?, ?, ?, ?, 'yangi', ?, ?, ?, ?)""",
             (
                 user_id,
                 full_name,
@@ -451,6 +462,7 @@ async def create_order(
                 datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 promo_code,
                 discount_amount,
+                payment_method,
             ),
         )
         await conn.commit()
@@ -826,3 +838,92 @@ async def get_all_order_addresses() -> list:
         cursor = await conn.execute("SELECT address FROM orders WHERE address IS NOT NULL")
         rows = await cursor.fetchall()
         return [r[0] for r in rows if r[0]]
+
+
+async def get_revenue_report() -> dict:
+    """To'liq moliyaviy hisobot (admin panel "📊 Statistika" bo'limi
+    uchun): jami/yakunlangan/jarayondagi tushum, davr bo'yicha (bugun/shu
+    hafta/shu oy) va to'lov usuli bo'yicha taqsimot.
+
+    MUHIM: "muammo" holatidagi buyurtmalar HISOBGA OLINMAYDI - ular
+    yakunlanmagan/bekor bo'lgan hisoblanadi, shuning uchun moliyaviy
+    hisobotni "shishirmasligi" kerak."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT total_price, status, payment_method, created_at FROM orders WHERE status != ?",
+            ("muammo",),
+        )
+        rows = await cursor.fetchall()
+
+    now = datetime.now(timezone.utc).date()
+    week_start = now - timedelta(days=now.weekday())
+    month_start = now.replace(day=1)
+
+    total = 0
+    archived_total = 0
+    pending_total = 0
+    today_total = 0
+    week_total = 0
+    month_total = 0
+    order_count = 0
+    payment_buckets: dict[str, dict] = {}
+
+    for price, status, method, created_at in rows:
+        price = price or 0
+        total += price
+        order_count += 1
+        if status == "arxiv":
+            archived_total += price
+        else:
+            pending_total += price
+
+        created_date = None
+        if created_at:
+            try:
+                created_date = datetime.fromisoformat(created_at).date()
+            except ValueError:
+                created_date = None
+        if created_date:
+            if created_date == now:
+                today_total += price
+            if created_date >= week_start:
+                week_total += price
+            if created_date >= month_start:
+                month_total += price
+
+        method_key = method or "eski/nomalum"
+        bucket = payment_buckets.setdefault(method_key, {"count": 0, "total": 0})
+        bucket["count"] += 1
+        bucket["total"] += price
+
+    average = round(total / order_count) if order_count else 0
+    by_payment = [
+        {"method": k, "count": v["count"], "total": v["total"]}
+        for k, v in sorted(payment_buckets.items(), key=lambda kv: -kv[1]["total"])
+    ]
+
+    return {
+        "total": total,
+        "archived_total": archived_total,
+        "pending_total": pending_total,
+        "today_total": today_total,
+        "week_total": week_total,
+        "month_total": month_total,
+        "order_count": order_count,
+        "average_order_value": average,
+        "by_payment": by_payment,
+    }
+
+
+async def get_archived_custom_orders(limit: int = 100):
+    """Admin panel uchun: "✅ Bog'landim" deb belgilangan shaxsiy buyurma
+    so'rovlari - AVVAL bular ro'yxatdan BUTUNLAY g'oyib bo'lardi (faqat
+    "ochiq" ro'yxat ko'rsatilardi), endi "Arxiv" bo'limida ko'rib
+    turish/mijoz bilan qayta bog'lanish uchun saqlanadi."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT * FROM custom_orders WHERE status = ? ORDER BY id DESC LIMIT ?",
+            ("bog'lanildi", limit),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]

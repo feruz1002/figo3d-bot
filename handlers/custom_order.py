@@ -9,6 +9,7 @@ from aiogram.types import CallbackQuery, Message
 
 import db
 from admin_notify import notify_admins
+from config import is_admin
 from handlers.states import CustomOrderStates
 from keyboards import (
     BTN_CUSTOM,
@@ -37,7 +38,10 @@ async def start_custom_order(message: Message, state: FSMContext):
 @custom_router.message(F.text == BTN_CANCEL, StateFilter(CustomOrderStates))
 async def cancel_custom_order(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("Shaxsiy buyurtma bekor qilindi.", reply_markup=main_menu_keyboard())
+    await message.answer(
+        "Shaxsiy buyurtma bekor qilindi.",
+        reply_markup=main_menu_keyboard(is_admin=is_admin(message.from_user.id)),
+    )
 
 
 @custom_router.message(CustomOrderStates.waiting_photo, F.photo)
@@ -126,7 +130,7 @@ async def process_custom_address(message: Message, state: FSMContext, bot: Bot):
         f"✅ So'rovingiz qabul qilindi! Raqami: #{custom_order_id}\n\n"
         "Operatorimiz rasmingizni ko'rib chiqib, narxni kelishish uchun tez orada "
         "siz bilan bog'lanadi.",
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_menu_keyboard(is_admin=is_admin(message.from_user.id)),
     )
 
     caption = (
@@ -141,5 +145,5 @@ async def process_custom_address(message: Message, state: FSMContext, bot: Bot):
         bot,
         photo=data["photo_file_id"],
         caption=caption,
-        reply_markup=custom_admin_keyboard(custom_order_id),
+        reply_markup=custom_admin_keyboard(custom_order_id, message.from_user.id),
     )

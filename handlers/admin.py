@@ -50,7 +50,7 @@ async def order_accept(callback: CallbackQuery, bot: Bot):
     old_text = callback.message.html_text or ""
     await callback.message.edit_text(
         old_text + "\n\n✅ <b>Qabul qilindi</b> — yig'ilmoqda",
-        reply_markup=admin_order_shipping_keyboard(order_id),
+        reply_markup=admin_order_shipping_keyboard(order_id, order["user_id"]),
     )
     await admin_service.notify_customer_order_accepted(bot, order)
     await callback.answer("Belgilandi")
@@ -71,7 +71,7 @@ async def order_ship(callback: CallbackQuery, bot: Bot):
     old_text = callback.message.html_text or ""
     await callback.message.edit_text(
         old_text + "\n\n🚚 <b>Chiqarib yuborildi</b>",
-        reply_markup=admin_order_archive_keyboard(order_id),
+        reply_markup=admin_order_archive_keyboard(order_id, order["user_id"]),
     )
     await admin_service.notify_customer_order_shipped(bot, order)
     await callback.answer("Belgilandi")
@@ -92,7 +92,7 @@ async def order_archive(callback: CallbackQuery, bot: Bot):
     old_text = callback.message.html_text or ""
     await callback.message.edit_text(
         old_text + "\n\n📁 <b>Yetkazildi (arxivlandi)</b>",
-        reply_markup=empty_keyboard(),
+        reply_markup=empty_keyboard(order["user_id"]),
     )
     await admin_service.notify_customer_order_archived(bot, order)
     await callback.answer("Arxivlandi")
@@ -135,7 +135,7 @@ async def order_problem_start(callback: CallbackQuery, state: FSMContext):
 @admin_router.message(AdminOrderStates.waiting_problem_reason, F.text == BTN_CANCEL)
 async def order_problem_cancel(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("Bekor qilindi — buyurtma holati o'zgarmadi.", reply_markup=main_menu_keyboard())
+    await message.answer("Bekor qilindi — buyurtma holati o'zgarmadi.", reply_markup=main_menu_keyboard(is_admin=True))
 
 
 @admin_router.message(AdminOrderStates.waiting_problem_reason, F.text)
@@ -158,7 +158,7 @@ async def order_problem_finish(message: Message, state: FSMContext, bot: Bot):
 
     order, err = await admin_service.flag_order_problem(order_id, reason)
     if order is None:
-        await message.answer("Buyurtma topilmadi", reply_markup=main_menu_keyboard())
+        await message.answer("Buyurtma topilmadi", reply_markup=main_menu_keyboard(is_admin=True))
         return
 
     status_line = "\n\n⚠️ <b>Muammo deb belgilandi</b>"
@@ -168,12 +168,12 @@ async def order_problem_finish(message: Message, state: FSMContext, bot: Bot):
         try:
             await bot.edit_message_text(
                 chat_id=chat_id, message_id=message_id,
-                text=original_text + status_line, reply_markup=empty_keyboard(),
+                text=original_text + status_line, reply_markup=empty_keyboard(order["user_id"]),
             )
         except Exception:
             pass  # asl xabar allaqachon o'chirilgan/topilmayotgan bo'lishi mumkin - muammo emas
 
-    await message.answer("✅ Belgilandi.", reply_markup=main_menu_keyboard())
+    await message.answer("✅ Belgilandi.", reply_markup=main_menu_keyboard(is_admin=True))
     await admin_service.notify_customer_order_problem(bot, order)
 
 

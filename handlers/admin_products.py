@@ -16,7 +16,7 @@ import db
 from config import ADMIN_PANEL_URL, is_admin as _is_admin
 from handlers.catalog import format_price
 from handlers.states import AdminProductStates
-from keyboards import BTN_CANCEL, cancel_only_keyboard, main_menu_keyboard
+from keyboards import BTN_ADMIN, BTN_CANCEL, cancel_only_keyboard, main_menu_keyboard
 
 admin_products_router = Router()
 
@@ -52,7 +52,12 @@ def _video_keyboard():
 
 
 @admin_products_router.message(Command("admin"))
+@admin_products_router.message(F.text == BTN_ADMIN)
 async def admin_panel(message: Message):
+    # MUHIM: /admin buyrug'i BILAN BIRGA endi pastdagi "🛠 Admin panel"
+    # tugmasi orqali ham ochiladi (faqat is_admin bo'lganlarga - main_menu_keyboard
+    # shu tugmani faqat admin uchun qo'shadi). Oddiy mijoz shu matnni yozib
+    # yuborsa ham (masalan tasodifan) - pastdagi tekshiruv uni to'xtatadi.
     if not _is_admin(message.from_user.id):
         return
     await message.answer(
@@ -110,7 +115,7 @@ async def choose_new_category(callback: CallbackQuery):
 @admin_products_router.message(F.text == BTN_CANCEL, StateFilter(AdminProductStates))
 async def cancel_add_product(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("Bekor qilindi.", reply_markup=main_menu_keyboard())
+    await message.answer("Bekor qilindi.", reply_markup=main_menu_keyboard(is_admin=True))
 
 
 @admin_products_router.message(AdminProductStates.waiting_category)
@@ -237,7 +242,7 @@ async def process_video_invalid(message: Message):
 async def cancel_confirm(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text("❌ Bekor qilindi.")
-    await callback.message.answer("Bosh menyu:", reply_markup=main_menu_keyboard())
+    await callback.message.answer("Bosh menyu:", reply_markup=main_menu_keyboard(is_admin=True))
     await callback.answer()
 
 
@@ -257,7 +262,7 @@ async def save_product(callback: CallbackQuery, state: FSMContext):
         f"✅ Mahsulot qo'shildi! (#{product_id})\n\n"
         "Endi u katalogda darhol ko'rinadi — hech narsa qayta deploy qilish shart emas."
     )
-    await callback.message.answer("Bosh menyu:", reply_markup=main_menu_keyboard())
+    await callback.message.answer("Bosh menyu:", reply_markup=main_menu_keyboard(is_admin=True))
     await callback.answer()
 
 

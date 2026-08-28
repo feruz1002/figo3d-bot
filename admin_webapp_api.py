@@ -158,9 +158,16 @@ async def api_admin_stats(request: web.Request):
 
 
 async def api_admin_custom_orders(request: web.Request):
+    """MUHIM (27-avgust, 2-marta o'zgartirildi): mijoz bilan "✅ Bog'landim"
+    deb belgilangan shaxsiy buyurtmalar ENDI yo'qolib qolmaydi - ular
+    arxivga o'tadi va shu yerdan ?archived=1 bilan ko'rish mumkin (admin
+    panelning "🎨 Shaxsiy" bo'limidagi ikkinchi tab)."""
     if _authed_admin_id(request) is None:
         return _unauthorized()
-    orders = await db.get_open_custom_orders(limit=100)
+    if request.query.get("archived") == "1":
+        orders = await db.get_archived_custom_orders(limit=100)
+    else:
+        orders = await db.get_open_custom_orders(limit=100)
     return web.json_response({"orders": orders})
 
 

@@ -124,6 +124,16 @@
 
   function photoUrl(fileId) { return "/api/photo/" + encodeURIComponent(fileId); }
 
+  // MUHIM: "tg://user?id=..." havolasi Telegram tomonidan har doim ham
+  // ochilishi kafolatlanmagan (masalan mijoz hech qachon admin bilan
+  // umumiy chat/kontaktda bo'lmagan bo'lsa, ba'zi Telegram versiyalarida
+  // ishlamasligi mumkin) - lekin bu hozircha ENG YAQIN, botsiz mumkin
+  // bo'lgan "mijozga o'tish" usuli.
+  function contactLinkHtml(userId) {
+    if (!userId) return "";
+    return '<a class="card-btn" style="display:block;text-align:center;text-decoration:none;margin-top:8px;background:var(--secondary-bg);color:var(--text)" href="tg://user?id=' + userId + '">💬 Mijoz bilan bog\'lanish</a>';
+  }
+
   var STATUS_LABELS = {
     "yangi": "🕓 Yangi",
     "to'lov kutilmoqda (karta)": "💳 To'lov kutilmoqda",
@@ -251,6 +261,7 @@
         '<div class="card-line">Holat: ' + statusLabel + '</div>' +
         reasonLine +
         actionsHtml +
+        contactLinkHtml(o.user_id) +
       '</div>'
     );
   }
@@ -325,13 +336,50 @@
   }
 
   // ---------- Shaxsiy buyurtmalar ----------
+  // MUHIM (27-avgust, 2-marta o'zgartirildi): "✅ Bog'landim" bosilgan
+  // shaxsiy buyurtmalar ENDI yo'qolib qolmaydi - ular arxivga o'tadi va
+  // "✅ Bog'lanilgan" tabidan ko'rish mumkin (foydalanuvchi so'rovi:
+  // "shaxsiy buyurtmalarni yuqotib yubormasdan arxivga qo'shiladigan qil").
+  var CUSTOM_STAGES = [
+    { key: "open", label: "🎨 Faol" },
+    { key: "archived", label: "✅ Bog'lanilgan" },
+  ];
+  var activeCustomStage = "open";
+
   function loadCustomOrders() {
-    api("/admin/api/custom_orders").then(function (r) {
-      var content = document.getElementById("content");
-      if (!r.ok) { content.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
+    var content = document.getElementById("content");
+    content.innerHTML =
+      '<div id="custom-stage-tabs" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:10px;scrollbar-width:none">' +
+        CUSTOM_STAGES.map(function (s) {
+          return '<button class="tab' + (s.key === activeCustomStage ? " active" : "") + '" data-custom-stage="' + s.key + '" style="flex:none">' + s.label + '</button>';
+        }).join("") +
+      '</div>' +
+      '<div id="custom-stage-content"><div class="empty">Yuklanmoqda...</div></div>';
+    content.querySelectorAll("[data-custom-stage]").forEach(function (btn) {
+      btn.onclick = function () {
+        activeCustomStage = btn.getAttribute("data-custom-stage");
+        loadCustomOrders();
+      };
+    });
+    loadCustomOrderStage(activeCustomStage);
+  }
+
+  function loadCustomOrderStage(stage) {
+    var url = "/admin/api/custom_orders" + (stage === "archived" ? "?archived=1" : "");
+    api(url).then(function (r) {
+      // Shu orada foydalanuvchi boshqa bo'limga/tabga o'tib ulgurgan bo'lishi mumkin
+      if (activeTab !== "custom" || activeCustomStage !== stage) return;
+      var stageContent = document.getElementById("custom-stage-content");
+      if (!stageContent) return;
+      if (!r.ok) { stageContent.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
       var orders = r.data.orders || [];
-      if (!orders.length) { content.innerHTML = '<div class="empty">Hozircha shaxsiy buyurtma so\'rovi yo\'q.</div>'; return; }
-      content.innerHTML = orders.map(function (o) {
+      if (!orders.length) {
+        stageContent.innerHTML = '<div class="empty">' +
+          (stage === "archived" ? "Hozircha bog'lanilgan shaxsiy buyurtma yo'q." : "Hozircha shaxsiy buyurtma so'rovi yo'q.") +
+          '</div>';
+        return;
+      }
+      stageContent.innerHTML = orders.map(function (o) {
         return (
           '<div class="card" data-id="' + o.id + '">' +
             '<div class="card-img"><img src="' + photoUrl(o.photo_file_id) + '" style="width:100%;border-radius:10px;margin-bottom:8px"></div>' +
@@ -339,20 +387,23 @@
             '<div class="card-line">' + escapeHtml(o.description || "") + '</div>' +
             '<div class="card-line">👤 ' + escapeHtml(o.full_name || "") + ' · 📱 ' + escapeHtml(o.phone || "") + '</div>' +
             '<div class="card-line">📍 ' + escapeHtml(o.address || "") + '</div>' +
-            '<div class="card-actions"><button class="card-btn" data-action="contacted">✅ Bog\'landim</button></div>' +
+            (stage === "open" ? '<div class="card-actions"><button class="card-btn" data-action="contacted">✅ Bog\'landim</button></div>' : '') +
+            contactLinkHtml(o.user_id) +
           '</div>'
         );
       }).join("");
-      content.querySelectorAll('[data-action="contacted"]').forEach(function (btn) {
-        btn.onclick = function () {
-          var id = btn.closest(".card").getAttribute("data-id");
-          btn.disabled = true;
-          api("/admin/api/custom_orders/" + id + "/contacted", { method: "POST" }).then(function (r) {
-            if (r.ok) { showToast("Belgilandi"); loadCustomOrders(); }
-            else { btn.disabled = false; showToast("Xatolik yuz berdi."); }
-          });
-        };
-      });
+      if (stage === "open") {
+        stageContent.querySelectorAll('[data-action="contacted"]').forEach(function (btn) {
+          btn.onclick = function () {
+            var id = btn.closest(".card").getAttribute("data-id");
+            btn.disabled = true;
+            api("/admin/api/custom_orders/" + id + "/contacted", { method: "POST" }).then(function (r2) {
+              if (r2.ok) { showToast("Belgilandi — arxivga o'tdi"); loadCustomOrderStage(stage); }
+              else { btn.disabled = false; showToast("Xatolik yuz berdi."); }
+            });
+          };
+        });
+      }
     });
   }
 
@@ -466,7 +517,30 @@
           : '<div class="card-line">Hali ma\'lumot yo\'q.</div>') +
         '</div>';
 
-      content.innerHTML = statTiles + topHtml + regionsHtml;
+      // MUHIM (27-avgust, 2-marta): "puli bo'yicha to'liq hisobot" so'roviga
+      // ko'ra qo'shildi - "muammo" deb belgilangan buyurtmalar hisobga
+      // kirmaydi (db.py get_revenue_report'ga qarang).
+      var rev = d.revenue || {};
+      var revenueHtml = '<div class="card"><div class="card-title">💰 Pul bo\'yicha hisobot</div>' +
+        '<div class="card-line">Jami: <b>' + fmtPrice(rev.total || 0) + " so'm</b> (" + (rev.order_count || 0) + " ta buyurtma)</div>" +
+        '<div class="card-line">📁 Yakunlangan (arxiv): ' + fmtPrice(rev.archived_total || 0) + " so'm</div>" +
+        '<div class="card-line">⏳ Hali jarayonda: ' + fmtPrice(rev.pending_total || 0) + " so'm</div>" +
+        '<div class="card-line">📅 Bugun: ' + fmtPrice(rev.today_total || 0) + " so'm</div>" +
+        '<div class="card-line">🗓 Shu hafta: ' + fmtPrice(rev.week_total || 0) + " so'm</div>" +
+        '<div class="card-line">📆 Shu oy: ' + fmtPrice(rev.month_total || 0) + " so'm</div>" +
+        '<div class="card-line">📊 O\'rtacha buyurtma: ' + fmtPrice(rev.average_order_value || 0) + " so'm</div>" +
+        '</div>';
+
+      var byPayment = rev.by_payment || [];
+      var paymentHtml = '<div class="card"><div class="card-title">💳 To\'lov usuli bo\'yicha</div>' +
+        (byPayment.length
+          ? byPayment.map(function (p) {
+              return '<div class="card-line">' + escapeHtml(p.label || p.method) + ' — ' + p.count + ' ta, ' + fmtPrice(p.total) + " so'm</div>";
+            }).join("")
+          : '<div class="card-line">Hali ma\'lumot yo\'q.</div>') +
+        '</div>';
+
+      content.innerHTML = statTiles + revenueHtml + paymentHtml + topHtml + regionsHtml;
     });
   }
 

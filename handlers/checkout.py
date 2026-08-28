@@ -15,7 +15,7 @@ from aiogram.types import CallbackQuery, LabeledPrice, Message, PreCheckoutQuery
 
 import db
 import order_service
-from config import PAYMENT_PROVIDER_TOKEN
+from config import PAYMENT_PROVIDER_TOKEN, is_admin
 from handlers.catalog import format_price
 from handlers.states import OrderStates
 from keyboards import (
@@ -64,7 +64,7 @@ async def start_checkout(callback: CallbackQuery, state: FSMContext):
 @checkout_router.message(F.text == BTN_CANCEL, StateFilter(OrderStates))
 async def cancel_checkout(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("Buyurtma berish bekor qilindi.", reply_markup=main_menu_keyboard())
+    await message.answer("Buyurtma berish bekor qilindi.", reply_markup=main_menu_keyboard(is_admin=is_admin(message.from_user.id)))
 
 
 @checkout_router.message(OrderStates.waiting_name)
@@ -139,7 +139,7 @@ async def process_address(message: Message, state: FSMContext):
     cart = await db.get_cart(message.from_user.id)
     if not cart:
         await state.clear()
-        await message.answer("Savatingiz bo'sh qolgan, buyurtma bekor qilindi.", reply_markup=main_menu_keyboard())
+        await message.answer("Savatingiz bo'sh qolgan, buyurtma bekor qilindi.", reply_markup=main_menu_keyboard(is_admin=is_admin(message.from_user.id)))
         return
 
     await state.set_state(OrderStates.waiting_promo)
@@ -156,7 +156,7 @@ async def _show_order_summary(message: Message, state: FSMContext, discount: int
     cart = await db.get_cart(message.from_user.id)
     if not cart:
         await state.clear()
-        await message.answer("Savatingiz bo'sh qolgan, buyurtma bekor qilindi.", reply_markup=main_menu_keyboard())
+        await message.answer("Savatingiz bo'sh qolgan, buyurtma bekor qilindi.", reply_markup=main_menu_keyboard(is_admin=is_admin(message.from_user.id)))
         return
 
     subtotal = sum(item["product"]["price"] * item["quantity"] for item in cart)
@@ -212,7 +212,7 @@ async def _finalize_order(callback: CallbackQuery, state: FSMContext, bot: Bot, 
     if order_id is None:
         await state.clear()
         await callback.message.edit_text("Savatingiz bo'sh qolgan, buyurtma bekor qilindi.")
-        await callback.message.answer("Bosh menyu:", reply_markup=main_menu_keyboard())
+        await callback.message.answer("Bosh menyu:", reply_markup=main_menu_keyboard(is_admin=is_admin(callback.from_user.id)))
         await callback.answer()
         return
 
@@ -225,7 +225,7 @@ async def _finalize_order(callback: CallbackQuery, state: FSMContext, bot: Bot, 
     await callback.message.edit_text(
         f"✅ Buyurtmangiz qabul qilindi! Buyurtma raqami: #{order_id}\n\n{payment_note}"
     )
-    await callback.message.answer("Bosh menyu:", reply_markup=main_menu_keyboard())
+    await callback.message.answer("Bosh menyu:", reply_markup=main_menu_keyboard(is_admin=is_admin(callback.from_user.id)))
     await order_service.notify_admin_new_order(bot, order_id, payment_method)
     await callback.answer()
 
@@ -251,7 +251,7 @@ async def confirm_card(callback: CallbackQuery, state: FSMContext, bot: Bot):
     if not cart:
         await state.clear()
         await callback.message.edit_text("Savatingiz bo'sh qolgan, buyurtma bekor qilindi.")
-        await callback.message.answer("Bosh menyu:", reply_markup=main_menu_keyboard())
+        await callback.message.answer("Bosh menyu:", reply_markup=main_menu_keyboard(is_admin=is_admin(callback.from_user.id)))
         await callback.answer()
         return
 
@@ -273,7 +273,7 @@ async def confirm_card(callback: CallbackQuery, state: FSMContext, bot: Bot):
     if order_id is None:
         await state.clear()
         await callback.message.edit_text("Savatingiz bo'sh qolgan, buyurtma bekor qilindi.")
-        await callback.message.answer("Bosh menyu:", reply_markup=main_menu_keyboard())
+        await callback.message.answer("Bosh menyu:", reply_markup=main_menu_keyboard(is_admin=is_admin(callback.from_user.id)))
         await callback.answer()
         return
 
@@ -320,7 +320,7 @@ async def process_successful_payment(message: Message, bot: Bot):
     await message.answer(
         f"✅ To'lov qabul qilindi! Buyurtmangiz raqami: #{order_id}\n\n"
         "💳 To'lov karta orqali amalga oshirildi.",
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_menu_keyboard(is_admin=is_admin(message.from_user.id)),
     )
     await order_service.notify_admin_new_order(bot, order_id, "card_paid")
 
@@ -329,5 +329,5 @@ async def process_successful_payment(message: Message, bot: Bot):
 async def cancel_order(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text("❌ Buyurtma bekor qilindi.")
-    await callback.message.answer("Bosh menyu:", reply_markup=main_menu_keyboard())
+    await callback.message.answer("Bosh menyu:", reply_markup=main_menu_keyboard(is_admin=is_admin(callback.from_user.id)))
     await callback.answer()

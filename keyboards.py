@@ -22,13 +22,14 @@ BTN_ORDERS = "📦 Buyurtmalarim"
 BTN_PROFILE = "👤 Profil"
 BTN_CONTACT = "☎️ Aloqa"
 BTN_CUSTOM = "🎨 Shaxsiy buyurtma"
+BTN_ADMIN = "🛠 Admin panel"
 
 BTN_SKIP_PROMO = "➡️ O'tkazib yuborish"
 BTN_CANCEL = "❌ Bekor qilish"
 BTN_SKIP_PROOF = "📎 Skrinshotsiz yuborish"
 
 
-def main_menu_keyboard():
+def main_menu_keyboard(is_admin: bool = False):
     # MUHIM (foydalanuvchi so'rovi bilan qaytarildi): ILGARI production'da
     # (WEBAPP_URL mavjud bo'lganda) bu pastdagi matnli tugmalar butunlay
     # OLIB TASHLANGAN edi - hammasi faqat Mini App (veb-do'kon) ichida
@@ -45,6 +46,11 @@ def main_menu_keyboard():
     builder.row(KeyboardButton(text=BTN_CATALOG), KeyboardButton(text=BTN_CART))
     builder.row(KeyboardButton(text=BTN_ORDERS), KeyboardButton(text=BTN_PROFILE))
     builder.row(KeyboardButton(text=BTN_CUSTOM), KeyboardButton(text=BTN_CONTACT))
+    if is_admin:
+        # FAQAT adminlarga ko'rinadigan qo'shimcha qator - oddiy mijozlar
+        # bu tugmani umuman ko'rmaydi (chaqiruvchi `is_admin` ni to'g'ri
+        # berishi shart, pastga qarang: handlers/start.py).
+        builder.row(KeyboardButton(text=BTN_ADMIN))
     return builder.as_markup(resize_keyboard=True)
 
 
@@ -219,47 +225,66 @@ def payment_choice_keyboard(balance: int, total: int, card_enabled: bool = False
     return builder.as_markup()
 
 
-def admin_order_keyboard(order_id: int) -> InlineKeyboardMarkup:
+def _add_contact_button(builder: InlineKeyboardBuilder, user_id: int | None):
+    """DIQQAT: `tg://user?id=...` havolasi Telegram tomonidan har doim ham
+    ochilishi kafolatlanmagan (agar mijoz hech qachon admin bilan umumiy
+    chatda/kontaktda bo'lmagan bo'lsa, ba'zi Telegram versiyalarida
+    ishlamasligi mumkin) - lekin bu hozircha ENG YAQIN, botsiz mumkin
+    bo'lgan "mijozga o'tish" usuli, shuning uchun qo'shilgan."""
+    if user_id:
+        builder.button(text="💬 Mijoz bilan bog'lanish", url=f"tg://user?id={user_id}")
+
+
+def admin_order_keyboard(order_id: int, user_id: int | None = None) -> InlineKeyboardMarkup:
     """Yangi buyurtma xabari ostidagi tugmalar (🆕 Qabul qilish bosqichi)."""
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Qabul qildim", callback_data=f"order_accept:{order_id}")
     builder.button(text="⚠️ Muammo", callback_data=f"order_problem:{order_id}")
+    _add_contact_button(builder, user_id)
     builder.adjust(1)
     return builder.as_markup()
 
 
-def admin_order_shipping_keyboard(order_id: int) -> InlineKeyboardMarkup:
+def admin_order_shipping_keyboard(order_id: int, user_id: int | None = None) -> InlineKeyboardMarkup:
     """Qabul qilingandan keyingi tugmalar (🛠 Yig'ish bosqichi)."""
     builder = InlineKeyboardBuilder()
     builder.button(text="🚚 Chiqarib yubordim", callback_data=f"order_ship:{order_id}")
     builder.button(text="⚠️ Muammo", callback_data=f"order_problem:{order_id}")
+    _add_contact_button(builder, user_id)
     builder.adjust(1)
     return builder.as_markup()
 
 
-def admin_order_archive_keyboard(order_id: int) -> InlineKeyboardMarkup:
+def admin_order_archive_keyboard(order_id: int, user_id: int | None = None) -> InlineKeyboardMarkup:
     """Chiqarib yuborilgandan keyingi tugmalar (🚚 Chiqarib yuborilgan bosqichi)."""
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Yetkazildi", callback_data=f"order_archive:{order_id}")
     builder.button(text="⚠️ Muammo", callback_data=f"order_problem:{order_id}")
+    _add_contact_button(builder, user_id)
     builder.adjust(1)
     return builder.as_markup()
 
 
-def empty_keyboard() -> InlineKeyboardMarkup:
-    """Yakunlangan (arxiv/muammo) buyurtma xabaridan tugmalarni butunlay
-    olib tashlash uchun - `reply_markup`ni chaqirmasdan qoldirish Telegram
-    tomonidan "o'zgarishsiz qoldirish" deb talqin qilinadi, shuning uchun
-    haqiqatan ham OLIB TASHLASH uchun bo'sh klaviatura YUBORILISHI kerak."""
-    return InlineKeyboardBuilder().as_markup()
+def empty_keyboard(user_id: int | None = None) -> InlineKeyboardMarkup:
+    """Yakunlangan (arxiv/muammo) buyurtma xabaridagi tugmalarni deyarli
+    butunlay olib tashlash uchun - `reply_markup`ni chaqirmasdan qoldirish
+    Telegram tomonidan "o'zgarishsiz qoldirish" deb talqin qilinadi, shuning
+    uchun haqiqatan ham OLIB TASHLASH uchun bo'sh (yoki faqat bog'lanish
+    tugmali) klaviatura YUBORILISHI kerak. `user_id` berilsa - yakunlangan
+    buyurtmada ham admin mijoz bilan bog'lanish imkoniyatini yo'qotmaydi."""
+    builder = InlineKeyboardBuilder()
+    _add_contact_button(builder, user_id)
+    builder.adjust(1)
+    return builder.as_markup()
 
 
-def custom_admin_keyboard(custom_order_id: int) -> InlineKeyboardMarkup:
+def custom_admin_keyboard(custom_order_id: int, user_id: int | None = None) -> InlineKeyboardMarkup:
     """Shaxsiy buyurtma haqidagi admin xabari ostidagi tugma."""
     builder = InlineKeyboardBuilder()
     builder.button(
         text="✅ Mijoz bilan bog'landim", callback_data=f"custom_contacted:{custom_order_id}"
     )
+    _add_contact_button(builder, user_id)
     builder.adjust(1)
     return builder.as_markup()
 

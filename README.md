@@ -274,6 +274,66 @@ emas — u mijoz yozgan ERKIN manzil matnidan taxminan topiladi (masalan
 mijoz "Chilonzor" deb yozib, "Toshkent" so'zini yozmasa, "Aniqlanmadi"
 toifasiga tushadi).
 
+### ✅ Yangi: Pul bo'yicha to'liq hisobot (Statistika bo'limida)
+
+**"📊 Statistika"** bo'limiga endi **"💰 Pul bo'yicha hisobot"** va
+**"💳 To'lov usuli bo'yicha"** kartalari ham qo'shildi:
+
+- Jami tushum (barcha buyurtmalar bo'yicha, "⚠️ Muammo" deb belgilanganlar
+  hisobga KIRMAYDI)
+- 📁 Yakunlangan (arxivga o'tgan, ya'ni yetkazib berilgan) buyurtmalar
+  summasi
+- ⏳ Hali jarayonda bo'lgan (yangi/yig'ilayotgan/yo'lda) buyurtmalar summasi
+- 📅 Bugungi, 🗓 shu haftadagi, 📆 shu oydagi tushum
+- 📊 O'rtacha buyurtma summasi
+- 💳 To'lov usuli (hamyondan / naqd-karta operator bilan / Click-Payme
+  karta) bo'yicha buyurtmalar soni va summasi
+
+**Muhim:** bu hisobotning to'g'ri ishlashi uchun har bir yangi
+buyurtmaning to'lov usuli endi alohida saqlanadi (avval faqat holatdan
+[status] taxmin qilinardi, lekin holat buyurtma bosqichdan o'tganda
+o'zgarib ketgani uchun asl to'lov usuli haqidagi ma'lumot yo'qolib
+qolardi). **Eski buyurtmalarda** (bu yangilanishdan oldin yaratilgan)
+to'lov usuli noma'lum bo'lgani uchun ular hisobotda "❔ Noma'lum (eski
+buyurtma)" toifasida ko'rinadi — bu xato emas, shunchaki eski
+ma'lumotlarda bu maydon yo'qligidan.
+
+### ✅ Yangi: Shaxsiy buyurtmalar endi yo'qolib qolmaydi (arxiv)
+
+Avval "🎨 Shaxsiy" bo'limida "✅ Bog'landim" tugmasi bosilgach, buyurtma
+ro'yxatdan BUTUNLAY g'oyib bo'lardi — uni keyinchalik topib bo'lmasdi.
+Endi bu bo'lim ikki tabga bo'lingan:
+
+1. **🎨 Faol** — hali bog'lanilmagan, javob kutayotgan so'rovlar.
+2. **✅ Bog'lanilgan** — "✅ Bog'landim" deb belgilangan so'rovlar (arxiv) —
+   endi bu yerdan istalgan vaqtda qaytadan ko'rish mumkin, hech narsa
+   yo'qolmaydi.
+
+### ✅ Yangi: Mijoz bilan to'g'ridan-to'g'ri bog'lanish
+
+Endi buyurtma va shaxsiy buyurtma kartochkalarida (ham chatda, ham admin
+panelda) **"💬 Mijoz bilan bog'lanish"** tugmasi bor — bosilsa, to'g'ridan
+mijozning shaxsiy Telegram profiliga/chatiga o'tkazadi (Telegram'ning
+`tg://user?id=...` havolasi orqali). Bu tugma buyurtmaning HAR bir
+bosqichida (shu jumladan Arxiv/Muammo kabi yakunlangan holatlarda ham)
+ko'rinadi, shunda mijozga istalgan vaqt yozish imkoni bor.
+
+**Muhim cheklov:** bu — botsiz mumkin bo'lgan ENG YAQIN "mijozga o'tish"
+usuli, lekin Telegram'ning o'zi bu havolani har doim ham 100% kafolatlab
+ochavermaydi (ba'zi Telegram versiyalarida yoki mijoz hech qachon siz
+bilan umumiy chatda bo'lmagan bo'lsa ishlamasligi mumkin). Agar tugma
+ishlamasa, muqobil yo'l — mijozning telefon raqamiga (kartochkada
+ko'rsatilgan) qo'ng'iroq qilish yoki yozish.
+
+### ✅ Yangi: `/admin` — endi tugma orqali ham (faqat adminlarga)
+
+Avval boshqaruv panelini ochish uchun `/admin` buyrug'ini qo'lda yozish
+kerak edi. Endi bu — pastdagi doimiy tugmalar qatorida **"🛠 Admin
+panel"** degan alohida tugma sifatida ham chiqadi, lekin FAQAT sizga
+(yoki `ADMIN_IDS`da ko'rsatilgan boshqa adminlarga) — oddiy mijozlar bu
+tugmani umuman ko'rmaydi. `/admin` buyrug'ini yozish ham avvalgidek
+ishlayveradi, tugma shunchaki qo'shimcha qulaylik.
+
 ### Bir nechta admin qo'shish
 
 Agar buyurtmalarni siz bilan birga boshqa odam ham (masalan 3D-print

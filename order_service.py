@@ -25,6 +25,15 @@ PAYMENT_LABELS = {
     "card_paid": ("to'landi (karta)", "💳 To'lov: karta orqali (to'langan)\n"),
 }
 
+# Moliyaviy hisobotda (get_revenue_report -> "by_payment") to'lov usuli
+# kodini o'qish uchun ko'rsatiladigan matnga o'girish.
+PAYMENT_METHOD_REPORT_LABELS = {
+    "balance": "💰 Hamyondan",
+    "cash": "💵 Naqd / karta (operator bilan)",
+    "card": "💳 Karta (Click/Payme)",
+    "eski/nomalum": "❔ Noma'lum (eski buyurtma)",
+}
+
 # ---------- Buyurtma HOLATI (bosqichlar) ----------
 # MUHIM (foydalanuvchi so'rovi bilan qo'shildi, 27-avgust): avval faqat
 # "yangi -> qabul qilindi" bosqichi bor edi - qabul qilingach, buyurtma
@@ -145,6 +154,7 @@ async def create_order_and_apply_payment(
     order_id = await db.create_order(
         user_id, full_name, phone, address,
         promo_code=promo_code, discount_amount=discount_amount,
+        payment_method=payment_method,
     )
 
     if payment_method == "balance":
@@ -225,4 +235,6 @@ async def notify_admin_new_order(bot: Bot, order_id: int, payment_method: str):
         f"📱 {order['phone']}\n"
         f"📍 {order['address']}"
     )
-    await notify_admins(bot, text=admin_text, reply_markup=admin_order_keyboard(order_id))
+    await notify_admins(
+        bot, text=admin_text, reply_markup=admin_order_keyboard(order_id, order["user_id"])
+    )
