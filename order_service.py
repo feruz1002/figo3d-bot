@@ -46,7 +46,58 @@ STATUS_PROBLEM = "muammo"
 STAGE_NEW_STATUSES = ["yangi", "to'landi (hamyondan)", "to'lov kutilmoqda (karta)", "to'landi (karta)"]
 STAGE_ACCEPTED_STATUSES = [STATUS_ACCEPTED]
 STAGE_SHIPPED_STATUSES = [STATUS_SHIPPED]
-STAGE_FINAL_STATUSES = [STATUS_ARCHIVED, STATUS_PROBLEM]
+# MUHIM (foydalanuvchi so'rovi bilan 27-avgust kuni ikkinchi marta
+# o'zgartirildi): "Arxiv" va "Muammo" AVVAL bitta "final" bosqichda
+# birlashtirilgan edi - endi admin panelda ALOHIDA-ALOHIDA ikkita bo'lim
+# sifatida ko'rsatiladi, chunki bittasi "hammasi joyida, yakunlangan"
+# degani, ikkinchisi esa "diqqat, ko'rib chiqish kerak" degani - bularni
+# aralashtirib qo'yish adminni chalg'itar edi.
+STAGE_ARCHIVED_STATUSES = [STATUS_ARCHIVED]
+STAGE_PROBLEM_STATUSES = [STATUS_PROBLEM]
+
+# ---------- Viloyat aniqlash (statistika uchun) ----------
+# MUHIM: bot mijozdan alohida "viloyat" deb so'ramaydi (foydalanuvchi bilan
+# kelishilgan) - buning o'rniga buyurtmadagi ERKIN yozilgan manzil matnidan
+# viloyat nomini TAXMINAN aniqlaymiz. Bu 100% aniq emas (masalan mijoz
+# "Chilonzor" deb yozsa, "Toshkent" so'zini umuman yozmagan bo'lishi mumkin -
+# bunday holda "Aniqlanmadi" toifasiga tushadi), lekin qo'shimcha savol
+# bermasdan foydali umumiy tasvir beradi.
+_REGION_ALIASES = {
+    "Toshkent": ["toshkent", "chilonzor", "yunusobod", "mirzo ulug'bek", "sergeli", "yashnobod"],
+    "Andijon": ["andijon"],
+    "Buxoro": ["buxoro"],
+    "Farg'ona": ["fargona", "farg'ona", "farg`ona"],
+    "Jizzax": ["jizzax"],
+    "Namangan": ["namangan"],
+    "Navoiy": ["navoiy"],
+    "Qashqadaryo": ["qashqadaryo", "qarshi"],
+    "Qoraqalpog'iston": ["qoraqalpog", "nukus"],
+    "Samarqand": ["samarqand"],
+    "Sirdaryo": ["sirdaryo", "guliston"],
+    "Surxondaryo": ["surxondaryo", "termiz"],
+    "Xorazm": ["xorazm", "urganch"],
+}
+
+
+def _normalize_for_match(text: str) -> str:
+    text = text.lower()
+    for ch in ("'", "’", "ʻ", "ʼ", "`"):
+        text = text.replace(ch, "")
+    return text
+
+
+def guess_region(address: str | None) -> str:
+    """Manzil matnidan viloyat/shahar nomini taxminan topadi. Topilmasa
+    "Aniqlanmadi" qaytaradi (masalan manzil bo'sh yoki tanish so'z yo'q)."""
+    if not address:
+        return "Aniqlanmadi"
+    norm = _normalize_for_match(address)
+    for region, aliases in _REGION_ALIASES.items():
+        for alias in aliases:
+            if alias in norm:
+                return region
+    return "Aniqlanmadi"
+
 
 # Mijozga ko'rsatiladigan (chatda "📦 Buyurtmalarim"da, Mini App'da va h.k.)
 # oddiy, tushunarli holat matnlari - bosqichlar: qabul qilindi -> yig'ilyapti

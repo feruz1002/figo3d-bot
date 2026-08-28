@@ -1,4 +1,6 @@
 """Foydalanuvchining oldingi buyurtmalari ro'yxati va ularning holati."""
+from html import escape as _html_escape
+
 from aiogram import Router, F
 from aiogram.types import Message
 
@@ -20,7 +22,12 @@ async def show_orders(message: Message):
     lines = ["📦 <b>Buyurtmalaringiz:</b>\n"]
     for order in orders:
         status_label = CUSTOMER_STATUS_LABELS.get(order["status"], order["status"])
-        lines.append(
-            f"#{order['id']} — {format_price(order['total_price'])} so'm — {status_label}"
-        )
+        line = f"#{order['id']} — {format_price(order['total_price'])} so'm — {status_label}"
+        # Muammo bo'lsa va admin sabab yozgan bo'lsa - mijozga shu yerda ham
+        # ko'rsatamiz (admin_service.notify_customer_order_problem orqali
+        # xabar sifatida ham yuboriladi, lekin bu yerda tarix ichida ham
+        # ko'rinib turishi qulay).
+        if order.get("problem_reason"):
+            line += f"\n   ↳ Sabab: {_html_escape(order['problem_reason'])}"
+        lines.append(line)
     await message.answer("\n".join(lines))

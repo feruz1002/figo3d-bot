@@ -141,6 +141,7 @@
     { key: "custom", label: "🎨 Shaxsiy" },
     { key: "topups", label: "💰 To'ldirish" },
     { key: "products", label: "🗂 Mahsulotlar" },
+    { key: "stats", label: "📊 Statistika" },
   ];
   var activeTab = "orders";
 
@@ -164,20 +165,27 @@
     else if (activeTab === "custom") loadCustomOrders();
     else if (activeTab === "topups") loadTopups();
     else if (activeTab === "products") loadProducts();
+    else if (activeTab === "stats") loadStats();
   }
 
-  // ---------- Buyurtmalar (bosqichli: Qabul qilish -> Yig'ish -> Chiqarib yuborilgan -> Arxiv/Muammo) ----------
+  // ---------- Buyurtmalar (bosqichli: Qabul qilish -> Yig'ish -> Chiqarib
+  // yuborilgan -> Arxiv / Muammo) ----------
+  // MUHIM (27-avgust, 2-marta o'zgartirildi): "Arxiv" va "Muammo" AVVAL
+  // bitta "final" bo'limda birlashgan edi - endi foydalanuvchi so'roviga
+  // ko'ra ALOHIDA-ALOHIDA ikkita bo'lim.
   var ORDER_STAGES = [
     { key: "new", label: "🆕 Qabul qilish" },
     { key: "accepted", label: "🛠 Yig'ish" },
     { key: "shipped", label: "🚚 Chiqarib yuborilgan" },
-    { key: "final", label: "📁 Arxiv / Muammo" },
+    { key: "archived", label: "📁 Arxiv" },
+    { key: "problem", label: "⚠️ Muammo" },
   ];
   var STAGE_EMPTY_TEXT = {
     new: "Hozircha yangi buyurtma yo'q. 🎉",
     accepted: "Hozircha yig'ilayotgan buyurtma yo'q.",
     shipped: "Hozircha yo'lda buyurtma yo'q.",
-    final: "Hozircha arxivlangan yoki muammoli buyurtma yo'q.",
+    archived: "Hozircha arxivlangan (yetkazilgan) buyurtma yo'q.",
+    problem: "Hozircha muammoli buyurtma yo'q. 🎉",
   };
   var ORDER_ACTION_DONE_TEXT = {
     accept: "✅ Qabul qilindi", ship: "🚚 Chiqarib yuborildi",
@@ -228,7 +236,12 @@
           '<button class="card-btn danger" data-order-action="problem">⚠️ Muammo</button>' +
         '</div>';
     }
-    // stage === "final" uchun amal tugmasi yo'q - bu yakuniy holat
+    // stage === "archived" yoki "problem" uchun amal tugmasi yo'q - bu yakuniy holatlar
+    var reasonLine = "";
+    if (stage === "problem") {
+      reasonLine = '<div class="card-line">📝 Sabab: ' +
+        (o.problem_reason ? escapeHtml(o.problem_reason) : "(ko'rsatilmagan)") + '</div>';
+    }
     return (
       '<div class="card" data-id="' + o.id + '">' +
         '<div class="card-title">#' + o.id + ' — ' + fmtPrice(o.total_price) + " so'm</div>" +
@@ -236,6 +249,7 @@
         '<div class="card-line">👤 ' + escapeHtml(o.full_name || "") + ' · 📱 ' + escapeHtml(o.phone || "") + '</div>' +
         '<div class="card-line">📍 ' + escapeHtml(o.address || "") + '</div>' +
         '<div class="card-line">Holat: ' + statusLabel + '</div>' +
+        reasonLine +
         actionsHtml +
       '</div>'
     );
@@ -256,6 +270,9 @@
           var card = btn.closest(".card");
           var id = card.getAttribute("data-id");
           var action = btn.getAttribute("data-order-action");
+          // "⚠️ Muammo" - darhol belgilamasdan, avval sababni so'raymiz
+          // (overlay orqali) - foydalanuvchi so'rovi bilan qo'shildi.
+          if (action === "problem") { openProblemReasonForm(id, stage); return; }
           card.querySelectorAll(".card-btn").forEach(function (b) { b.disabled = true; });
           api("/admin/api/orders/" + id + "/" + action, { method: "POST" }).then(function (r2) {
             if (r2.ok) { showToast(ORDER_ACTION_DONE_TEXT[action] || "Belgilandi"); loadOrderStage(stage); }
@@ -264,6 +281,47 @@
         };
       });
     });
+  }
+
+  // "⚠️ Muammo" bosilganda sababni (izohni) so'rovchi kichik forma (overlay).
+  // MUHIM: window.prompt() ishlatilmadi - Telegram Mini App WebView'ida
+  // brauzerning standart prompt/alert/confirm oynalari ishonchli
+  // ishlamasligi mumkin, shuning uchun mavjud #overlay naqshiga (add-product
+  // formasidagi kabi) mos kichik ekran ishlatildi.
+  function openProblemReasonForm(orderId, stage) {
+    var overlay = document.getElementById("overlay");
+    overlay.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">⚠️ Muammo sababi</div>' +
+        '<div class="form-group"><label class="form-label">Sabab (ixtiyoriy)</label>' +
+          '<textarea class="form-textarea" id="pr-reason" placeholder="Masalan: mijoz javob bermayapti, mahsulot tugagan..."></textarea></div>' +
+        '<button class="card-btn danger" id="pr-submit" style="margin-top:6px">⚠️ Muammo deb belgilash</button>' +
+        '<button class="card-btn" id="pr-cancel" style="margin-top:8px;background:var(--secondary-bg);color:var(--text)">Bekor qilish</button>' +
+      '</div>';
+    overlay.classList.remove("hidden");
+    if (tg) tg.BackButton.show();
+
+    document.getElementById("pr-cancel").onclick = closeOverlay;
+    document.getElementById("pr-submit").onclick = function () {
+      var reason = document.getElementById("pr-reason").value.trim();
+      var submitBtn = document.getElementById("pr-submit");
+      submitBtn.disabled = true;
+      submitBtn.textContent = "⏳ Belgilanmoqda...";
+      api("/admin/api/orders/" + orderId + "/problem", {
+        method: "POST",
+        body: JSON.stringify({ reason: reason }),
+      }).then(function (r) {
+        if (r.ok) {
+          showToast("⚠️ Muammo deb belgilandi");
+          closeOverlay();
+          loadOrderStage(stage);
+        } else {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "⚠️ Muammo deb belgilash";
+          showToast("Xatolik yuz berdi.");
+        }
+      });
+    };
   }
 
   // ---------- Shaxsiy buyurtmalar ----------
@@ -334,6 +392,9 @@
   }
 
   // ---------- Mahsulotlar ----------
+  // MUHIM: state.categories endi {name, subcategories: [...]} obyektlar
+  // ro'yxati (webapp_api.py'dagi /api/catalog javobi 27-avgustda shunga
+  // o'zgartirilgan - "katalog ichida katalog" so'roviga javoban).
   function loadProducts() {
     Promise.all([api("/admin/api/products"), state.categories.length ? Promise.resolve() : api("/api/catalog").then(function (r) { state.categories = (r.data && r.data.categories) || []; })])
       .then(function (results) {
@@ -344,11 +405,12 @@
         if (!products.length) { content.innerHTML = '<div class="empty">Hozircha mahsulot yo\'q. Pastdagi ➕ orqali qo\'shing.</div>'; return; }
         content.innerHTML = products.map(function (p) {
           var img = (p.photos && p.photos[0]) ? '<img src="' + photoUrl(p.photos[0]) + '" style="width:56px;height:56px;border-radius:10px;object-fit:cover;float:left;margin-right:10px">' : "";
+          var catLine = escapeHtml(p.category) + (p.subcategory ? " / " + escapeHtml(p.subcategory) : "") + ' · ' + fmtPrice(p.price) + " so'm";
           return (
             '<div class="card" data-id="' + p.id + '" style="overflow:auto">' +
               img +
               '<div class="card-title">' + escapeHtml(p.name) + '</div>' +
-              '<div class="card-line">' + escapeHtml(p.category) + ' · ' + fmtPrice(p.price) + " so'm</div>" +
+              '<div class="card-line">' + catLine + '</div>' +
               '<div class="card-actions"><button class="card-btn danger" data-action="delete">🗑 O\'chirish</button></div>' +
             '</div>'
           );
@@ -366,19 +428,72 @@
       });
   }
 
+  // ---------- Statistika ----------
+  // MUHIM: "jinsi" va "yoshi" statistikasi YO'Q - Telegram bu ma'lumotni
+  // botga bermaydi, mijozdan alohida so'ralganda ham ko'pchilik javob
+  // bermasligi mumkin edi, shuning uchun foydalanuvchi bilan kelishilgan
+  // holda hozircha faqat quyidagilar bilan cheklandi: odamlar soni, eng
+  // ko'p buyurtma qilinayotgan mahsulotlar, viloyat (manzil matnidan
+  // TAXMINAN aniqlangan - 100% aniq emas).
+  function loadStats() {
+    api("/admin/api/stats").then(function (r) {
+      var content = document.getElementById("content");
+      if (!r.ok) { content.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
+      var d = r.data;
+
+      var statTiles =
+        '<div style="display:flex;gap:8px;margin-bottom:10px">' +
+          '<div class="card" style="flex:1;text-align:center"><div class="card-title" style="font-size:20px">' + (d.customers || 0) + '</div><div class="card-line">Xarid qilgan mijoz</div></div>' +
+          '<div class="card" style="flex:1;text-align:center"><div class="card-title" style="font-size:20px">' + (d.total_users || 0) + '</div><div class="card-line">Botni ko\'rgan odam</div></div>' +
+          '<div class="card" style="flex:1;text-align:center"><div class="card-title" style="font-size:20px">' + (d.order_count || 0) + '</div><div class="card-line">Jami buyurtma</div></div>' +
+        '</div>';
+
+      var topProducts = d.top_products || [];
+      var topHtml = '<div class="card"><div class="card-title">🏆 Eng ko\'p buyurtma qilinayotgan</div>' +
+        (topProducts.length
+          ? topProducts.map(function (p, i) {
+              return '<div class="card-line">' + (i + 1) + '. ' + escapeHtml(p.name) + ' — ' + p.quantity + ' ta</div>';
+            }).join("")
+          : '<div class="card-line">Hali buyurtma yo\'q.</div>') +
+        '</div>';
+
+      var regions = d.regions || [];
+      var regionsHtml = '<div class="card"><div class="card-title">📍 Viloyatlar bo\'yicha (manzildan taxminan)</div>' +
+        (regions.length
+          ? regions.map(function (r2) {
+              return '<div class="card-line">' + escapeHtml(r2.name) + ' — ' + r2.count + ' ta buyurtma</div>';
+            }).join("")
+          : '<div class="card-line">Hali ma\'lumot yo\'q.</div>') +
+        '</div>';
+
+      content.innerHTML = statTiles + topHtml + regionsHtml;
+    });
+  }
+
   // ---------- Yangi mahsulot qo'shish (overlay) ----------
   var pickedPhotos = []; // base64 data URL'lar ro'yxati
 
   function openAddProductForm() {
     pickedPhotos = [];
     var overlay = document.getElementById("overlay");
-    var catOptions = state.categories.map(function (c) { return '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</option>'; }).join("");
+    var catOptions = state.categories.map(function (c) { return '<option value="' + escapeHtml(c.name) + '">' + escapeHtml(c.name) + '</option>'; }).join("");
+    // Mavjud barcha kichik bo'limlar (qaysi bo'limga tegishli bo'lishidan
+    // qat'i nazar) - qulaylik uchun bitta umumiy ro'yxat sifatida taklif
+    // qilinadi (admin baribir o'zi to'g'ri bo'limni tanlaydi).
+    var allSubcats = [];
+    state.categories.forEach(function (c) {
+      (c.subcategories || []).forEach(function (s) { if (allSubcats.indexOf(s) === -1) allSubcats.push(s); });
+    });
+    var subcatOptions = allSubcats.map(function (s) { return '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>'; }).join("");
     overlay.innerHTML =
       '<div class="screen">' +
         '<div class="screen-title">➕ Yangi mahsulot</div>' +
         '<div class="form-group"><label class="form-label">Bo\'lim</label>' +
           '<input class="form-input" id="p-category" list="cat-list" placeholder="Bo\'lim nomi (mavjud yoki yangi)">' +
           '<datalist id="cat-list">' + catOptions + '</datalist></div>' +
+        '<div class="form-group"><label class="form-label">Kichik bo\'lim (ixtiyoriy)</label>' +
+          '<input class="form-input" id="p-subcategory" list="subcat-list" placeholder="Masalan: Hayvonlar (bo\'sh qoldirish mumkin)">' +
+          '<datalist id="subcat-list">' + subcatOptions + '</datalist></div>' +
         '<div class="form-group"><label class="form-label">Nomi</label><input class="form-input" id="p-name"></div>' +
         '<div class="form-group"><label class="form-label">Tavsifi</label><textarea class="form-textarea" id="p-desc"></textarea></div>' +
         '<div class="form-group"><label class="form-label">Narxi (so\'m)</label><input class="form-input" id="p-price" type="number"></div>' +
@@ -423,6 +538,7 @@
 
   function submitNewProduct() {
     var category = document.getElementById("p-category").value.trim();
+    var subcategory = document.getElementById("p-subcategory").value.trim();
     var name = document.getElementById("p-name").value.trim();
     var description = document.getElementById("p-desc").value.trim();
     var priceStr = document.getElementById("p-price").value.trim();
@@ -444,7 +560,7 @@
     submitBtn.textContent = "⏳ Saqlanmoqda...";
     api("/admin/api/products", {
       method: "POST",
-      body: JSON.stringify({ category: category, name: name, description: description, price: price, photos: pickedPhotos }),
+      body: JSON.stringify({ category: category, subcategory: subcategory, name: name, description: description, price: price, photos: pickedPhotos }),
     }).then(function (r) {
       if (r.ok) {
         showToast("Mahsulot qo'shildi ✅");

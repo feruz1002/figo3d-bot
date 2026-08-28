@@ -1,4 +1,4 @@
-"""Katalogni ko'rsatish: bo'limlar -> mahsulotlar -> mahsulot tafsiloti."""
+"""Katalogni ko'rsatish: bo'limlar -> (bor bo'lsa) kichik bo'limlar -> mahsulotlar -> mahsulot tafsiloti."""
 from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, Message, InputMediaPhoto, InputMediaVideo
 
@@ -6,6 +6,7 @@ import db
 from keyboards import (
     BTN_CATALOG,
     categories_keyboard,
+    subcategories_keyboard,
     products_keyboard,
     product_detail_keyboard,
 )
@@ -46,17 +47,49 @@ async def back_to_categories(callback: CallbackQuery):
     await callback.answer()
 
 
-@catalog_router.callback_query(F.data.startswith("cat:"))
-async def show_products(callback: CallbackQuery):
-    category = callback.data.split(":", 1)[1]
-    products = await db.get_products_by_category(category)
+async def _show_products_list(callback: CallbackQuery, category: str, subcategory: str | None):
+    products = await db.get_products_by_category(category, subcategory=subcategory)
     if not products:
         await callback.answer("Bu bo'limda hozircha mahsulot yo'q", show_alert=True)
         return
+    title = f"<b>{category}</b>" + (f" — {subcategory}" if subcategory else "")
     await _safe_edit(
-        callback, f"<b>{category}</b>\n\nMahsulotni tanlang:", products_keyboard(category, products)
+        callback, f"{title}\n\nMahsulotni tanlang:", products_keyboard(category, products, subcategory)
     )
     await callback.answer()
+
+
+@catalog_router.callback_query(F.data.startswith("cat:"))
+async def show_category(callback: CallbackQuery):
+    """Bo'lim bosilganda: agar ichida kichik bo'limlar bo'lsa - avval
+    ularning ro'yxati ko'rsatiladi; bo'lmasa - to'g'ridan-to'g'ri
+    mahsulotlar ro'yxati (eski xatti-harakat)."""
+    category = callback.data.split(":", 1)[1]
+    subcategories = await db.get_subcategories(category)
+    if subcategories:
+        await _safe_edit(
+            callback,
+            f"<b>{category}</b>\n\nQaysi kichik bo'limni ko'rmoqchisiz?",
+            subcategories_keyboard(category, subcategories),
+        )
+        await callback.answer()
+        return
+    await _show_products_list(callback, category, subcategory=None)
+
+
+@catalog_router.callback_query(F.data.startswith("subcat:"))
+async def show_subcategory_products(callback: CallbackQuery):
+    _, category, subcategory = callback.data.split(":", 2)
+    await _show_products_list(callback, category, subcategory=subcategory)
+
+
+@catalog_router.callback_query(F.data.startswith("catall:"))
+async def show_all_in_category(callback: CallbackQuery):
+    """Kichik bo'limlar ro'yxatidagi "📦 Hammasini ko'rish" - shu bo'limdagi
+    BARCHA mahsulotlarni (kichik bo'limi bor-yo'qligidan qat'i nazar) birga
+    ko'rsatadi."""
+    category = callback.data.split(":", 1)[1]
+    await _show_products_list(callback, category, subcategory=None)
 
 
 def _rating_line(avg_rating: float, review_count: int) -> str:
@@ -82,9 +115,7 @@ async def show_product(callback: CallbackQuery, bot: Bot):
         f"💰 Narxi: {format_price(product['price'])} so'm\n"
         f"{_rating_line(avg_rating, review_count)}"
     )
-    kb = product_detail_keyboard(
-        product_id, product["category"], has_reviews=review_count > 0, cart_qty=cart_qty
-    )
+    kb = product_detail_keyboard(product_id, has_reviews=review_count > 0, cart_qty=cart_qty)
 
     photos = product.get("photos") or []
     video = product.get("video")
@@ -119,6 +150,19 @@ async def show_product(callback: CallbackQuery, bot: Bot):
     await callback.answer()
 
 
+@catalog_router.callback_query(F.data.startswith("backto:"))
+async def back_to_product_list(callback: CallbackQuery):
+    """Mahsulot tafsilotidagi "⬅️ Ro'yxatga qaytish" - mahsulotning o'zi
+    (kichik bo'limi bor-yo'qligi) orqali qaysi ro'yxatga tegishli ekanini
+    server tomonda aniqlaydi va o'sha yerga qaytaradi."""
+    product_id = int(callback.data.split(":", 1)[1])
+    product = await db.get_product_by_id(product_id)
+    if not product:
+        await callback.answer("Mahsulot topilmadi", show_alert=True)
+        return
+    await _show_products_list(callback, product["category"], subcategory=product.get("subcategory"))
+
+
 @catalog_router.callback_query(F.data.startswith("add:"))
 async def add_to_cart_handler(callback: CallbackQuery):
     product_id = int(callback.data.split(":", 1)[1])
@@ -133,9 +177,7 @@ async def add_to_cart_handler(callback: CallbackQuery):
     # Tugmani darhol yangilaymiz - shu bilan foydalanuvchi savatga qo'shilganini
     # yozuv o'zgarganidan darrov ko'radi (masalan "savatda: 2 ta" bo'lib qoladi).
     _, review_count = await db.get_product_rating(product_id)
-    kb = product_detail_keyboard(
-        product_id, product["category"], has_reviews=review_count > 0, cart_qty=new_qty
-    )
+    kb = product_detail_keyboard(product_id, has_reviews=review_count > 0, cart_qty=new_qty)
     try:
         await callback.message.edit_reply_markup(reply_markup=kb)
     except Exception:

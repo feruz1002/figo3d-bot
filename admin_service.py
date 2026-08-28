@@ -68,27 +68,62 @@ async def notify_customer_order_archived(bot, order):
         pass
 
 
-async def flag_order_problem(order_id: int):
+async def flag_order_problem(order_id: int, reason: str | None = None):
     """Buyurtmada muammo bo'lsa (masalan mijoz bilan bog'lanib bo'lmayapti,
     mahsulot yo'q va h.k.) - istalgan faol bosqichdan "⚠️ Muammo"ga
     o'tkazish uchun. Admin panelda bu amal "🆕 Qabul qilish", "🛠 Yig'ish"
-    va "🚚 Chiqarib yuborilgan" bo'limlarining barchasida mavjud."""
+    va "🚚 Chiqarib yuborilgan" bo'limlarining barchasida mavjud.
+    `reason` - admin yozgan qisqa izoh (ixtiyoriy, None bo'lishi mumkin)."""
     order = await db.get_order(order_id)
     if not order:
         return None, "not_found"
-    await db.update_order_status(order_id, order_service.STATUS_PROBLEM)
-    return order, None
+    await db.set_order_problem(order_id, order_service.STATUS_PROBLEM, reason)
+    # Yangilangan (sabab yozilgan) buyurtmani qaytaramiz, shu bilan
+    # chaqiruvchi (handlers/admin.py, admin_webapp_api.py) darhol
+    # order["problem_reason"]dan foydalana oladi.
+    return await db.get_order(order_id), None
 
 
 async def notify_customer_order_problem(bot, order):
+    reason = (order or {}).get("problem_reason")
+    text = f"⚠️ Buyurtmangiz #{order['id']} bo'yicha savol/muammo yuzaga keldi — tez orada operator siz bilan bog'lanadi."
+    if reason:
+        text += f"\n\n📝 Sabab: {reason}"
     try:
-        await bot.send_message(
-            order["user_id"],
-            f"⚠️ Buyurtmangiz #{order['id']} bo'yicha savol/muammo yuzaga keldi — "
-            "tez orada operator siz bilan bog'lanadi.",
-        )
+        await bot.send_message(order["user_id"], text)
     except Exception:
         pass
+
+
+async def get_dashboard_stats() -> dict:
+    """Admin panelning "📊 Statistika" bo'limi uchun umumiy ko'rsatkichlar:
+    botni ko'rgan/xarid qilgan odamlar soni, jami buyurtmalar, eng ko'p
+    buyurtma qilinayotgan mahsulotlar va viloyat bo'yicha taqsimot (manzil
+    matnidan taxminan aniqlangan)."""
+    total_users, customers, order_count, top_products, addresses = (
+        await db.get_total_bot_users(),
+        await db.get_customer_count(),
+        await db.get_order_count(),
+        await db.get_top_products(limit=8),
+        await db.get_all_order_addresses(),
+    )
+
+    region_counts: dict[str, int] = {}
+    for address in addresses:
+        region = order_service.guess_region(address)
+        region_counts[region] = region_counts.get(region, 0) + 1
+    # "Aniqlanmadi" ro'yxat oxirida chiqsin (aniq viloyatlar avval ko'rinsin)
+    regions_sorted = sorted(
+        region_counts.items(), key=lambda kv: (kv[0] == "Aniqlanmadi", -kv[1])
+    )
+
+    return {
+        "total_users": total_users,
+        "customers": customers,
+        "order_count": order_count,
+        "top_products": top_products,
+        "regions": [{"name": name, "count": count} for name, count in regions_sorted],
+    }
 
 
 async def mark_custom_order_contacted(custom_order_id: int):

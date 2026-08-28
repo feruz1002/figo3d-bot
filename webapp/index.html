@@ -34,6 +34,17 @@
   }
   .tab.active { background: var(--button); color: var(--button-text); }
 
+  /* Kichik bo'limlar (subkategoriya) - bo'lim tugmalaridan bir oz kichikroq,
+     shu bilan ikki daraja (Bo'lim / Kichik bo'lim) vizual jihatdan aniq
+     ajralib turadi. */
+  #subtabs { display: none; gap: 6px; overflow-x: auto; padding: 0 14px 10px; scrollbar-width: none; }
+  #subtabs::-webkit-scrollbar { display: none; }
+  .subtab {
+    flex: none; border: 1.5px solid var(--secondary-bg); border-radius: 999px; padding: 5px 12px;
+    background: transparent; color: var(--hint); font-size: 12.5px; font-weight: 500;
+  }
+  .subtab.active { background: var(--secondary-bg); color: var(--text); border-color: var(--secondary-bg); font-weight: 700; }
+
   #grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px 14px; }
   .empty, .cart-empty { grid-column: 1 / -1; text-align: center; color: var(--hint); padding: 40px 20px; font-size: 15px; }
 
@@ -115,6 +126,7 @@
     <h1>🎁 Figo3D</h1>
     <div id="tabs"></div>
   </header>
+  <div id="subtabs"></div>
   <main id="grid"></main>
   <div id="overlay" class="hidden"></div>
 </div>
@@ -251,25 +263,69 @@
     });
   }
 
-  // ---------- Katalog to'ri ----------
+  // ---------- Katalog to'ri (Bo'lim -> ixtiyoriy Kichik bo'lim -> Mahsulotlar) ----------
+  // MUHIM (27-avgust, "katalog ichida katalog" so'roviga javoban):
+  // state.categories endi {name, subcategories: [...]} obyektlar ro'yxati
+  // (avval oddiy matn ro'yxati edi) - /api/catalog javobi shunga mos
+  // o'zgartirilgan (webapp_api.py'ga qarang).
   var activeCategory = null;
+  var activeSubcategory = null; // null = "Hammasi" (kichik bo'lim tanlanmagan)
+
+  function currentCategoryObj() {
+    var matches = state.categories.filter(function (c) { return c.name === activeCategory; });
+    return matches[0] || null;
+  }
 
   function renderTabs() {
     var el = document.getElementById("tabs");
     el.innerHTML = "";
     state.categories.forEach(function (cat) {
       var btn = document.createElement("button");
-      btn.className = "tab" + (cat === activeCategory ? " active" : "");
-      btn.textContent = cat;
-      btn.onclick = function () { activeCategory = cat; renderTabs(); renderGrid(); };
+      btn.className = "tab" + (cat.name === activeCategory ? " active" : "");
+      btn.textContent = cat.name;
+      btn.onclick = function () {
+        activeCategory = cat.name;
+        activeSubcategory = null;
+        renderTabs(); renderSubtabs(); renderGrid();
+      };
       el.appendChild(btn);
+    });
+  }
+
+  function renderSubtabs() {
+    var el = document.getElementById("subtabs");
+    var cat = currentCategoryObj();
+    var subs = (cat && cat.subcategories) || [];
+    if (!subs.length) {
+      el.style.display = "none";
+      el.innerHTML = "";
+      return;
+    }
+    el.style.display = "flex";
+    var chips = ['<button class="subtab' + (activeSubcategory === null ? " active" : "") + '" data-sub="">Hammasi</button>'];
+    subs.forEach(function (s) {
+      chips.push(
+        '<button class="subtab' + (activeSubcategory === s ? " active" : "") + '" data-sub="' + escapeHtml(s) + '">' +
+        escapeHtml(s) + '</button>'
+      );
+    });
+    el.innerHTML = chips.join("");
+    el.querySelectorAll("[data-sub]").forEach(function (btn) {
+      btn.onclick = function () {
+        activeSubcategory = btn.getAttribute("data-sub") || null;
+        renderSubtabs(); renderGrid();
+      };
     });
   }
 
   function renderGrid() {
     var el = document.getElementById("grid");
     el.innerHTML = "";
-    var items = state.products.filter(function (p) { return p.category === activeCategory; });
+    var items = state.products.filter(function (p) {
+      if (p.category !== activeCategory) return false;
+      if (activeSubcategory !== null && p.subcategory !== activeSubcategory) return false;
+      return true;
+    });
     if (!items.length) {
       el.innerHTML = "<div class=\"empty\">Bu bo'limda hozircha mahsulot yo'q</div>";
       return;
@@ -478,8 +534,8 @@
   // ---------- Boshlash ----------
   loadCatalog()
     .then(function () {
-      activeCategory = state.categories[0] || null;
-      renderTabs(); renderGrid();
+      activeCategory = state.categories[0] ? state.categories[0].name : null;
+      renderTabs(); renderSubtabs(); renderGrid();
       return loadCart();
     })
     .then(function () { renderGrid(); updateMainButton(); })

@@ -26,9 +26,18 @@ def _authed_user_id(request: web.Request):
 
 
 async def api_catalog(request: web.Request):
-    categories = await db.get_categories()
+    """MUHIM (27-avgust, "katalog ichida katalog" so'roviga javoban):
+    `categories` endi oddiy matn ro'yxati emas, balki har biri o'z ichidagi
+    kichik bo'limlar ro'yxati bilan birga qaytadi - Mini App shu orqali
+    2 darajali (Bo'lim -> Kichik bo'lim) navigatsiya quradi. `products`
+    ro'yxatidagi har bir mahsulotda ham endi `subcategory` maydoni bor
+    (bo'lmasa - null)."""
+    category_names = await db.get_categories()
+    categories = []
     products = []
-    for cat in categories:
+    for cat in category_names:
+        subcats = await db.get_subcategories(cat)
+        categories.append({"name": cat, "subcategories": subcats})
         products.extend(await db.get_products_by_category(cat))
     return web.json_response({"categories": categories, "products": products})
 

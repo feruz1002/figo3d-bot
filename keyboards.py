@@ -102,6 +102,13 @@ def skip_proof_keyboard() -> ReplyKeyboardMarkup:
 
 
 # ---------- Katalog uchun inline tugmalar ----------
+# MUHIM (27-avgust, "katalog ichida katalog" so'roviga javoban): endi
+# bo'lim (category) ichida ixtiyoriy ravishda kichik bo'lim (subcategory)
+# ham bo'lishi mumkin - 2 daraja: Bo'lim -> Kichik bo'lim -> Mahsulotlar.
+# Kichik bo'limi yo'q mahsulotlar bo'lim ichida to'g'ridan-to'g'ri
+# ko'rinaveradi (eski xatti-harakat buzilmaydi). DIQQAT: Telegram
+# callback_data uzunligi 64 BAYTdan oshmasligi kerak - shuning uchun
+# bo'lim/kichik bo'lim nomlarini juda uzun qilib qo'ymaslik tavsiya etiladi.
 
 def categories_keyboard(categories: list) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
@@ -111,7 +118,21 @@ def categories_keyboard(categories: list) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def products_keyboard(category: str, products: list) -> InlineKeyboardMarkup:
+def subcategories_keyboard(category: str, subcategories: list) -> InlineKeyboardMarkup:
+    """Bo'lim ichida kichik bo'limlar bo'lsa, avval shular ro'yxati
+    ko'rsatiladi. "📦 Hammasini ko'rish" - kichik bo'limga ega bo'lmagan
+    mahsulotlar ham (agar bo'lsa) shu bo'limda bo'lsa, hammasini birga
+    ko'rish uchun."""
+    builder = InlineKeyboardBuilder()
+    for sub in subcategories:
+        builder.button(text=sub, callback_data=f"subcat:{category}:{sub}")
+    builder.button(text="📦 Hammasini ko'rish", callback_data=f"catall:{category}")
+    builder.button(text="⬅️ Bo'limlarga qaytish", callback_data="back_categories")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def products_keyboard(category: str, products: list, subcategory: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for product in products:
         price_fmt = f"{product['price']:,}".replace(",", " ")
@@ -119,21 +140,29 @@ def products_keyboard(category: str, products: list) -> InlineKeyboardMarkup:
             text=f"{product['name']} — {price_fmt} so'm",
             callback_data=f"prod:{product['id']}",
         )
-    builder.button(text="⬅️ Bo'limlarga qaytish", callback_data="back_categories")
+    if subcategory:
+        builder.button(text="⬅️ Kichik bo'limlarga qaytish", callback_data=f"cat:{category}")
+    else:
+        builder.button(text="⬅️ Bo'limlarga qaytish", callback_data="back_categories")
     builder.adjust(1)
     return builder.as_markup()
 
 
 def product_detail_keyboard(
-    product_id: int, category: str, has_reviews: bool = False, cart_qty: int = 0
+    product_id: int, has_reviews: bool = False, cart_qty: int = 0
 ) -> InlineKeyboardMarkup:
+    """DIQQAT: "Ro'yxatga qaytish" endi mahsulotning O'ZIGA (backto:{id})
+    tayanadi, category matnini qayta kodlamaydi - shu bilan mahsulot qaysi
+    kichik bo'limdan ochilgan bo'lsa, aynan o'sha ro'yxatga qaytadi (server
+    tomonda product_id orqali qayta aniqlanadi, handlers/catalog.py'ga
+    qarang)."""
     add_text = "➕ Savatga qo'shish" if cart_qty == 0 else f"➕ Yana qo'shish (savatda: {cart_qty} ta)"
     builder = InlineKeyboardBuilder()
     builder.button(text=add_text, callback_data=f"add:{product_id}")
     builder.button(text="⭐ Baho berish", callback_data=f"review:{product_id}")
     if has_reviews:
         builder.button(text="💬 Sharhlarni ko'rish", callback_data=f"viewreviews:{product_id}")
-    builder.button(text="⬅️ Ro'yxatga qaytish", callback_data=f"cat:{category}")
+    builder.button(text="⬅️ Ro'yxatga qaytish", callback_data=f"backto:{product_id}")
     builder.adjust(1)
     return builder.as_markup()
 

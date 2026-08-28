@@ -42,3 +42,9 @@ class AdminProductStates(StatesGroup):
     waiting_photos = State()
     waiting_video = State()
     confirming = State()
+
+
+class AdminOrderStates(StatesGroup):
+    """Admin buyurtmani "⚠️ Muammo" deb belgilaganda, sababni (izohni)
+    chatda so'rab olish uchun (handlers/admin.py'ga qarang)."""
+    waiting_problem_reason = State()

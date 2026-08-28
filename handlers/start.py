@@ -3,6 +3,7 @@ from aiogram import Router
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 
+import db
 from config import WEBAPP_URL
 from keyboards import main_menu_keyboard
 
@@ -11,6 +12,11 @@ start_router = Router()
 
 @start_router.message(CommandStart())
 async def cmd_start(message: Message):
+    # Statistika uchun ("📊 Statistika" bo'limidagi "botni ko'rgan odamlar
+    # soni") - hali birorta buyurtma bermagan bo'lsa ham, shu yerda "ko'rildi"
+    # deb belgilanadi. Profil ma'lumotlariga (ism/telefon/manzil) tegmaydi.
+    await db.touch_user_seen(message.from_user.id)
+
     # MUHIM (foydalanuvchi so'rovi bilan qaytarildi): endi pastdagi chat
     # tugmalari HAR DOIM (production'da ham) ko'rsatiladi va BARCHA amal
     # (savat, buyurtma berish, profil, buyurtmalar, shaxsiy buyurtma,

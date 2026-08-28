@@ -59,11 +59,15 @@ async def api_admin_orders(request: web.Request):
 
 # Admin panelning bosqichli (Kanban) "Buyurtmalar" ko'rinishi uchun -
 # har bir bo'lim (tab) shu lug'atdagi status ro'yxatiga mos keladi.
+# MUHIM (27-avgust, 2-marta o'zgartirildi): "Arxiv" va "Muammo" endi
+# ALOHIDA bo'lim ("final" kaliti endi ishlatilmaydi - order_service.py'dagi
+# izohga qarang).
 _ORDER_STAGES = {
     "new": order_service.STAGE_NEW_STATUSES,
     "accepted": order_service.STAGE_ACCEPTED_STATUSES,
     "shipped": order_service.STAGE_SHIPPED_STATUSES,
-    "final": order_service.STAGE_FINAL_STATUSES,
+    "archived": order_service.STAGE_ARCHIVED_STATUSES,
+    "problem": order_service.STAGE_PROBLEM_STATUSES,
 }
 
 
@@ -127,11 +131,30 @@ async def api_admin_order_problem(request: web.Request):
         order_id = int(request.match_info["order_id"])
     except ValueError:
         return web.json_response({"error": "bad_request"}, status=400)
-    order, reason = await admin_service.flag_order_problem(order_id)
+
+    # Sabab (izoh) ixtiyoriy - admin panelning "⚠️ Muammo" formasi orqali
+    # yuboriladi. Body bo'sh/JSON emas bo'lsa ham xato bermaymiz (sababsiz
+    # belgilash sifatida qaraymiz).
+    reason = None
+    try:
+        body = await request.json()
+        raw = (body.get("reason") or "").strip()
+        reason = raw or None
+    except Exception:
+        pass
+
+    order, err = await admin_service.flag_order_problem(order_id, reason)
     if order is None:
-        return web.json_response({"error": reason}, status=404)
+        return web.json_response({"error": err}, status=404)
     await admin_service.notify_customer_order_problem(request.app["bot"], order)
     return web.json_response({"ok": True})
+
+
+async def api_admin_stats(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    stats = await admin_service.get_dashboard_stats()
+    return web.json_response(stats)
 
 
 async def api_admin_custom_orders(request: web.Request):
@@ -220,6 +243,7 @@ async def api_admin_product_create(request: web.Request):
         return web.json_response({"error": "bad_request"}, status=400)
 
     category = (body.get("category") or "").strip()
+    subcategory = (body.get("subcategory") or "").strip() or None
     name = (body.get("name") or "").strip()
     description = (body.get("description") or "").strip()
     photos = body.get("photos") or []
@@ -252,7 +276,7 @@ async def api_admin_product_create(request: web.Request):
         except Exception:
             return web.json_response({"error": "photo_upload_failed"}, status=502)
 
-    product_id = await db.create_product(category, name, description, price)
+    product_id = await db.create_product(category, name, description, price, subcategory=subcategory)
     for position, file_id in enumerate(file_ids):
         await db.add_product_photo(product_id, file_id, position)
 
@@ -287,3 +311,4 @@ def register_admin_routes(app: web.Application, admin_index_path: str):
     app.router.add_get("/admin/api/products", api_admin_products)
     app.router.add_post("/admin/api/products", api_admin_product_create)
     app.router.add_post("/admin/api/products/{product_id}/delete", api_admin_product_delete)
+    app.router.add_get("/admin/api/stats", api_admin_stats)

@@ -138,6 +138,15 @@ async def init_db():
         # Eski (promo qo'shilishidan oldin yaratilgan) orders jadvali bo'lsa ham ishlashi uchun:
         await _add_column_if_missing(conn, "orders", "promo_code TEXT")
         await _add_column_if_missing(conn, "orders", "discount_amount INTEGER NOT NULL DEFAULT 0")
+        # 27-avgust: "Muammo" bosqichida admin yozadigan sabab (izoh) uchun.
+        await _add_column_if_missing(conn, "orders", "problem_reason TEXT")
+        # 27-avgust: "katalog ichida katalog" (kichik bo'lim) uchun - ixtiyoriy,
+        # bo'sh (NULL) bo'lsa mahsulot to'g'ridan-to'g'ri bo'lim ichida turadi.
+        await _add_column_if_missing(conn, "products", "subcategory TEXT")
+        # 27-avgust: statistika uchun - foydalanuvchi /start bosgan zahoti
+        # (hali profil to'ldirmagan bo'lsa ham) "botni ko'rgan odam" sifatida
+        # qayd etiladi (touch_user_seen'ga qarang).
+        await _add_column_if_missing(conn, "users", "first_seen_at TEXT")
 
         # Baza bo'sh bo'lsa (bot birinchi marta ishga tushganda) - namuna
         # mahsulotlar bilan to'ldiramiz, shunda katalog darhol bo'sh bo'lib
@@ -169,6 +178,7 @@ async def _row_to_product(conn, row) -> dict:
     return {
         "id": row["id"],
         "category": row["category"],
+        "subcategory": row["subcategory"] if "subcategory" in row.keys() else None,
         "name": row["name"],
         "description": row["description"] or "",
         "price": row["price"],
@@ -188,11 +198,36 @@ async def get_categories() -> list:
         return [r[0] for r in rows]
 
 
-async def get_products_by_category(category: str) -> list:
+async def get_subcategories(category: str) -> list:
+    """Berilgan bo'lim ichidagi kichik bo'limlar ro'yxati (faqat kichik bo'limi
+    BOR mahsulotlar hisobga olinadi - bo'sh/NULL bo'lganlar bu yerda chiqmaydi,
+    ular bo'lim ichida to'g'ridan-to'g'ri ko'rinadi)."""
     async with get_db_connection() as conn:
         cursor = await conn.execute(
-            "SELECT * FROM products WHERE category = ? AND active = 1 ORDER BY id", (category,)
+            "SELECT subcategory FROM products WHERE category = ? AND active = 1 "
+            "AND subcategory IS NOT NULL AND subcategory != '' "
+            "GROUP BY subcategory ORDER BY MIN(id)",
+            (category,),
         )
+        rows = await cursor.fetchall()
+        return [r[0] for r in rows]
+
+
+async def get_products_by_category(category: str, subcategory: str | None = None) -> list:
+    """subcategory berilmasa (None) - shu bo'limdagi HAMMA mahsulot (kichik
+    bo'limi bor-yo'qligidan qat'i nazar) qaytadi - eski xatti-harakat saqlanadi,
+    Mini App katalogi va admin ro'yxati shu funksiyaga tayanadi. subcategory
+    berilsa - faqat aynan o'sha kichik bo'limdagi mahsulotlar qaytadi."""
+    async with get_db_connection() as conn:
+        if subcategory is not None:
+            cursor = await conn.execute(
+                "SELECT * FROM products WHERE category = ? AND subcategory = ? AND active = 1 ORDER BY id",
+                (category, subcategory),
+            )
+        else:
+            cursor = await conn.execute(
+                "SELECT * FROM products WHERE category = ? AND active = 1 ORDER BY id", (category,)
+            )
         rows = await cursor.fetchall()
         return [await _row_to_product(conn, row) for row in rows]
 
@@ -219,13 +254,15 @@ async def list_active_products() -> list:
         return [dict(r) for r in rows]
 
 
-async def create_product(category: str, name: str, description: str, price: int) -> int:
+async def create_product(
+    category: str, name: str, description: str, price: int, subcategory: str | None = None
+) -> int:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     async with get_db_connection() as conn:
         cursor = await conn.execute(
-            """INSERT INTO products (category, name, description, price, active, created_at)
-               VALUES (?, ?, ?, ?, 1, ?)""",
-            (category, name, description, price, now),
+            """INSERT INTO products (category, subcategory, name, description, price, active, created_at)
+               VALUES (?, ?, ?, ?, ?, 1, ?)""",
+            (category, subcategory or None, name, description, price, now),
         )
         await conn.commit()
         return cursor.lastrowid
@@ -441,6 +478,17 @@ async def update_order_status(order_id: int, status: str):
         await conn.commit()
 
 
+async def set_order_problem(order_id: int, status: str, reason: str | None):
+    """'⚠️ Muammo' deb belgilashda status BILAN BIRGA sababni (izohni) ham
+    saqlaydi - admin panelda va mijozga yuboriladigan xabarda ko'rsatish uchun."""
+    async with get_db_connection() as conn:
+        await conn.execute(
+            "UPDATE orders SET status = ?, problem_reason = ? WHERE id = ?",
+            (status, reason, order_id),
+        )
+        await conn.commit()
+
+
 async def get_user_orders(user_id: int, limit: int = 10):
     async with get_db_connection() as conn:
         cursor = await conn.execute(
@@ -598,6 +646,24 @@ async def update_custom_order_status(order_id: int, status: str):
 
 # ---------- FOYDALANUVCHI PROFILI (ism/telefon/manzil + hamyon) ----------
 
+async def touch_user_seen(user_id: int):
+    """Foydalanuvchi /start bosgan zahoti chaqiriladi - hali profilini
+    to'ldirmagan (ism/telefon/manzil bermagan) bo'lsa ham, "botni ko'rgan
+    odam" sifatida qayd etiladi (statistika uchun: get_total_bot_users'ga
+    qarang). Mavjud profil ma'lumotlariga TEGMAYDI - faqat birinchi
+    ko'rilgan vaqtni (agar hali yozilmagan bo'lsa) belgilaydi."""
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    async with get_db_connection() as conn:
+        await conn.execute(
+            """INSERT INTO users (user_id, balance, updated_at, first_seen_at)
+               VALUES (?, 0, ?, ?)
+               ON CONFLICT(user_id) DO UPDATE SET
+                   first_seen_at = COALESCE(users.first_seen_at, ?)""",
+            (user_id, now, now, now),
+        )
+        await conn.commit()
+
+
 async def get_user_profile(user_id: int):
     async with get_db_connection() as conn:
         cursor = await conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
@@ -695,3 +761,68 @@ async def get_open_custom_orders(limit: int = 50):
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
+
+
+# ---------- STATISTIKA (admin panel "📊 Statistika" bo'limi uchun) ----------
+
+async def get_total_bot_users() -> int:
+    """Botni kamida bir marta /start bosib ko'rgan (touch_user_seen orqali
+    qayd etilgan) odamlar soni - buyurtma bermagan bo'lsa ham hisoblanadi."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute("SELECT COUNT(*) FROM users")
+        (count,) = await cursor.fetchone()
+        return count or 0
+
+
+async def get_customer_count() -> int:
+    """Kamida BITTA buyurtma bergan (haqiqiy xaridor bo'lgan) odamlar soni."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute("SELECT COUNT(DISTINCT user_id) FROM orders")
+        (count,) = await cursor.fetchone()
+        return count or 0
+
+
+async def get_order_count() -> int:
+    async with get_db_connection() as conn:
+        cursor = await conn.execute("SELECT COUNT(*) FROM orders")
+        (count,) = await cursor.fetchone()
+        return count or 0
+
+
+async def get_top_products(limit: int = 8) -> list:
+    """Eng ko'p buyurtma qilingan mahsulotlar - barcha buyurtmalarning
+    items_json'idagi nomlar bo'yicha yig'iladi (mahsulot keyinchalik
+    o'chirilgan/o'zgargan bo'lsa ham, o'sha paytdagi nomi bilan hisoblanadi,
+    chunki items_json - buyurtma vaqtidagi "suratga olingan" nusxa).
+    Qaytadi: [{"name": ..., "quantity": ...}, ...] ko'pdan kamga qarab."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute("SELECT items_json FROM orders")
+        rows = await cursor.fetchall()
+
+    counts: dict[str, int] = {}
+    for row in rows:
+        raw = row[0]
+        if not raw:
+            continue
+        try:
+            items = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        for item in items:
+            name = (item or {}).get("name")
+            qty = (item or {}).get("quantity") or 0
+            if not name:
+                continue
+            counts[name] = counts.get(name, 0) + qty
+
+    top = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:limit]
+    return [{"name": name, "quantity": qty} for name, qty in top]
+
+
+async def get_all_order_addresses() -> list:
+    """Barcha buyurtmalarning manzil matnlari - viloyat statistikasini
+    (order_service.guess_region orqali) hisoblash uchun."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute("SELECT address FROM orders WHERE address IS NOT NULL")
+        rows = await cursor.fetchall()
+        return [r[0] for r in rows if r[0]]

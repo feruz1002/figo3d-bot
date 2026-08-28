@@ -145,6 +145,9 @@ ataydi), lekin endi u ancha soddalashtirilgan — faqat:
   bo'limlar tepada tab sifatida, mahsulot ustiga bosilganda katta rasm +
   galereya va tavsif
 - Savatga qo'shish va savatdagi miqdorni ➕/➖ bilan o'zgartirish
+- Bo'lim ichida kichik bo'limlar bo'lsa (pastdagi "Katalog ichida kichik
+  bo'lim" bo'limiga qarang), ular tab'lar ostida qo'shimcha kichikroq
+  tugmalar qatori sifatida chiqadi
 
 ✅ **Yangilandi (27-avgust):** savat oynasida endi **"✅ Buyurtmani
 yakunlash"** tugmasi bor — lekin bu tugma buyurtmani Mini App'ning o'zida
@@ -169,13 +172,15 @@ ochish"** tugmasi bor — bu ham xuddi mijozlar do'koni kabi veb-sahifa
 (Mini App) ko'rinishida ochiladi, lekin FAQAT sizga (va ruxsat bergan
 hamkorlaringizga) mo'ljallangan. Tab'lari:
 
-- **Buyurtmalar** — endi 4 ta bosqich (bo'lim) bilan, pastda "Buyurtma
+- **Buyurtmalar** — endi 5 ta bosqich (bo'lim) bilan, pastda "Buyurtma
   bosqichlari" bo'limiga qarang
 - **Shaxsiy** — hali javob berilmagan shaxsiy buyurtma so'rovlari (rasm bilan)
 - **To'ldirish** — kutilayotgan hisob to'ldirish so'rovlari, "✅ Tasdiqlash"/
   "❌ Rad etish" tugmalari bilan
 - **Mahsulotlar** — mavjud mahsulotlar ro'yxati + pastki o'ng burchakdagi
   "➕" tugmasi orqali yangi mahsulot qo'shish (bir nechta rasm bilan birga)
+- **📊 Statistika** — mijozlar soni, eng ko'p sotilayotgan mahsulotlar,
+  viloyat taqsimoti (pastdagi "Statistika bo'limi" ga qarang)
 
 **Xavfsizlik:** panelga FAQAT `ADMIN_CHAT_ID`/`ADMIN_IDS` ro'yxatidagi
 Telegram ID'lar kira oladi — Telegram'ning o'zi imzolab yuboradigan
@@ -192,12 +197,12 @@ ham faqat Render'da (haqiqiy https manzil bilan) ishlaydi — mahalliy
 kompyuteringizda sinaganingizda "🖥 Boshqaruv panelini ochish" tugmasi
 umuman ko'rinmaydi, chatdagi eski `/admin` usuli esa ishlayveradi.
 
-### ✅ Yangi: Buyurtma bosqichlari (27-avgust)
+### ✅ Yangi: Buyurtma bosqichlari (27-avgust, keyinchalik kengaytirildi)
 
 Avval buyurtmani "✅ Qabul qildim" deb belgilagach, u ro'yxatdan BUTUNLAY
 g'oyib bo'lardi — uni yanada oldinga surish (masalan "chiqarib
 yubordim" deb belgilash) imkoni yo'q edi. Endi buyurtma to'liq bosqichdan
-o'tadi, admin panelning **"📦 Buyurtmalar"** bo'limida 4 ta kichik bo'lim
+o'tadi, admin panelning **"📦 Buyurtmalar"** bo'limida 5 ta kichik bo'lim
 (tab) bor:
 
 1. **🆕 Qabul qilish** — hali javob berilmagan yangi buyurtmalar. "✅
@@ -206,14 +211,20 @@ o'tadi, admin panelning **"📦 Buyurtmalar"** bo'limida 4 ta kichik bo'lim
    "🚚 Chiqarib yubordim" bosilsa — keyingi bo'limga o'tadi.
 3. **🚚 Chiqarib yuborilgan** — yo'lda bo'lgan buyurtmalar. "✅ Yetkazildi"
    bosilsa — arxivga o'tadi.
-4. **📁 Arxiv / Muammo** — yakunlangan (yetkazilgan) va muammoli
-   buyurtmalarning barchasi shu yerda birga ko'rinadi.
+4. **📁 Arxiv** — yakunlangan (yetkazib berilgan) buyurtmalar.
+5. **⚠️ Muammo** — davom ettirib bo'lmagan buyurtmalar (ALOHIDA bo'lim —
+   avval "Arxiv" bilan bitta joyda aralashib turardi, endi diqqat talab
+   qiladigan buyurtmalar tugallanganlardan aniq ajratilgan).
 
 Har bir bosqichda (1, 2, 3-bo'limlarda) qo'shimcha **"⚠️ Muammo"** tugmasi
 ham bor — agar biror sababga ko'ra (mijoz bilan bog'lanib bo'lmayapti,
 mahsulot yo'q va h.k.) buyurtmani davom ettirib bo'lmasa, shu tugma bilan
-istalgan bosqichdan to'g'ridan-to'g'ri "Arxiv / Muammo" bo'limiga
-o'tkazish mumkin.
+istalgan bosqichdan to'g'ridan-to'g'ri "⚠️ Muammo" bo'limiga o'tkazish
+mumkin. **Yangi:** bu tugma endi bosilganda avval sababni (izohni)
+so'raydi — admin panelda kichik forma, chatda esa oddiy matn xabari
+sifatida ("-" deb yozsa, sababsiz belgilanadi). Yozilgan sabab admin
+panelda "⚠️ Muammo" bo'limidagi buyurtma kartochkasida, chatdagi buyurtma
+xabarida va mijozga yuboriladigan xabarda ham ko'rinadi.
 
 Har bir bosqich o'zgarganda mijozga ham avtomatik xabar boradi (masalan
 "🚚 Buyurtmangiz chiqarib yuborildi"), va mijoz "📦 Buyurtmalarim"
@@ -223,6 +234,45 @@ qilindi, yig'ilmoqda" → "🚚 Chiqarib yuborildi" → "📦 Yetkazildi").
 Bu bosqichlar chatning o'zidan ham (har bir yangi buyurtma xabari ostidagi
 tugmalar orqali) boshqariladi — admin panel va chat bir xil ma'lumot bilan
 ishlaydi, xohlagan birini ishlatishingiz mumkin.
+
+### ✅ Yangi: Katalog ichida kichik bo'lim (subkategoriya)
+
+Endi mahsulot qo'shishda bo'limdan tashqari ixtiyoriy **"Kichik bo'lim"**
+ham ko'rsatish mumkin (masalan "Sovg'alar" bo'limi ichida "Hayvonlar",
+"Multfilm qahramonlari" kabi kichik bo'limlar). Bu maydonni bo'sh
+qoldirsangiz, mahsulot avvalgidek to'g'ridan-to'g'ri bo'lim ichida
+ko'rinadi — hech narsa buzilmaydi.
+
+- **Chatdagi katalog**: bo'lim tanlanganda, agar ichida kichik bo'limlar
+  bo'lsa, avval ularning ro'yxati chiqadi (+ "📦 Hammasini ko'rish" tugmasi
+  — kichik bo'limga ega bo'lmagan mahsulotlarni ham birga ko'rish uchun).
+- **Mini App ("🛍 Do'kon")**: bo'lim tablari ostida, agar kerak bo'lsa,
+  kichik bo'limlar uchun qo'shimcha kichikroq tugmalar qatori chiqadi
+  ("Hammasi" + har bir kichik bo'lim nomi).
+- **Admin panel**: mahsulot qo'shish formasida "Bo'lim" yonida "Kichik
+  bo'lim (ixtiyoriy)" maydoni bor.
+
+### ✅ Yangi: Statistika bo'limi (admin panel)
+
+Admin panelga **"📊 Statistika"** degan yangi tab qo'shildi:
+
+- **Xarid qilgan mijoz** — kamida bitta buyurtma bergan noyob odamlar soni
+- **Botni ko'rgan odam** — /start bosgan HAMMA odamlar soni (buyurtma
+  bermagan bo'lsa ham)
+- **Jami buyurtma** — barcha vaqtdagi umumiy buyurtmalar soni
+- **🏆 Eng ko'p buyurtma qilinayotgan** — mahsulotlar nomi bo'yicha,
+  qancha marta buyurtma qilinganiga qarab ko'pdan kamga
+- **📍 Viloyatlar bo'yicha** — buyurtmalardagi manzil matnidan TAXMINAN
+  aniqlangan viloyat/shahar taqsimoti
+
+**Muhim cheklov:** "jinsi" va "yoshi" statistikasi YO'Q — Telegram bu
+ma'lumotni botga umuman bermaydi, buni bilish uchun mijozdan alohida
+so'ralishi kerak bo'lardi. Buni suhbatda muhokama qildik va hozircha
+qo'shilmadi (agar kelajakda kerak bo'lsa, profilga ixtiyoriy savol
+sifatida qo'shish mumkin). Shuningdek, viloyat statistikasi 100% aniq
+emas — u mijoz yozgan ERKIN manzil matnidan taxminan topiladi (masalan
+mijoz "Chilonzor" deb yozib, "Toshkent" so'zini yozmasa, "Aniqlanmadi"
+toifasiga tushadi).
 
 ### Bir nechta admin qo'shish
 
