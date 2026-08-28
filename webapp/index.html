@@ -118,9 +118,68 @@
     transform: translateY(140%); transition: transform 0.25s ease;
   }
   #toast.show { transform: translateY(0); }
+
+  /* ---------- Chap tomonlama menyu (28-avgust: "Profil / Mahsulotlar /
+     Shaxsiy buyurtmalar / Savat / Buyurtmalar / Yangiliklar / Chat" so'rovi
+     bilan qo'shildi) ---------- */
+  #menu-toggle {
+    position: fixed; top: 14px; left: 12px; z-index: 26; width: 38px; height: 38px;
+    border: none; border-radius: 10px; background: var(--secondary-bg); color: var(--text);
+    font-size: 18px; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  header { padding-left: 58px; }
+  #sidebar-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 24;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+  }
+  #sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
+  #sidebar {
+    position: fixed; top: 0; bottom: 0; left: 0; width: 78%; max-width: 300px; z-index: 25;
+    background: var(--bg); box-shadow: 2px 0 18px rgba(0,0,0,0.2);
+    transform: translateX(-100%); transition: transform 0.22s ease;
+    overflow-y: auto; padding: 16px 0 20px;
+  }
+  #sidebar.open { transform: translateX(0); }
+  #sidebar .sidebar-title { font-size: 17px; font-weight: 700; padding: 4px 18px 14px; }
+  .sidebar-item {
+    display: flex; align-items: center; gap: 12px; width: 100%; border: none; background: transparent;
+    color: var(--text); font-size: 15px; font-weight: 500; padding: 13px 18px; text-align: left;
+  }
+  .sidebar-item .ic { font-size: 18px; width: 22px; text-align: center; }
+  .sidebar-item:active { background: var(--secondary-bg); }
+
+  /* ---------- Oddiy forma elementlari (Profil tahrirlash, Shaxsiy
+     buyurtma formasi uchun) ---------- */
+  .form-group { margin-bottom: 14px; }
+  .form-label { display: block; font-size: 12.5px; color: var(--hint); margin-bottom: 6px; font-weight: 500; }
+  .form-input, .form-textarea {
+    width: 100%; border: none; border-radius: 12px; background: var(--secondary-bg); color: var(--text);
+    padding: 13px 14px; font-size: 15px; font-family: inherit;
+  }
+  .form-textarea { resize: vertical; min-height: 70px; }
+  .form-error { color: #ff3b30; font-size: 12.5px; margin-top: 6px; }
+  .photo-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .photo-thumb { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; }
+  .photo-pick-btn {
+    width: 64px; height: 64px; border-radius: 10px; border: 1.5px dashed var(--hint);
+    background: transparent; color: var(--hint); font-size: 22px;
+  }
+  .info-card { background: var(--secondary-bg); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
+  .info-card .card-line { font-size: 13.5px; color: var(--hint); line-height: 1.6; }
+  .info-card .card-line b { color: var(--text); }
+  .news-card { background: var(--secondary-bg); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
+  .news-card img { width: 100%; border-radius: 10px; margin-bottom: 8px; }
+  .news-card .news-text { font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
 </style>
 </head>
 <body>
+<button id="menu-toggle">☰</button>
+<div id="sidebar-backdrop"></div>
+<nav id="sidebar">
+  <div class="sidebar-title">📋 Menyu</div>
+  <div id="sidebar-items"></div>
+</nav>
 <div id="app">
   <header>
     <h1>🎁 Figo3D</h1>
@@ -166,6 +225,7 @@
   var state = {
     categories: [], products: [], cart: {},
     detailProduct: null,
+    profile: null, orders: null, announcements: null,
   };
   var navStack = []; // bo'sh = katalog (grid) ko'rinishi
 
@@ -222,6 +282,66 @@
   }
 
   function photoUrl(fileId) { return "/api/photo/" + encodeURIComponent(fileId); }
+
+  // ---------- Chap tomonlama menyu ----------
+  // MUHIM: "Mahsulotlar" va "Savat" - ichkarida allaqachon bor bo'lgan
+  // ko'rinishlarga (grid/cart) o'tkazadi, xolos. "Profil", "Buyurtmalar",
+  // "Shaxsiy buyurtmalar", "Yangiliklar" - yangi (o'z view'iga ega)
+  // bo'limlar, pastda VIEW_RENDERERS'ga qo'shilgan. "Chat" esa Mini App'ni
+  // yopib, mijozni ORQADA allaqachon ochiq turgan bot chatiga qaytaradi -
+  // bu yerda alohida yozishmoq oynasi QURILMAGAN (foydalanuvchi bilan
+  // kelishilganidek - eng sodda va eng ishonchli yo'l).
+  var SIDEBAR_ITEMS = [
+    { key: "profile", icon: "👤", label: "Profil" },
+    { key: "grid", icon: "🗂", label: "Mahsulotlar" },
+    { key: "custom", icon: "🎨", label: "Shaxsiy buyurtmalar" },
+    { key: "cart", icon: "🛒", label: "Savat" },
+    { key: "orders", icon: "📦", label: "Buyurtmalar" },
+    { key: "announcements", icon: "📰", label: "Yangiliklar" },
+    { key: "chat", icon: "💬", label: "Chat" },
+  ];
+
+  function renderSidebar() {
+    var el = document.getElementById("sidebar-items");
+    el.innerHTML = SIDEBAR_ITEMS.map(function (it) {
+      return '<button class="sidebar-item" data-menu="' + it.key + '"><span class="ic">' + it.icon + '</span>' + it.label + '</button>';
+    }).join("");
+    el.querySelectorAll("[data-menu]").forEach(function (btn) {
+      btn.onclick = function () { onSidebarSelect(btn.getAttribute("data-menu")); };
+    });
+  }
+
+  function openSidebar() {
+    document.getElementById("sidebar").classList.add("open");
+    document.getElementById("sidebar-backdrop").classList.add("open");
+  }
+  function closeSidebar() {
+    document.getElementById("sidebar").classList.remove("open");
+    document.getElementById("sidebar-backdrop").classList.remove("open");
+  }
+  document.getElementById("menu-toggle").onclick = function () {
+    var sidebar = document.getElementById("sidebar");
+    if (sidebar.classList.contains("open")) closeSidebar(); else openSidebar();
+  };
+  document.getElementById("sidebar-backdrop").onclick = closeSidebar;
+
+  function onSidebarSelect(key) {
+    closeSidebar();
+    if (key === "chat") {
+      if (tg) tg.close();
+      return;
+    }
+    if (key === "grid") {
+      navStack = [];
+      render();
+      return;
+    }
+    // "cart"/"profile"/"orders"/"custom"/"announcements" - hammasi bitta
+    // umumiy naqsh: navStack'ga qo'shiladi, VIEW_RENDERERS orqali #overlay
+    // ichida ko'rsatiladi (xuddi mahsulot tafsiloti kabi).
+    pushView(key);
+  }
+  renderSidebar();
 
   // ---------- Navigatsiya (grid -> detail -> orqaga, yoki grid -> cart -> orqaga) ----------
   function currentView() { return navStack.length ? navStack[navStack.length - 1] : "grid"; }
@@ -529,6 +649,193 @@
         showToast("Yuborib bo'lmadi. Chatdagi \"🛒 Savat\" tugmasidan foydalaning.");
       })
       .then(function () { finishingCheckout = false; });
+  }
+
+  // ---------- Profil ----------
+  // MUHIM: bu yerdagi backend endpoint (/api/profile GET+POST) allaqachon
+  // avvaldan mavjud edi (webapp_api.py) - faqat frontend tomoni ochilmagan
+  // edi. Buyurtma berish/to'lov kabi murakkab, avval muammo chiqargan
+  // oqimlarga TEGILMAGAN - faqat ism/telefon/manzilni ko'rish/tahrirlash,
+  // bu ancha sodda va xavfsiz.
+  VIEW_RENDERERS.profile = function (el) {
+    el.innerHTML = '<div class="screen"><div class="screen-title">👤 Profil</div><div class="empty">Yuklanmoqda...</div></div>';
+    api("/api/profile").then(function (r) {
+      if (currentView() !== "profile") return;
+      if (!r.ok) { el.innerHTML = '<div class="screen"><div class="empty">Yuklab bo\'lmadi.</div></div>'; return; }
+      state.profile = r.data;
+      renderProfileForm(el);
+    });
+  };
+
+  function renderProfileForm(el) {
+    var p = state.profile || {};
+    el.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">👤 Profil</div>' +
+        '<div class="info-card"><div class="card-line">💰 Hamyon balansi: <b>' + fmtPrice(p.balance || 0) + " so'm</b></div></div>" +
+        '<div class="form-group"><label class="form-label">Ism-familiya</label><input class="form-input" id="pf-name" value="' + escapeHtml(p.full_name || "") + '"></div>' +
+        '<div class="form-group"><label class="form-label">Telefon</label><input class="form-input" id="pf-phone" value="' + escapeHtml(p.phone || "") + '"></div>' +
+        '<div class="form-group"><label class="form-label">Manzil</label><input class="form-input" id="pf-address" value="' + escapeHtml(p.address || "") + '"></div>' +
+        '<div class="form-error hidden" id="pf-error"></div>' +
+        '<button class="page-cta" id="pf-save">✅ Saqlash</button>' +
+      '</div>';
+    document.getElementById("pf-save").onclick = function () {
+      var full_name = document.getElementById("pf-name").value.trim();
+      var phone = document.getElementById("pf-phone").value.trim();
+      var address = document.getElementById("pf-address").value.trim();
+      var errEl = document.getElementById("pf-error");
+      if (full_name.length < 2 || phone.length < 7 || address.length < 3) {
+        errEl.textContent = "Iltimos, barcha maydonlarni to'g'ri to'ldiring.";
+        errEl.classList.remove("hidden");
+        return;
+      }
+      errEl.classList.add("hidden");
+      var btn = document.getElementById("pf-save");
+      btn.disabled = true; btn.textContent = "⏳ Saqlanmoqda...";
+      api("/api/profile", {
+        method: "POST",
+        body: JSON.stringify({ full_name: full_name, phone: phone, address: address }),
+      }).then(function (r) {
+        btn.disabled = false; btn.textContent = "✅ Saqlash";
+        if (r.ok) {
+          state.profile = Object.assign({}, state.profile, { full_name: full_name, phone: phone, address: address });
+          showToast("Saqlandi ✅");
+        } else {
+          showToast("Saqlab bo'lmadi. Qaytadan urinib ko'ring.");
+        }
+      });
+    };
+  }
+
+  // ---------- Buyurtmalarim (o'qish uchun - status ko'rish) ----------
+  var CUSTOMER_STATUS_LABELS = {
+    "yangi": "🕓 Kutilmoqda",
+    "to'landi (hamyondan)": "🕓 Kutilmoqda (to'lov qabul qilindi)",
+    "to'lov kutilmoqda (karta)": "💳 To'lov kutilmoqda",
+    "to'landi (karta)": "🕓 Kutilmoqda (to'lov qabul qilindi)",
+    "qabul qilindi": "✅ Qabul qilindi, yig'ilmoqda",
+    "chiqarildi": "🚚 Chiqarib yuborildi",
+    "arxiv": "📦 Yetkazildi",
+    "muammo": "⚠️ Muammo bor — operator siz bilan bog'lanadi",
+  };
+
+  VIEW_RENDERERS.orders = function (el) {
+    el.innerHTML = '<div class="screen"><div class="screen-title">📦 Buyurtmalarim</div><div class="empty">Yuklanmoqda...</div></div>';
+    api("/api/orders").then(function (r) {
+      if (currentView() !== "orders") return;
+      if (!r.ok) { el.innerHTML = '<div class="screen"><div class="empty">Yuklab bo\'lmadi.</div></div>'; return; }
+      var orders = r.data.orders || [];
+      var body;
+      if (!orders.length) {
+        body = '<div class="empty">Sizda hali buyurtmalar yo\'q.</div>';
+      } else {
+        body = orders.map(function (o) {
+          var statusLabel = CUSTOMER_STATUS_LABELS[o.status] || o.status;
+          var reasonLine = (o.status === "muammo" && o.problem_reason)
+            ? '<div class="card-line">📝 ' + escapeHtml(o.problem_reason) + '</div>' : "";
+          return (
+            '<div class="info-card">' +
+              '<div class="card-line"><b>#' + o.id + ' — ' + fmtPrice(o.total_price) + " so'm</b></div>" +
+              '<div class="card-line">' + statusLabel + '</div>' +
+              reasonLine +
+            '</div>'
+          );
+        }).join("");
+      }
+      el.innerHTML = '<div class="screen"><div class="screen-title">📦 Buyurtmalarim</div>' + body + '</div>';
+    });
+  };
+
+  // ---------- Yangiliklar/e'lonlar ----------
+  VIEW_RENDERERS.announcements = function (el) {
+    el.innerHTML = '<div class="screen"><div class="screen-title">📰 Yangiliklar</div><div class="empty">Yuklanmoqda...</div></div>';
+    api("/api/announcements").then(function (r) {
+      if (currentView() !== "announcements") return;
+      if (!r.ok) { el.innerHTML = '<div class="screen"><div class="empty">Yuklab bo\'lmadi.</div></div>'; return; }
+      var items = r.data.announcements || [];
+      var body = items.length
+        ? items.map(function (a) {
+            var img = a.photo_file_id ? '<img src="' + photoUrl(a.photo_file_id) + '">' : "";
+            return '<div class="news-card">' + img + '<div class="news-text">' + escapeHtml(a.text) + '</div></div>';
+          }).join("")
+        : '<div class="empty">Hozircha yangilik yo\'q.</div>';
+      el.innerHTML = '<div class="screen"><div class="screen-title">📰 Yangiliklar</div>' + body + '</div>';
+    });
+  };
+
+  // ---------- Shaxsiy buyurtma (o'z rasmidan) ----------
+  // MUHIM: bu yerdagi /api/custom_order endpoint ham avvaldan mavjud edi
+  // (webapp_api.py) - u to'g'ridan-to'g'ri so'rovni YARATADI (checkout'dan
+  // farqli o'laroq bu yerda to'lov/balans kabi xavfli hisob-kitob yo'q,
+  // shuning uchun Mini App orqali to'g'ridan-to'g'ri yuborish xavfsiz).
+  var customPhoto = null;
+
+  VIEW_RENDERERS.custom = function (el) {
+    customPhoto = null;
+    var p = state.profile || {};
+    el.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">🎨 Shaxsiy buyurtma</div>' +
+        '<div class="form-group"><label class="form-label">Rasm (odam, uy hayvoni, logotip va h.k.)</label>' +
+          '<div class="photo-row" id="co-photo-row"><button class="photo-pick-btn" id="co-photo-pick">+</button></div>' +
+          '<input type="file" id="co-photo-input" accept="image/*" style="display:none"></div>' +
+        '<div class="form-group"><label class="form-label">Nima tayyorlab berishimizni xohlaysiz?</label>' +
+          '<textarea class="form-textarea" id="co-desc" placeholder="Masalan: shu rasmdagi itdan kichik haykalcha"></textarea></div>' +
+        '<div class="form-group"><label class="form-label">Ism-familiya</label><input class="form-input" id="co-name" value="' + escapeHtml(p.full_name || "") + '"></div>' +
+        '<div class="form-group"><label class="form-label">Telefon</label><input class="form-input" id="co-phone" value="' + escapeHtml(p.phone || "") + '"></div>' +
+        '<div class="form-group"><label class="form-label">Manzil</label><input class="form-input" id="co-address" value="' + escapeHtml(p.address || "") + '"></div>' +
+        '<div class="form-error hidden" id="co-error"></div>' +
+        '<button class="page-cta" id="co-submit">✅ Yuborish</button>' +
+      '</div>';
+
+    document.getElementById("co-photo-pick").onclick = function () { document.getElementById("co-photo-input").click(); };
+    document.getElementById("co-photo-input").onchange = function (e) {
+      var file = (e.target.files || [])[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        customPhoto = reader.result;
+        document.getElementById("co-photo-row").innerHTML = '<img class="photo-thumb" src="' + customPhoto + '">';
+      };
+      reader.readAsDataURL(file);
+    };
+    document.getElementById("co-submit").onclick = submitCustomOrder;
+  };
+
+  function submitCustomOrder() {
+    var description = document.getElementById("co-desc").value.trim();
+    var full_name = document.getElementById("co-name").value.trim();
+    var phone = document.getElementById("co-phone").value.trim();
+    var address = document.getElementById("co-address").value.trim();
+    var errEl = document.getElementById("co-error");
+    var problems = [];
+    if (!customPhoto) problems.push("rasm tanlang");
+    if (description.length < 3) problems.push("tavsifni yozing");
+    if (full_name.length < 2) problems.push("ismingizni yozing");
+    if (phone.length < 7) problems.push("telefon raqamingizni yozing");
+    if (address.length < 3) problems.push("manzilingizni yozing");
+    if (problems.length) {
+      errEl.textContent = "Iltimos: " + problems.join(", ") + ".";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    errEl.classList.add("hidden");
+    var btn = document.getElementById("co-submit");
+    btn.disabled = true; btn.textContent = "⏳ Yuborilmoqda...";
+    api("/api/custom_order", {
+      method: "POST",
+      body: JSON.stringify({
+        description: description, full_name: full_name, phone: phone, address: address, photo: customPhoto,
+      }),
+    }).then(function (r) {
+      if (r.ok) {
+        showToast("✅ So'rovingiz qabul qilindi — tez orada bog'lanamiz");
+        popView();
+      } else {
+        btn.disabled = false; btn.textContent = "✅ Yuborish";
+        showToast("Yuborib bo'lmadi. Qaytadan urinib ko'ring.");
+      }
+    });
   }
 
   // ---------- Boshlash ----------

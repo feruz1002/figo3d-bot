@@ -124,14 +124,34 @@
 
   function photoUrl(fileId) { return "/api/photo/" + encodeURIComponent(fileId); }
 
-  // MUHIM: "tg://user?id=..." havolasi Telegram tomonidan har doim ham
-  // ochilishi kafolatlanmagan (masalan mijoz hech qachon admin bilan
-  // umumiy chat/kontaktda bo'lmagan bo'lsa, ba'zi Telegram versiyalarida
-  // ishlamasligi mumkin) - lekin bu hozircha ENG YAQIN, botsiz mumkin
-  // bo'lgan "mijozga o'tish" usuli.
-  function contactLinkHtml(userId) {
-    if (!userId) return "";
-    return '<a class="card-btn" style="display:block;text-align:center;text-decoration:none;margin-top:8px;background:var(--secondary-bg);color:var(--text)" href="tg://user?id=' + userId + '">💬 Mijoz bilan bog\'lanish</a>';
+  // MUHIM (28-avgust, tuzatildi): AVVAL bu yerda "tg://user?id=..." havolasi
+  // ishlatilgan edi - lekin bu Mini App VEB-SAHIFASI ICHIDA Telegram
+  // tomonidan BLOKLANADI ("This content is blocked. Contact the site owner
+  // to fix the issue." xatosi chiqadi, chunki Mini App'ning WebView'i
+  // https bo'lmagan (tg://) havolalarni xavfsizlik sababli navigatsiya
+  // qilishga ruxsat bermaydi). Endi buning o'rniga mijozning Telegram
+  // @username'idan (agar ma'lum bo'lsa - db.py'dagi remember_username'ga
+  // qarang) haqiqiy https://t.me/<username> havolasi ishlatiladi va
+  // tg.openTelegramLink() orqali ochiladi - bu Telegram tomonidan RASMAN
+  // qo'llab-quvvatlanadi va bloklanmaydi.
+  function contactLinkHtml(username) {
+    if (username) {
+      return '<button class="card-btn" style="margin-top:8px;background:var(--secondary-bg);color:var(--text)" data-contact-username="' + escapeHtml(username) + '">💬 @' + escapeHtml(username) + " bilan bog'lanish</button>";
+    }
+    // Username hali ma'lum emas (mijoz Telegram'da username o'rnatmagan
+    // yoki hali bot bilan yetarlicha muloqot qilmagan) - tugma o'rniga
+    // shuni tushuntiruvchi qisqa izoh, chalkashlik bo'lmasin uchun.
+    return '<div class="card-line" style="margin-top:6px">📵 Telegram username\'i noma\'lum — faqat telefon orqali bog\'laning</div>';
+  }
+
+  function wireContactButtons(container) {
+    container.querySelectorAll("[data-contact-username]").forEach(function (btn) {
+      btn.onclick = function () {
+        var url = "https://t.me/" + btn.getAttribute("data-contact-username");
+        if (tg && tg.openTelegramLink) tg.openTelegramLink(url);
+        else window.open(url, "_blank");
+      };
+    });
   }
 
   var STATUS_LABELS = {
@@ -151,9 +171,14 @@
     { key: "custom", label: "🎨 Shaxsiy" },
     { key: "topups", label: "💰 To'ldirish" },
     { key: "products", label: "🗂 Mahsulotlar" },
+    { key: "announcements", label: "📰 Yangiliklar" },
     { key: "stats", label: "📊 Statistika" },
   ];
   var activeTab = "orders";
+  // FAB (➕) endi ikki bo'limda ham ishlaydi (Mahsulotlar - yangi mahsulot,
+  // Yangiliklar - yangi e'lon) - qaysi bo'lim ochiq bo'lsa, o'shanga mos
+  // formani ochadi (pastdagi "fab".onclick'ga qarang).
+  var FAB_TABS = { products: true, announcements: true };
 
   function renderTabs() {
     var el = document.getElementById("tabs");
@@ -165,7 +190,7 @@
       btn.onclick = function () { activeTab = t.key; renderTabs(); loadActiveTab(); };
       el.appendChild(btn);
     });
-    document.getElementById("fab").style.display = activeTab === "products" ? "block" : "none";
+    document.getElementById("fab").style.display = FAB_TABS[activeTab] ? "block" : "none";
   }
 
   function loadActiveTab() {
@@ -175,6 +200,7 @@
     else if (activeTab === "custom") loadCustomOrders();
     else if (activeTab === "topups") loadTopups();
     else if (activeTab === "products") loadProducts();
+    else if (activeTab === "announcements") loadAnnouncements();
     else if (activeTab === "stats") loadStats();
   }
 
@@ -261,7 +287,7 @@
         '<div class="card-line">Holat: ' + statusLabel + '</div>' +
         reasonLine +
         actionsHtml +
-        contactLinkHtml(o.user_id) +
+        contactLinkHtml(o.customer_username) +
       '</div>'
     );
   }
@@ -276,6 +302,7 @@
       var orders = r.data.orders || [];
       if (!orders.length) { stageContent.innerHTML = '<div class="empty">' + STAGE_EMPTY_TEXT[stage] + '</div>'; return; }
       stageContent.innerHTML = orders.map(function (o) { return renderOrderCard(o, stage); }).join("");
+      wireContactButtons(stageContent);
       stageContent.querySelectorAll("[data-order-action]").forEach(function (btn) {
         btn.onclick = function () {
           var card = btn.closest(".card");
@@ -388,10 +415,11 @@
             '<div class="card-line">👤 ' + escapeHtml(o.full_name || "") + ' · 📱 ' + escapeHtml(o.phone || "") + '</div>' +
             '<div class="card-line">📍 ' + escapeHtml(o.address || "") + '</div>' +
             (stage === "open" ? '<div class="card-actions"><button class="card-btn" data-action="contacted">✅ Bog\'landim</button></div>' : '') +
-            contactLinkHtml(o.user_id) +
+            contactLinkHtml(o.customer_username) +
           '</div>'
         );
       }).join("");
+      wireContactButtons(stageContent);
       if (stage === "open") {
         stageContent.querySelectorAll('[data-action="contacted"]').forEach(function (btn) {
           btn.onclick = function () {
@@ -477,6 +505,105 @@
           };
         });
       });
+  }
+
+  // ---------- Yangiliklar/e'lonlar (28-avgust) ----------
+  // Bu yerdan qo'shilgan e'lon/aksiya mijozlarning "🛍 Do'kon" Mini App'idagi
+  // yangi "📰 Yangiliklar" bo'limida ko'rinadi (webapp/index.html'ga qarang).
+  function loadAnnouncements() {
+    api("/admin/api/announcements").then(function (r) {
+      var content = document.getElementById("content");
+      if (!r.ok) { content.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
+      var items = r.data.announcements || [];
+      if (!items.length) {
+        content.innerHTML = '<div class="empty">Hozircha yangilik yo\'q. Pastdagi ➕ orqali qo\'shing.</div>';
+        return;
+      }
+      content.innerHTML = items.map(function (a) {
+        var img = a.photo_file_id ? '<img src="' + photoUrl(a.photo_file_id) + '" style="width:100%;border-radius:10px;margin-bottom:8px">' : "";
+        return (
+          '<div class="card" data-id="' + a.id + '">' +
+            img +
+            '<div class="card-line">' + escapeHtml(a.text) + '</div>' +
+            '<div class="card-actions"><button class="card-btn danger" data-action="delete">🗑 O\'chirish</button></div>' +
+          '</div>'
+        );
+      }).join("");
+      content.querySelectorAll('[data-action="delete"]').forEach(function (btn) {
+        btn.onclick = function () {
+          var id = btn.closest(".card").getAttribute("data-id");
+          btn.disabled = true;
+          api("/admin/api/announcements/" + id + "/delete", { method: "POST" }).then(function (r2) {
+            if (r2.ok) { showToast("O'chirildi"); loadAnnouncements(); }
+            else { btn.disabled = false; showToast("Xatolik yuz berdi."); }
+          });
+        };
+      });
+    });
+  }
+
+  var announcementPhoto = null; // bitta ixtiyoriy rasm (base64 data URL)
+
+  function openAddAnnouncementForm() {
+    announcementPhoto = null;
+    var overlay = document.getElementById("overlay");
+    overlay.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">📰 Yangi e\'lon/aksiya</div>' +
+        '<div class="form-group"><label class="form-label">Matn</label>' +
+          '<textarea class="form-textarea" id="a-text" placeholder="Masalan: Bu hafta barcha sovg\'alarga -15% chegirma!"></textarea></div>' +
+        '<div class="form-group"><label class="form-label">Rasm (ixtiyoriy)</label>' +
+          '<div class="photo-row" id="a-photo-row"><button class="photo-pick-btn" id="a-photo-pick">+</button></div>' +
+          '<input type="file" id="a-photo-input" accept="image/*" style="display:none"></div>' +
+        '<div class="form-error hidden" id="a-error"></div>' +
+        '<button class="card-btn" id="a-submit" style="margin-top:6px">✅ Joylashtirish</button>' +
+        '<button class="card-btn" id="a-cancel" style="margin-top:8px;background:var(--secondary-bg);color:var(--text)">Bekor qilish</button>' +
+      '</div>';
+    overlay.classList.remove("hidden");
+    if (tg) tg.BackButton.show();
+
+    document.getElementById("a-photo-pick").onclick = function () { document.getElementById("a-photo-input").click(); };
+    document.getElementById("a-photo-input").onchange = function (e) {
+      var file = (e.target.files || [])[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        announcementPhoto = reader.result;
+        document.getElementById("a-photo-row").innerHTML = '<img class="photo-thumb" src="' + announcementPhoto + '">';
+      };
+      reader.readAsDataURL(file);
+    };
+    document.getElementById("a-cancel").onclick = closeOverlay;
+    document.getElementById("a-submit").onclick = submitNewAnnouncement;
+  }
+
+  function submitNewAnnouncement() {
+    var text = document.getElementById("a-text").value.trim();
+    var errEl = document.getElementById("a-error");
+    if (!text) {
+      errEl.textContent = "Iltimos, e'lon matnini yozing.";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    errEl.classList.add("hidden");
+    var submitBtn = document.getElementById("a-submit");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "⏳ Joylanmoqda...";
+    api("/admin/api/announcements", {
+      method: "POST",
+      body: JSON.stringify({ text: text, photo: announcementPhoto }),
+    }).then(function (r) {
+      if (r.ok) {
+        showToast("E'lon joylandi ✅");
+        closeOverlay();
+        loadAnnouncements();
+      } else {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "✅ Joylashtirish";
+        errEl.textContent = "Xatolik yuz berdi. Qaytadan urinib ko'ring.";
+        errEl.classList.remove("hidden");
+      }
+    });
   }
 
   // ---------- Statistika ----------
@@ -650,7 +777,10 @@
     });
   }
 
-  document.getElementById("fab").onclick = openAddProductForm;
+  document.getElementById("fab").onclick = function () {
+    if (activeTab === "announcements") openAddAnnouncementForm();
+    else openAddProductForm();
+  };
   if (tg) tg.BackButton.onClick(closeOverlay);
 
   // ---------- Kirish tekshiruvi ----------

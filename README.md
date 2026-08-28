@@ -127,15 +127,25 @@ mahsulotlaringizni (rasmlari bilan) qo'shishni boshlashingiz mumkin — pastda
 
 ## Yangi imkoniyatlar qanday ishlatiladi
 
-### 🛍 Veb-do'kon (Mini App) — endi FAQAT katalog va savat uchun
+### 🛍 Veb-do'kon (Mini App) — katalog/savat + endi qo'shimcha bo'limlar ham
 
 ⚠️ **O'zgardi:** avval buyurtma berish, profil, buyurtmalar tarixi, shaxsiy
 buyurtma va aloqa — hammasi shu Mini App ichida edi. Amalda bu ba'zan
 ishonchsiz chiqib qoldi: mijoz katta tugmani bossa ham serverga hech qanday
 so'rov ketmay, savat/buyurtma "qotib qolgandek" ko'rinadigan holatlar
-bo'ldi. Shuning uchun endi bu funksiyalarning HAMMASI oddiy, ancha
-barqaror Telegram chat tugmalariga (bosh menyuga) qaytarildi — pastdagi
-"Pastki tugmalar qaytarildi" bo'limiga qarang.
+bo'ldi. Shuning uchun ENG XAVFLI qism — buyurtma berish/to'lov — oddiy,
+ancha barqaror Telegram chat tugmalariga (bosh menyuga) qaytarildi —
+pastdagi "Pastki tugmalar qaytarildi" bo'limiga qarang, va hamon shunday
+qoladi.
+
+✅ **28-avgust:** lekin nisbatan sodda (to'lov/balans bilan bog'liq
+bo'lmagan) bo'limlar — Profil (ko'rish/tahrirlash), Buyurtmalar tarixi
+(faqat ko'rish), Shaxsiy buyurtma so'rovi va Yangiliklar — endi Mini
+App'ning o'zida, yangi chap tomonlama menyu orqali ham ochiladi (pastdagi
+"Mini App'da chap tomonlama menyu" bo'limiga qarang). Bu ikkalasi bir-
+biriga zid emas: mijoz xohlasa chatdagi tugmalardan, xohlasa Mini
+App'dagi menyudan foydalanishi mumkin — ikkalasi ham bir xil ma'lumotlar
+bazasi bilan ishlaydi.
 
 Xabar yozish maydoni yonidagi doimiy **"🛍 Do'kon"** tugmasi hamon bor va
 haqiqiy **veb-sahifa** sifatida ochiladi (Telegram buni "Mini App" deb
@@ -333,6 +343,57 @@ panel"** degan alohida tugma sifatida ham chiqadi, lekin FAQAT sizga
 (yoki `ADMIN_IDS`da ko'rsatilgan boshqa adminlarga) — oddiy mijozlar bu
 tugmani umuman ko'rmaydi. `/admin` buyrug'ini yozish ham avvalgidek
 ishlayveradi, tugma shunchaki qo'shimcha qulaylik.
+
+### ✅ Tuzatildi: "Mijoz bilan bog'lanish" tugmasi (admin panel)
+
+Avvalgi versiyada bu tugma bosilganda **"This content is blocked. Contact
+the site owner to fix the issue."** degan xato chiqardi. Sababi: tugma
+`tg://user?id=...` degan maxsus havoladan foydalangan, bu esa Mini App
+(veb-sahifa) ICHIDA Telegram tomonidan xavfsizlik sababli bloklanar ekan
+(oddiy chat xabarlarida esa bunday havola muammosiz ishlaydi — u yerga
+tegilmadi).
+
+Endi bu tugma mijozning Telegram **@username**'idan (agar mavjud bo'lsa)
+foydalanadi — haqiqiy `https://t.me/username` havolasi orqali, bu
+bloklanmaydi. Mijozning username'i bot bilan muloqot qilgan sari (/start
+bosganda, buyurtma berganda, profilni saqlaganda va h.k.) avtomatik
+"eslab qolinadi". **Agar mijoz Telegram'da username o'rnatmagan bo'lsa**,
+tugma o'rniga "📵 Telegram username'i noma'lum — faqat telefon orqali
+bog'laning" degan izoh chiqadi (kartochkada mijozning telefon raqami
+allaqachon ko'rsatilgan).
+
+### ✅ Yangi: Mini App'da chap tomonlama menyu
+
+Mijozlar uchun "🛍 Do'kon" Mini App'iga endi yuqori chap burchakda **☰**
+tugmasi bilan ochiladigan menyu qo'shildi, 7 ta bo'lim bilan:
+
+1. **👤 Profil** — ism/telefon/manzilni ko'rish va tahrirlash, hamyon
+   balansini ko'rish
+2. **🗂 Mahsulotlar** — katalogga qaytaradi (bosh sahifa)
+3. **🎨 Shaxsiy buyurtmalar** — o'z rasmingizdan buyurtma so'rovi yuborish
+   formasi (rasm + tavsif + ism/telefon/manzil)
+4. **🛒 Savat** — mavjud savat oynasi
+5. **📦 Buyurtmalar** — avvalgi buyurtmalaringiz va ularning holati
+   (faqat ko'rish uchun)
+6. **📰 Yangiliklar** — admin joylashtirgan e'lon/aksiyalar
+7. **💬 Chat** — Mini App'ni yopib, botning asosiy chatiga qaytaradi
+
+**Muhim:** buyurtma berish (to'lov, promo-kod) jarayoni bu menyuga
+KIRITILMAGAN — u ataylab hamon FAQAT chatning o'zida ishlaydi, chunki
+aynan shu qism avval Mini App'ning veb-ko'rinishida ishonchsiz chiqib
+qolgan edi (yuqoridagi "🛍 Veb-do'kon" bo'limiga qarang). Yangi qo'shilgan
+Profil/Buyurtmalar/Shaxsiy buyurtma/Yangiliklar bo'limlari bundan ancha
+sodda (faqat ko'rish yoki oddiy forma yuborish) bo'lgani uchun xavfsiz
+qo'shildi.
+
+### ✅ Yangi: "📰 Yangiliklar" bo'limi
+
+Admin panelga yangi **"📰 Yangiliklar"** tab qo'shildi — bu yerdan matn
+(va ixtiyoriy rasm) bilan e'lon yoki aksiya joylashtirishingiz mumkin
+(masalan "Bu hafta barcha sovg'alarga -15% chegirma!"). Joylashtirilgan
+e'lon darhol mijozlarning Mini App'idagi "📰 Yangiliklar" bo'limida
+ko'rina boshlaydi, eng yangisidan boshlab. E'lonni o'chirish uchun
+kartochkadagi "🗑 O'chirish" tugmasi bor.
 
 ### Bir nechta admin qo'shish
 

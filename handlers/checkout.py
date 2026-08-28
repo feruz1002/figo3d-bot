@@ -200,6 +200,7 @@ async def process_promo(message: Message, state: FSMContext):
 
 
 async def _finalize_order(callback: CallbackQuery, state: FSMContext, bot: Bot, payment_method: str):
+    await db.remember_username(callback.from_user.id, callback.from_user.username)
     data = await state.get_data()
     order_id, reason = await order_service.create_order_and_apply_payment(
         callback.from_user.id, data["full_name"], data["phone"], data["address"],
@@ -246,6 +247,7 @@ async def confirm_card(callback: CallbackQuery, state: FSMContext, bot: Bot):
         await callback.answer("Karta orqali to'lov hali sozlanmagan", show_alert=True)
         return
 
+    await db.remember_username(callback.from_user.id, callback.from_user.username)
     data = await state.get_data()
     cart = await db.get_cart(callback.from_user.id)
     if not cart:

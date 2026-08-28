@@ -25,6 +25,19 @@ def _authed_user_id(request: web.Request):
     return data["user"].get("id")
 
 
+def _authed_username(request: web.Request):
+    """`_authed_user_id` bilan bir xil so'rovdan @username'ni ham olib
+    beradi (bor bo'lsa) - admin panelning "Mijoz bilan bog'lanish" havolasi
+    uchun (db.remember_username'ga qarang). Alohida qayta validatsiya
+    qilmaslik uchun chaqiruvchi buni faqat allaqachon _authed_user_id
+    muvaffaqiyatli bo'lgandan keyin ishlatishi kerak."""
+    init_data = request.headers.get("X-Telegram-Init-Data", "")
+    data = validate_init_data(init_data, BOT_TOKEN)
+    if not data or not data.get("user"):
+        return None
+    return data["user"].get("username")
+
+
 async def api_catalog(request: web.Request):
     """MUHIM (27-avgust, "katalog ichida katalog" so'roviga javoban):
     `categories` endi oddiy matn ro'yxati emas, balki har biri o'z ichidagi
@@ -147,6 +160,7 @@ async def api_profile_update(request: web.Request):
         return web.json_response({"error": "invalid_input"}, status=400)
 
     await db.upsert_user_profile(user_id, full_name=full_name, phone=phone, address=address)
+    await db.remember_username(user_id, _authed_username(request))
     return web.json_response({"ok": True})
 
 
@@ -189,6 +203,7 @@ async def api_custom_order(request: web.Request):
         full_name=full_name, phone=phone, address=address,
     )
     await db.upsert_user_profile(user_id, full_name=full_name, phone=phone, address=address)
+    await db.remember_username(user_id, _authed_username(request))
 
     caption = (
         f"🎨 Yangi SHAXSIY buyurtma so'rovi #{custom_order_id}\n\n"
@@ -312,6 +327,8 @@ async def api_checkout(request: web.Request):
     if payment_method == "card" and not PAYMENT_PROVIDER_TOKEN:
         return web.json_response({"error": "card_unavailable"}, status=400)
 
+    await db.remember_username(user_id, _authed_username(request))
+
     cart = await db.get_cart(user_id)
     if not cart:
         return web.json_response({"error": "empty_cart"}, status=400)
@@ -391,6 +408,16 @@ async def api_request_checkout(request: web.Request):
     return web.json_response({"ok": True})
 
 
+async def api_announcements(request: web.Request):
+    """Mini App'ning "📰 Yangiliklar" bo'limi uchun - admin panel orqali
+    qo'shilgan e'lon/aksiyalar ro'yxati, eng yangisidan boshlab."""
+    user_id = _authed_user_id(request)
+    if user_id is None:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    announcements = await db.get_announcements(limit=50)
+    return web.json_response({"announcements": announcements})
+
+
 async def api_photo(request: web.Request):
     file_id = request.match_info["file_id"]
     bot = request.app["bot"]
@@ -439,4 +466,5 @@ def register_webapp_routes(app: web.Application, webapp_index_path: str):
     app.router.add_post("/api/promo/check", api_promo_check)
     app.router.add_post("/api/checkout", api_checkout)
     app.router.add_post("/api/request_checkout", api_request_checkout)
+    app.router.add_get("/api/announcements", api_announcements)
     app.router.add_get("/api/photo/{file_id}", api_photo)

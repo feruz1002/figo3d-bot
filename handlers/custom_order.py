@@ -116,6 +116,7 @@ async def process_custom_address(message: Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
     address = message.text.strip()
 
+    await db.remember_username(message.from_user.id, message.from_user.username)
     custom_order_id = await db.create_custom_order(
         user_id=message.from_user.id,
         photo_file_id=data["photo_file_id"],

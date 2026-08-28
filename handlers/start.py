@@ -16,6 +16,10 @@ async def cmd_start(message: Message):
     # soni") - hali birorta buyurtma bermagan bo'lsa ham, shu yerda "ko'rildi"
     # deb belgilanadi. Profil ma'lumotlariga (ism/telefon/manzil) tegmaydi.
     await db.touch_user_seen(message.from_user.id)
+    # 28-avgust: admin panelidagi "Mijoz bilan bog'lanish" havolasi uchun
+    # (tg://user?id=... Mini App ichida bloklangani aniqlandi - db.py'dagi
+    # remember_username izohiga qarang).
+    await db.remember_username(message.from_user.id, message.from_user.username)
 
     # MUHIM (foydalanuvchi so'rovi bilan qaytarildi): endi pastdagi chat
     # tugmalari HAR DOIM (production'da ham) ko'rsatiladi va BARCHA amal

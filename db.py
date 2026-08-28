@@ -114,6 +114,13 @@ CREATE TABLE IF NOT EXISTS topup_requests (
     status TEXT NOT NULL DEFAULT 'kutilmoqda',
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS announcements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text TEXT NOT NULL,
+    photo_file_id TEXT,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -154,6 +161,13 @@ async def init_db():
         # (hali profil to'ldirmagan bo'lsa ham) "botni ko'rgan odam" sifatida
         # qayd etiladi (touch_user_seen'ga qarang).
         await _add_column_if_missing(conn, "users", "first_seen_at TEXT")
+        # 28-avgust: admin panelidagi "tg://user?id=..." havolasi Mini App
+        # veb-sahifasi ICHIDA Telegram tomonidan BLOKLANGANI aniqlandi
+        # ("This content is blocked" xatosi chiqqan) - shuning uchun endi
+        # mijozning @username'i (bor bo'lsa) saqlanadi va o'rniga
+        # https://t.me/<username> havolasi ishlatiladi (remember_username'ga
+        # qarang) - bu haqiqiy https havola bo'lgani uchun bloklanmaydi.
+        await _add_column_if_missing(conn, "users", "username TEXT")
 
         # Baza bo'sh bo'lsa (bot birinchi marta ishga tushganda) - namuna
         # mahsulotlar bilan to'ldiramiz, shunda katalog darhol bo'sh bo'lib
@@ -524,7 +538,13 @@ async def get_all_orders(limit: int = 50, open_only: bool = False):
         else:
             cursor = await conn.execute("SELECT * FROM orders ORDER BY id DESC LIMIT ?", (limit,))
         rows = await cursor.fetchall()
-        return [dict(r) for r in rows]
+    # MUHIM (xato tuzatildi): `_attach_customer_usernames` o'zi ham
+    # `get_db_connection()`ni chaqiradi - shu SABABLI bu yerda `async with`
+    # bloki ICHIDA turib chaqirilsa, ikkinchi marta bir xil `_lock`ni olishga
+    # urinib DEADLOCK bo'lardi (lock qayta kirish - reentrant - emas). Shu
+    # sabab avval `async with` blokidan CHIQAMIZ (yuqoridagi indentatsiyaga
+    # qarang), keyin (lock bo'shatilgandan so'ng) chaqiramiz.
+    return await _attach_customer_usernames([dict(r) for r in rows])
 
 
 async def get_orders_by_statuses(statuses: list, limit: int = 100):
@@ -541,7 +561,9 @@ async def get_orders_by_statuses(statuses: list, limit: int = 100):
             (*statuses, limit),
         )
         rows = await cursor.fetchall()
-        return [dict(r) for r in rows]
+    # (qarang: get_all_orders'dagi izoh - deadlock'ning oldini olish uchun
+    # `async with` blokidan CHIQIB keyin chaqiriladi.)
+    return await _attach_customer_usernames([dict(r) for r in rows])
 
 
 # ---------- SHARHLAR (REVIEWS) ----------
@@ -676,6 +698,50 @@ async def touch_user_seen(user_id: int):
         await conn.commit()
 
 
+async def remember_username(user_id: int, username: str | None):
+    """Foydalanuvchining Telegram @username'ini (agar bo'lsa) eslab qolish -
+    admin panelda "💬 Mijoz bilan bog'lanish" havolasini (https://t.me/<username>)
+    qurish uchun kerak (tg://user?id=... Mini App ichida BLOKLANGANI
+    aniqlandi - qarang: init_db()dagi izoh). `username` bo'sh/None bo'lsa -
+    hech narsa qilinmaydi (avvalgi qiymat saqlanib qoladi, chunki bu funksiya
+    ko'plab joydan "ehtiyot chorasi sifatida" chaqiriladi va har doim ham
+    Telegram username'ni bermasligi mumkin)."""
+    if not username:
+        return
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    async with get_db_connection() as conn:
+        await conn.execute(
+            """INSERT INTO users (user_id, username, balance, updated_at)
+               VALUES (?, ?, 0, ?)
+               ON CONFLICT(user_id) DO UPDATE SET
+                   username = ?,
+                   updated_at = ?""",
+            (user_id, username, now, username, now),
+        )
+        await conn.commit()
+
+
+async def _attach_customer_usernames(rows: list[dict]) -> list[dict]:
+    """Buyurtma/shaxsiy buyurtma ro'yxatidagi har bir yozuvga (agar ma'lum
+    bo'lsa) mijozning Telegram @username'ini "customer_username" kaliti
+    sifatida qo'shib beradi - admin panelning "Mijoz bilan bog'lanish"
+    havolasi shundan foydalanadi."""
+    user_ids = sorted({r["user_id"] for r in rows if r.get("user_id")})
+    if not user_ids:
+        return rows
+    async with get_db_connection() as conn:
+        placeholders = ",".join("?" for _ in user_ids)
+        cursor = await conn.execute(
+            f"SELECT user_id, username FROM users WHERE user_id IN ({placeholders})",
+            tuple(user_ids),
+        )
+        urows = await cursor.fetchall()
+    username_map = {r["user_id"]: r["username"] for r in urows if r["username"]}
+    for r in rows:
+        r["customer_username"] = username_map.get(r.get("user_id"))
+    return rows
+
+
 async def get_user_profile(user_id: int):
     async with get_db_connection() as conn:
         cursor = await conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
@@ -772,7 +838,8 @@ async def get_open_custom_orders(limit: int = 50):
             ("bog'lanildi", limit),
         )
         rows = await cursor.fetchall()
-        return [dict(r) for r in rows]
+    # (deadlock'ning oldini olish uchun - get_all_orders'dagi izohga qarang)
+    return await _attach_customer_usernames([dict(r) for r in rows])
 
 
 # ---------- STATISTIKA (admin panel "📊 Statistika" bo'limi uchun) ----------
@@ -926,4 +993,35 @@ async def get_archived_custom_orders(limit: int = 100):
             ("bog'lanildi", limit),
         )
         rows = await cursor.fetchall()
+    # (deadlock'ning oldini olish uchun - get_all_orders'dagi izohga qarang)
+    return await _attach_customer_usernames([dict(r) for r in rows])
+
+
+# ---------- Yangiliklar/e'lonlar (28-avgust: mijozlar Mini App'idagi yangi
+# "📰 Yangiliklar" bo'limi uchun - admin panel orqali matn+ixtiyoriy rasm
+# bilan e'lon/aksiya joylashtiradi, mijozlar Mini App'da ko'radi) ----------
+
+async def create_announcement(text: str, photo_file_id: str | None = None) -> int:
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "INSERT INTO announcements (text, photo_file_id, created_at) VALUES (?, ?, ?)",
+            (text, photo_file_id, now),
+        )
+        await conn.commit()
+        return cursor.lastrowid
+
+
+async def get_announcements(limit: int = 50):
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT * FROM announcements ORDER BY id DESC LIMIT ?", (limit,)
+        )
+        rows = await cursor.fetchall()
         return [dict(r) for r in rows]
+
+
+async def delete_announcement(announcement_id: int):
+    async with get_db_connection() as conn:
+        await conn.execute("DELETE FROM announcements WHERE id = ?", (announcement_id,))
+        await conn.commit()

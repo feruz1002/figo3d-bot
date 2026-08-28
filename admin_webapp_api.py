@@ -301,6 +301,61 @@ async def api_admin_product_delete(request: web.Request):
     return web.json_response({"ok": True})
 
 
+# ---------- Yangiliklar/e'lonlar (28-avgust) ----------
+
+async def api_admin_announcements(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    announcements = await db.get_announcements(limit=100)
+    return web.json_response({"announcements": announcements})
+
+
+async def api_admin_announcement_create(request: web.Request):
+    admin_id = _authed_admin_id(request)
+    if admin_id is None:
+        return _unauthorized()
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+
+    text = (body.get("text") or "").strip()
+    photo_data_url = body.get("photo")
+    if not text:
+        return web.json_response({"error": "invalid_input"}, status=400)
+
+    photo_file_id = None
+    if photo_data_url:
+        bot = request.app["bot"]
+        try:
+            raw = _decode_photo(photo_data_url)
+            if len(raw) > 10 * 1024 * 1024:
+                return web.json_response({"error": "photo_too_large"}, status=400)
+            input_file = BufferedInputFile(raw, filename="announcement.jpg")
+            msg = await bot.send_photo(
+                admin_id, photo=input_file,
+                caption="📰 Admin panel orqali qo'shilayotgan yangilik rasmi",
+            )
+            photo_file_id = msg.photo[-1].file_id
+        except Exception:
+            return web.json_response({"error": "photo_upload_failed"}, status=502)
+
+    announcement_id = await db.create_announcement(text, photo_file_id=photo_file_id)
+    return web.json_response({"ok": True, "announcement_id": announcement_id})
+
+
+async def api_admin_announcement_delete(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        announcement_id = int(request.match_info["announcement_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    await db.delete_announcement(announcement_id)
+    return web.json_response({"ok": True})
+
+
 def register_admin_routes(app: web.Application, admin_index_path: str):
     app["admin_index_path"] = admin_index_path
     app.router.add_get("/admin-panel", admin_page)
@@ -319,3 +374,6 @@ def register_admin_routes(app: web.Application, admin_index_path: str):
     app.router.add_post("/admin/api/products", api_admin_product_create)
     app.router.add_post("/admin/api/products/{product_id}/delete", api_admin_product_delete)
     app.router.add_get("/admin/api/stats", api_admin_stats)
+    app.router.add_get("/admin/api/announcements", api_admin_announcements)
+    app.router.add_post("/admin/api/announcements", api_admin_announcement_create)
+    app.router.add_post("/admin/api/announcements/{announcement_id}/delete", api_admin_announcement_delete)
