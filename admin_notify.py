@@ -18,3 +18,20 @@ async def notify_admins(bot, text: str | None = None, photo=None, caption: str |
                 await bot.send_message(admin_id, text, reply_markup=reply_markup)
         except Exception:
             pass
+
+
+async def notify_all_customers(bot, user_ids: list, text: str | None = None, photo=None, caption: str | None = None):
+    """28-avgust: "📰 Yangiliklar" bo'limiga yangi e'lon qo'shilganda BARCHA
+    botni ko'rgan odamlarga xabar yuborish uchun (admin_webapp_api.py'ga
+    qarang). `notify_admins`dan farqi - ro'yxat KATTA bo'lishi mumkin,
+    shuning uchun har bir yuborish MUSTAQIL ravishda try/except ichida:
+    bittasi botni bloklagan/o'chirgan bo'lsa ham, qolganlarga yetkazishga
+    to'sqinlik qilmaydi."""
+    for user_id in user_ids:
+        try:
+            if photo is not None:
+                await bot.send_photo(user_id, photo=photo, caption=caption)
+            else:
+                await bot.send_message(user_id, text)
+        except Exception:
+            pass

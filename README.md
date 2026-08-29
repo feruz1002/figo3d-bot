@@ -127,53 +127,48 @@ mahsulotlaringizni (rasmlari bilan) qo'shishni boshlashingiz mumkin — pastda
 
 ## Yangi imkoniyatlar qanday ishlatiladi
 
-### 🛍 Veb-do'kon (Mini App) — katalog/savat + endi qo'shimcha bo'limlar ham
+### 🛍 Veb-do'kon (Mini App) — endi mijozlarning YAGONA kirish nuqtasi
 
-⚠️ **O'zgardi:** avval buyurtma berish, profil, buyurtmalar tarixi, shaxsiy
-buyurtma va aloqa — hammasi shu Mini App ichida edi. Amalda bu ba'zan
-ishonchsiz chiqib qoldi: mijoz katta tugmani bossa ham serverga hech qanday
-so'rov ketmay, savat/buyurtma "qotib qolgandek" ko'rinadigan holatlar
-bo'ldi. Shuning uchun ENG XAVFLI qism — buyurtma berish/to'lov — oddiy,
-ancha barqaror Telegram chat tugmalariga (bosh menyuga) qaytarildi —
-pastdagi "Pastki tugmalar qaytarildi" bo'limiga qarang, va hamon shunday
-qoladi.
+⚠️⚠️ **29-avgust: YANA O'ZGARDI (oxirgi va joriy holat).** Ilgari (27-28
+avgustgacha) Mini App faqat katalog+savat uchun ishlatilardi, buyurtma
+berish/to'lov esa "ishonchliroq" deb chatning pastki tugmalariga
+qaytarilgan edi. Endi siz ANIQ so'radingiz: **butun xarid jarayoni — savat,
+shaxsiy ma'lumotlar, to'lov, hamyon to'ldirish — hammasi Mini App
+ICHIDA bo'lsin**, va pastdagi chat tugmalari (Katalog, Savat, Buyurtmalarim
+va h.k.) mijozlar uchun BUTUNLAY OLIB TASHLANSIN. Shunday qilindi — bu
+avvalgi "webview ishonchsiz" qarorini ongli ravishda bekor qiladi; agar
+kelajakda Mini App yana muammo bersa, shu bo'lim va "Pastki tugmalar olib
+tashlandi" bo'limiga qarang (o'zgartirish oson, tarix git log'da saqlanadi).
 
-✅ **28-avgust:** lekin nisbatan sodda (to'lov/balans bilan bog'liq
-bo'lmagan) bo'limlar — Profil (ko'rish/tahrirlash), Buyurtmalar tarixi
-(faqat ko'rish), Shaxsiy buyurtma so'rovi va Yangiliklar — endi Mini
-App'ning o'zida, yangi chap tomonlama menyu orqali ham ochiladi (pastdagi
-"Mini App'da chap tomonlama menyu" bo'limiga qarang). Bu ikkalasi bir-
-biriga zid emas: mijoz xohlasa chatdagi tugmalardan, xohlasa Mini
-App'dagi menyudan foydalanishi mumkin — ikkalasi ham bir xil ma'lumotlar
-bazasi bilan ishlaydi.
+Endi oddiy mijoz botga `/start` bossa, pastda **hech qanday** matnli tugma
+ko'rmaydi — faqat xabar yozish maydoni yonidagi doimiy **"🛍 Do'kon"**
+tugmasi orqali kiradi. U yerda:
 
-Xabar yozish maydoni yonidagi doimiy **"🛍 Do'kon"** tugmasi hamon bor va
-haqiqiy **veb-sahifa** sifatida ochiladi (Telegram buni "Mini App" deb
-ataydi), lekin endi u ancha soddalashtirilgan — faqat:
+- Katalog (bo'lim/kichik bo'lim, mahsulot tafsiloti, galereya)
+- Savat (miqdorni ➕/➖ bilan o'zgartirish)
+- **Savat → "✅ Buyurtmani yakunlash"**: tugma tepasida endi ism-familiya/
+  telefon/manzil maydonlari bor — profildan avtomatik to'ldiriladi, lekin
+  **tahrirlanishi mumkin** (masalan boshqa odamga sovg'a qilib
+  yuborayotganda, boshqa manzilga)
+- **To'lov (checkout)** — Mini App ichida yangi ekran: buyurtma xulosasi,
+  promo-kod kiritish, joriy hamyon balansi va:
+  - agar hamyonda yetarli mablag' bo'lsa — **"✅ Hamyondan to'lash"**
+    tugmasi (bosilganda buyurtma DARHOL yaratiladi, hamyondan yechiladi)
+  - agar yetmasa — **"💰 Hamyonni to'ldirish"** tugmasi (pastga qarang)
+- **Profil** (ko'rish/tahrirlash + "💰 Hamyonni to'ldirish" tugmasi —
+  xaridsiz ham, oldindan to'ldirish uchun)
+- Buyurtmalar tarixi, Shaxsiy buyurtma so'rovi, Yangiliklar — avvalgidek
 
-- Mahsulotlarni rasm-kartochkalar 2 ustunli to'r ko'rinishida ko'rish,
-  bo'limlar tepada tab sifatida, mahsulot ustiga bosilganda katta rasm +
-  galereya va tavsif
-- Savatga qo'shish va savatdagi miqdorni ➕/➖ bilan o'zgartirish
-- Bo'lim ichida kichik bo'limlar bo'lsa (pastdagi "Katalog ichida kichik
-  bo'lim" bo'limiga qarang), ular tab'lar ostida qo'shimcha kichikroq
-  tugmalar qatori sifatida chiqadi
+Bularning barchasi chap tomonlama menyu orqali ham ochiladi (pastdagi
+"Mini App'da chap tomonlama menyu" bo'limiga qarang).
 
-✅ **Yangilandi (27-avgust):** savat oynasida endi **"✅ Buyurtmani
-yakunlash"** tugmasi bor — lekin bu tugma buyurtmani Mini App'ning o'zida
-YARATMAYDI (bu ataylab shunday, yuqoridagi sababga ko'ra). Bosilganda:
-server mijozning CHATIGA savat xulosasi va "✅ Buyurtma berish" tugmasini
-(xuddi chatda "🛒 Savat" bosilgandagidek) yuboradi, so'ng Mini App
-avtomatik yopiladi — mijoz endi chatdagi qo'lda tugmani qidirib
-o'tirmasdan, tayyor xabar bilan chatda qoladi va shu yerdan davom etadi.
-Agar biror sababga ko'ra (masalan mijoz botni bloklagan) xabar yuborib
-bo'lmasa, Mini App shunchaki xato ko'rsatadi va chatdagi "🛒 Savat"
-tugmasidan foydalanishni so'raydi — hech narsa buzilmaydi.
-
-**Muhim:** bu faqat Render'da (haqiqiy https manzil bilan) ishlaydi —
-mahalliy kompyuteringizda sinaganingizda (https yo'q joyda) "🛍 Do'kon"
-tugmasi umuman ko'rinmaydi — hech narsa buzilmaydi, chunki barcha asosiy
-funksiya baribir chat tugmalari orqali ishlayveradi.
+**Muhim (xavfsizlik zaxirasi):** bu faqat Render'da (haqiqiy https manzil
+bilan, `WEBAPP_URL` sozlangan bo'lsa) ishlaydi. Agar biror sababga ko'ra
+`WEBAPP_URL` bo'sh bo'lsa (masalan mahalliy sinov muhiti) — mijozga
+"Do'kon" tugmasi umuman ko'rinmaydi VA pastda ham hech qanday tugma yo'q,
+shuning uchun `/start` xabarida shunday holatda alohida ogohlantirish
+matni chiqadi. **Production'da (Render'da) `WEBAPP_URL` doim sozlangan
+bo'lishi shart** — aks holda mijozlar botdan umuman foydalana olmaydi.
 
 ### Admin veb-paneli — buyurtma/mahsulotlarni chatsiz, veb-sahifadan boshqarish
 
@@ -425,16 +420,25 @@ kamaytirish yoki oshirish mumkin (0 ga tushsa, mahsulot savatdan butunlay
 o'chadi). Butunlay o'chirish uchun bir necha marta ➖ bosish kifoya, yoki
 "🗑 Savatni tozalash" bilan hammasini bir yo'la tozalash mumkin.
 
-### Pastki tugmalar qaytarildi
+### Pastki tugmalar OLIB TASHLANDI (29-avgust — joriy holat)
 
-Bir muddat (yuqorida tasvirlangan sabab bilan) bosh menyudagi doimiy
-matnli tugmalar Render'da (production'da) butunlay olib tashlangan edi —
-hammasi Mini App ichida bo'lishi kerak edi. Endi bu **qaytarildi**: bosh
-menyuda doim (production'da ham) 🗂 Katalog, 🛒 Savat, 📦 Buyurtmalarim,
-👤 Profil, 🎨 Shaxsiy buyurtma, ☎️ Aloqa tugmalari ko'rinadi va BARCHA
-amal shular orqali ishlaydi. "🛍 Do'kon" Mini App tugmasi ham qoladi —
-u endi faqat katalog+savat uchun qulay qo'shimcha (yuqoridagi bo'limga
-qarang).
+Ilgari (28-avgustgacha) bosh menyudagi doimiy matnli tugmalar (🗂 Katalog,
+🛒 Savat, 📦 Buyurtmalarim, 👤 Profil, 🎨 Shaxsiy buyurtma, ☎️ Aloqa)
+har doim ko'rsatilar va BARCHA amal shular orqali ishlardi. Endi bu
+**butunlay olib tashlandi** — oddiy mijozlarga pastda hech qanday tugma
+ko'rsatilmaydi (`keyboards.main_menu_keyboard` endi ularga
+`ReplyKeyboardRemove()` qaytaradi), faqat yuqorida tasvirlangan **"🛍
+Do'kon"** Mini App orqali ishlaydi.
+
+**FAQAT adminlarga** (`config.ADMIN_IDS` ro'yxatida bo'lganlarga) bitta
+**"🛠 Admin panel"** tugmasi qoladi — boshqa hech narsa yo'q.
+
+Diqqat: chatdagi eski matn-buyruq handler'lari (masalan "🗂 Katalog" so'zi
+kelganda katalogni ko'rsatuvchi kod) DASTURDAN o'chirilmagan, faqat
+ularni chaqiruvchi TUGMA olib tashlangan — shuning uchun mijoz qo'lda shu
+so'zlarni yozib yuborsa, baribir ishlab turadi (bu ataylab shunday
+qoldirilgan, xavfsizroq — kelajakda kerak bo'lsa, tugmalarni qaytarish
+oson).
 
 ### Shaxsiy profil va manzilni tasdiqlash
 
@@ -450,20 +454,41 @@ HECH QACHON ko'rsatmasdan, sinovsiz avtomatik ishlatilmaydi — mijoz doim
 uni ko'rib, tasdiqlab o'tadi. Har bir muvaffaqiyatli buyurtmadan so'ng eng
 oxirgi kiritilgan ma'lumot profilga saqlanib qoladi.
 
-### Ichki hamyon (balans) tizimi
+### Ichki hamyon (balans) tizimi va Mini App'dagi to'lov (29-avgust yangilandi)
 
-Profil sahifasida mijoz joriy balansini ko'radi. "💰 Hisobni to'ldirish"
-tugmasi orqali: qancha to'ldirmoqchiligini yozadi → botning `PAYMENT_INFO`
-rekvizitlarini ko'radi → to'lov qilgach, chekning skrinshotini yuboradi
-(yoki skrinshotsiz ham davom etishi mumkin). So'rov sizga (admin) darhol
-skrinshot va "✅ Tasdiqlash" / "❌ Rad etish" tugmalari bilan keladi.
-**Tasdiqlaganingizda** — va faqat shundagina — mablag' mijozning hamyoniga
-qo'shiladi. Keyingi buyurtmalarda, agar hamyonda yetarli mablag' bo'lsa,
-mijoz "💰 Hamyondan to'lash" tugmasi bilan darhol to'lashi mumkin (operator
-bilan alohida kelishmasdan) — bo'lmasa, avvalgidek "💵 Naqd/karta (operator
-bilan)" orqali davom etadi. Bu — Payme/Click API ulanmaguncha ishlatiladigan
-ichki to'lov tizimi; API ulangach, "Hisobni to'ldirish" qismini avtomatik
-to'lovga almashtirish mumkin bo'ladi.
+Endi to'lov **faqat hamyondan** amalga oshiriladi va butunlay Mini App
+ichida (yuqoridagi "🛍 Veb-do'kon" bo'limiga qarang): savat → shaxsiy
+ma'lumotlar → to'lov ekrani → "✅ Hamyondan to'lash". Hamyonda mablag'
+yetmasa — o'sha yerdanoq "💰 Hamyonni to'ldirish" tugmasi bilan davom
+etiladi (yoki Profil sahifasidan, oldindan). Eski naqd/operator va
+Telegram-karta (Click/Payme invoice) to'lov usullari DASTURDAN
+o'chirilmagan (kodda ishlab turibdi), lekin Mini App'ning yangi to'lov
+ekranida ENDI KO'RSATILMAYDI — faqat hamyon.
+
+**Hamyonni to'ldirish — 2 usul (Mini App'da ham, chatda ham bir xil):**
+
+1. **⚡ Click orqali (avtomatik)** — hozircha **"Tez kunda"** deb
+   ko'rsatiladi, bosilmaydi (Click kompaniyasidan API hali olinmagan).
+   Tayyor bo'lgach, shu joyni ishlaydigan tugmaga almashtirish kifoya.
+2. **💳 Bank kartasiga o'tkazib, skrinshot yuborish** — `PAYMENT_INFO`
+   rekvizitlariga o'tkazib, chekning skrinshotini yuboradi. **⚠️ Skrinshot
+   ENDI MAJBURIY** — avval "skrinshotsiz yuborish" degan tugma bor edi, u
+   OLIB TASHLANDI (ham Mini App'da, ham chatdagi "💰 Hisobni to'ldirish"
+   oqimida). Skrinshotsiz so'rov serverda rad etiladi.
+
+Har ikkala usulda ham so'rov sizga (admin) darhol skrinshot va "✅
+Tasdiqlash" / "❌ Rad etish" tugmalari bilan keladi. **Tasdiqlaganingizda**
+— va faqat shundagina — mablag' mijozning hamyoniga qo'shiladi (bu darhol
+emas, operator tasdig'i kerak — xuddi avvalgidek).
+
+### 📰 Yangiliklar — endi HAMMAGA xabarnoma (29-avgust)
+
+Admin panelda "📰 Yangiliklar" bo'limiga yangi e'lon qo'shilganda, botni
+kamida bir marta ko'rgan **BARCHA** foydalanuvchilarga (faqat xarid
+qilganlarga emas) avtomatik Telegram xabari yuboriladi — e'lon matni va
+**qachon joylashtirilgani** (masalan "28-avgust, 15:40") bilan birga.
+Agar kimdir botni bloklagan yoki hali `/start` bosmagan bo'lsa, xabar
+shunchaki o'sha birovga yetmaydi — qolganlarga to'sqinlik qilmaydi.
 
 ### Mahsulot qo'shish/o'chirish — endi kod bilan ishlash SHART EMAS
 

@@ -13,10 +13,8 @@ from handlers.states import ProfileEditStates, TopupStates
 from keyboards import (
     BTN_PROFILE,
     BTN_CANCEL,
-    BTN_SKIP_PROOF,
     main_menu_keyboard,
     cancel_only_keyboard,
-    skip_proof_keyboard,
     profile_keyboard,
     topup_admin_keyboard,
 )
@@ -126,13 +124,16 @@ async def process_topup_amount(message: Message, state: FSMContext):
     amount = int(text)
     await state.update_data(amount=amount)
     await state.set_state(TopupStates.waiting_proof)
+    # MUHIM (28-avgust, foydalanuvchi so'rovi): skrinshot ENDI MAJBURIY -
+    # avval "skrinshotsiz yuborish" tugmasi orqali o'tkazib yuborish mumkin
+    # edi, endi bu imkoniyat OLIB TASHLANDI (Mini App'dagi hamyon
+    # to'ldirish oynasida ham xuddi shunday - webapp_api.py'ga qarang).
     await message.answer(
         f"💳 <b>To'lov rekvizitlari:</b>\n{PAYMENT_INFO}\n\n"
         f"{format_price(amount)} so'mni shu rekvizitga o'tkazgandan so'ng, "
-        "chekning skrinshotini shu yerga yuboring. Agar hozircha skrinshotingiz "
-        "bo'lmasa, pastdagi tugmani bosib ham davom etishingiz mumkin — "
-        "operator tekshirib, tasdiqlaydi.",
-        reply_markup=skip_proof_keyboard(),
+        "chekning skrinshotini (rasm ko'rinishida) shu yerga yuboring — "
+        "skrinshot MAJBURIY, operator shu asosida tasdiqlaydi.",
+        reply_markup=cancel_only_keyboard(),
     )
 
 
@@ -170,13 +171,10 @@ async def process_topup_proof(message: Message, state: FSMContext, bot: Bot):
     await _submit_topup_request(message, state, bot, message.photo[-1].file_id)
 
 
-@profile_router.message(TopupStates.waiting_proof, F.text == BTN_SKIP_PROOF)
-async def skip_topup_proof(message: Message, state: FSMContext, bot: Bot):
-    await _submit_topup_request(message, state, bot, None)
-
-
 @profile_router.message(TopupStates.waiting_proof)
 async def process_topup_proof_invalid(message: Message):
+    # MUHIM (28-avgust): skrinshot MAJBURIY - o'tkazib yuborish imkoniyati
+    # yo'q, shuning uchun faqat rasm kutiladi.
     await message.answer(
-        f"Iltimos, chekning skrinshotini (rasm) yuboring, yoki \"{BTN_SKIP_PROOF}\" tugmasini bosing."
+        "Iltimos, chekning skrinshotini (rasm ko'rinishida) yuboring — skrinshot MAJBURIY."
     )

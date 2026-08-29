@@ -21,30 +21,37 @@ async def cmd_start(message: Message):
     # remember_username izohiga qarang).
     await db.remember_username(message.from_user.id, message.from_user.username)
 
-    # MUHIM (foydalanuvchi so'rovi bilan qaytarildi): endi pastdagi chat
-    # tugmalari HAR DOIM (production'da ham) ko'rsatiladi va BARCHA amal
-    # (savat, buyurtma berish, profil, buyurtmalar, shaxsiy buyurtma,
-    # aloqa) shular orqali ishlaydi - bu Mini App'ning ba'zan ishonchsiz
-    # chiqadigan veb-ko'rinishiga qaraganda barqarorroq. "🛍 Do'kon" Mini
-    # App tugmasi ham qoladi (mavjud bo'lsa) - u faqat mahsulotlarni
-    # chiroyliroq ko'rish va savatga qo'shish uchun qulay muqobil.
+    # MUHIM (29-avgust, foydalanuvchi so'rovi bilan YANA O'ZGARDI): endi
+    # oddiy mijozlarga pastdagi chat tugmalari UMUMAN ko'rsatilmaydi
+    # (keyboards.py'dagi main_menu_keyboard izohiga qarang) - katalog,
+    # savat, buyurtma berish, profil, buyurtmalarim, shaxsiy buyurtma va
+    # aloqa endi FAQAT "🛍 Do'kon" Mini App ichida ishlaydi. Shuning uchun
+    # salomlashuv matni ham shu Mini App tugmasiga yo'naltiradi.
+    admin_user = is_admin(message.from_user.id)
     text = (
         "👋 <b>Assalomu alaykum, Figo3D ga xush kelibsiz!</b>\n\n"
         "Bu yerda siz 3D-print qilingan haykalcha, kalitcha va boshqa "
         "sovg'a buyumlarini tanlab, buyurtma qilishingiz mumkin.\n\n"
-        "🗂 <b>Katalog</b> — mahsulotlarni ko'rish\n"
-        "🛒 <b>Savat</b> — tanlagan mahsulotlaringiz va buyurtma berish\n"
-        "📦 <b>Buyurtmalarim</b> — oldingi buyurtmalar holati\n"
-        "👤 <b>Profil</b> — ma'lumotlaringiz va hamyon balansi\n"
-        "🎨 <b>Shaxsiy buyurtma</b> — o'z rasmingizdan noyob buyum\n"
-        "☎️ <b>Aloqa</b> — savol bo'lsa yozing\n\n"
     )
     if WEBAPP_URL:
         text += (
-            "Shuningdek, xabar yozish maydoni yonidagi \"🛍 Do'kon\" tugmasi "
-            "orqali mahsulotlarni veb-ko'rinishda ham ko'rishingiz mumkin.\n\n"
+            "Boshlash uchun xabar yozish maydoni yonidagi \"🛍 Do'kon\" "
+            "tugmasini bosing 👇\n\n"
+            "U yerda: mahsulotlar katalogi, savat, buyurtma berish va "
+            "to'lov, profil va hamyon, buyurtmalaringiz holati, shaxsiy "
+            "buyurtma va yangiliklar — barchasi bitta joyda."
         )
-    text += "Boshlash uchun pastdagi tugmalardan birini bosing 👇"
+    else:
+        # Xavfsizlik uchun zaxira matn (WEBAPP_URL sozlanmagan holatlarda,
+        # masalan lokal test muhitida) - production'da (Render'da) bu
+        # doim sozlangan bo'ladi, shuning uchun bu shoxobcha amalda
+        # ko'rinmasligi kerak.
+        text += (
+            "⚠️ Hozircha veb-do'kon vaqtincha ishlamayapti. Iltimos, "
+            "birozdan so'ng qaytadan urinib ko'ring yoki operatorga yozing."
+        )
+    if admin_user:
+        text += "\n\n🛠 Admin sifatida pastdagi \"Admin panel\" tugmasidan foydalanishingiz mumkin."
     await message.answer(
-        text, reply_markup=main_menu_keyboard(is_admin=is_admin(message.from_user.id))
+        text, reply_markup=main_menu_keyboard(is_admin=admin_user)
     )

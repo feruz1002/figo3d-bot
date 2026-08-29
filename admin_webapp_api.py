@@ -7,6 +7,7 @@ yuborib bo'lmasligi uchun), (2) shu ID config.ADMIN_IDS ro'yxatidami
 qilib panelga FAQAT ruxsat etilgan Telegram ID'lar kira oladi, hatto
 havolani bilib olgan boshqa odam ham kira olmaydi."""
 import base64
+from datetime import datetime, timezone
 
 from aiogram.types import BufferedInputFile
 from aiohttp import web
@@ -14,6 +15,7 @@ from aiohttp import web
 import admin_service
 import db
 import order_service
+from admin_notify import notify_all_customers
 from config import BOT_TOKEN, is_admin
 from webapp_auth import validate_init_data
 
@@ -303,6 +305,24 @@ async def api_admin_product_delete(request: web.Request):
 
 # ---------- Yangiliklar/e'lonlar (28-avgust) ----------
 
+_UZ_MONTHS = [
+    "", "yanvar", "fevral", "mart", "aprel", "may", "iyun",
+    "iyul", "avgust", "sentyabr", "oktyabr", "noyabr", "dekabr",
+]
+
+
+def _format_uz_datetime(iso_str: str) -> str:
+    """"2026-08-28T15:40:00+00:00" kabi ISO vaqtni "28-avgust, 15:40"
+    ko'rinishiga o'tkazadi - "📰 Yangiliklar" xabarnomasida qachon
+    joylanganini ko'rsatish uchun."""
+    try:
+        dt = datetime.fromisoformat(iso_str)
+    except ValueError:
+        return iso_str
+    month_name = _UZ_MONTHS[dt.month] if 1 <= dt.month <= 12 else str(dt.month)
+    return f"{dt.day}-{month_name}, {dt.hour:02d}:{dt.minute:02d}"
+
+
 async def api_admin_announcements(request: web.Request):
     if _authed_admin_id(request) is None:
         return _unauthorized()
@@ -325,9 +345,9 @@ async def api_admin_announcement_create(request: web.Request):
     if not text:
         return web.json_response({"error": "invalid_input"}, status=400)
 
+    bot = request.app["bot"]
     photo_file_id = None
     if photo_data_url:
-        bot = request.app["bot"]
         try:
             raw = _decode_photo(photo_data_url)
             if len(raw) > 10 * 1024 * 1024:
@@ -342,6 +362,23 @@ async def api_admin_announcement_create(request: web.Request):
             return web.json_response({"error": "photo_upload_failed"}, status=502)
 
     announcement_id = await db.create_announcement(text, photo_file_id=photo_file_id)
+
+    # 28-avgust (foydalanuvchi so'rovi): e'lon joylashtirilgan zahoti BARCHA
+    # botni ko'rgan odamlarga xabarnoma yuboriladi - qachon qo'yilganini
+    # ham bilib turishsin. `announcements` jadvalida biz endigina yozgan
+    # yozuvni qayta o'qib (created_at aniq vaqtni olish uchun), keyin
+    # broadcast qilamiz - bitta odamga yetkazib bo'lmasligi (bloklagan/hali
+    # /start bosmagan) boshqalarga to'sqinlik qilmaydi.
+    items = await db.get_announcements(limit=1)
+    created_at = items[0]["created_at"] if items else None
+    time_line = f"\n\n🕓 {_format_uz_datetime(created_at)}" if created_at else ""
+    broadcast_text = f"📰 <b>Yangilik!</b>\n\n{text}{time_line}"
+    user_ids = await db.get_all_user_ids()
+    if photo_file_id:
+        await notify_all_customers(bot, user_ids, photo=photo_file_id, caption=broadcast_text)
+    else:
+        await notify_all_customers(bot, user_ids, text=broadcast_text)
+
     return web.json_response({"ok": True, "announcement_id": announcement_id})
 
 

@@ -239,16 +239,22 @@ async def api_topup(request: web.Request):
     if amount <= 0:
         return web.json_response({"error": "invalid_input"}, status=400)
 
+    # MUHIM (28-avgust, foydalanuvchi so'rovi): skrinshot ENDI MAJBURIY -
+    # avval ixtiyoriy edi ("skrinshotsiz yuborish" tugmasi bor edi), lekin
+    # to'lovni tasdiqlashni osonlashtirish uchun endi har doim talab
+    # qilinadi (chatdagi eski "skrinshotsiz" yo'li ham olib tashlandi -
+    # handlers/profile.py'ga qarang).
     photo_data_url = body.get("screenshot")
+    if not photo_data_url:
+        return web.json_response({"error": "screenshot_required"}, status=400)
+
     bot = request.app["bot"]
-    screenshot_file_id = None
-    if photo_data_url:
-        try:
-            screenshot_file_id = await _upload_photo_get_file_id(bot, "topup_proof.jpg", photo_data_url)
-        except ValueError:
-            return web.json_response({"error": "photo_too_large"}, status=400)
-        except Exception:
-            return web.json_response({"error": "photo_upload_failed"}, status=502)
+    try:
+        screenshot_file_id = await _upload_photo_get_file_id(bot, "topup_proof.jpg", photo_data_url)
+    except ValueError:
+        return web.json_response({"error": "photo_too_large"}, status=400)
+    except Exception:
+        return web.json_response({"error": "photo_upload_failed"}, status=502)
 
     request_id = await db.create_topup_request(user_id, amount, screenshot_file_id)
 

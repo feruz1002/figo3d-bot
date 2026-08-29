@@ -8,6 +8,7 @@ va tekis (kvadratsimon) ko'rinadigan qilib joylashtirilgan.
 """
 from aiogram.types import (
     ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
     KeyboardButton,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
@@ -30,27 +31,20 @@ BTN_SKIP_PROOF = "📎 Skrinshotsiz yuborish"
 
 
 def main_menu_keyboard(is_admin: bool = False):
-    # MUHIM (foydalanuvchi so'rovi bilan qaytarildi): ILGARI production'da
-    # (WEBAPP_URL mavjud bo'lganda) bu pastdagi matnli tugmalar butunlay
-    # OLIB TASHLANGAN edi - hammasi faqat Mini App (veb-do'kon) ichida
-    # ishlashi kerak edi. Lekin amalda Mini App'ning veb-ko'rinishi (JS/
-    # webview) ba'zan ishonchsiz chiqib qoldi (savat/buyurtma "qotib
-    # qolishi" kabi muammolar) - shuning uchun ENDI bu tugmalar HAR DOIM
-    # (production'da ham) ko'rsatiladi: ular oddiy Telegram xabar
-    # almashinuvi orqali ishlagani uchun ancha ishonchli. "🛍 Do'kon" Mini
-    # App tugmasi ham alohida qoladi (bot.py'da MenuButtonWebApp orqali),
-    # lekin endi u FAQAT katalogni ko'rish va savatga qo'shish uchun -
-    # buyurtma berish/profil/buyurtmalar/shaxsiy buyurtma/aloqa esa ENDI
-    # faqat shu pastdagi chat tugmalari orqali ishlaydi.
+    # MUHIM (29-avgust, foydalanuvchi so'rovi bilan YANA O'ZGARDI): ILGARI
+    # (28-avgustgacha) bu yerda Katalog/Savat/Buyurtmalarim/Profil/Shaxsiy
+    # buyurtma/Aloqa kabi pastdagi matnli tugmalar HAR DOIM ko'rsatilardi -
+    # sababi Mini App webview'i vaqti-vaqti bilan "qotib qolish" kabi
+    # muammolar berardi. ENDI foydalanuvchi ANIQ so'radi: oddiy mijozlarga
+    # bu tugmalar UMUMAN KO'RSATILMASIN, faqat "🛍 Do'kon" Mini App tugmasi
+    # (bot.py'da MenuButtonWebApp orqali, xabar yozish maydoni yonida)
+    # ishlatilsin. Faqat adminlarga bitta "🛠 Admin panel" tugmasi qoladi.
+    # DIQQAT: agar Mini App yana ishonchsiz bo'lib qolsa, bu joy YANA
+    # o'zgarishi mumkin - tarix uchun eski variant git log'da saqlanadi.
+    if not is_admin:
+        return ReplyKeyboardRemove()
     builder = ReplyKeyboardBuilder()
-    builder.row(KeyboardButton(text=BTN_CATALOG), KeyboardButton(text=BTN_CART))
-    builder.row(KeyboardButton(text=BTN_ORDERS), KeyboardButton(text=BTN_PROFILE))
-    builder.row(KeyboardButton(text=BTN_CUSTOM), KeyboardButton(text=BTN_CONTACT))
-    if is_admin:
-        # FAQAT adminlarga ko'rinadigan qo'shimcha qator - oddiy mijozlar
-        # bu tugmani umuman ko'rmaydi (chaqiruvchi `is_admin` ni to'g'ri
-        # berishi shart, pastga qarang: handlers/start.py).
-        builder.row(KeyboardButton(text=BTN_ADMIN))
+    builder.row(KeyboardButton(text=BTN_ADMIN))
     return builder.as_markup(resize_keyboard=True)
 
 

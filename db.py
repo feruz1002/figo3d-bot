@@ -853,6 +853,16 @@ async def get_total_bot_users() -> int:
         return count or 0
 
 
+async def get_all_user_ids() -> list:
+    """Botni kamida bir marta ko'rgan HAMMA odamlarning ID ro'yxati -
+    "📰 Yangiliklar" e'lon qilinganda hammaga xabarnoma yuborish uchun
+    (admin_notify.notify_all_customers'ga qarang)."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute("SELECT user_id FROM users")
+        rows = await cursor.fetchall()
+        return [r["user_id"] for r in rows]
+
+
 async def get_customer_count() -> int:
     """Kamida BITTA buyurtma bergan (haqiqiy xaridor bo'lgan) odamlar soni."""
     async with get_db_connection() as conn:

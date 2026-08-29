@@ -159,6 +159,7 @@
   }
   .form-textarea { resize: vertical; min-height: 70px; }
   .form-error { color: #ff3b30; font-size: 12.5px; margin-top: 6px; }
+  .form-hint { font-size: 12px; color: var(--hint); margin: -6px 0 14px; line-height: 1.4; }
   .photo-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
   .photo-thumb { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; }
   .photo-pick-btn {
@@ -226,6 +227,12 @@
     categories: [], products: [], cart: {},
     detailProduct: null,
     profile: null, orders: null, announcements: null,
+    // 29-avgust: to'lov endi Mini App ICHIDA (checkout/topup ko'rinishlari) -
+    // pastdagi maydonlar shu oqim uchun.
+    paymentInfo: "", // /api/config'dan (hamyon to'ldirishda bank rekvizitlari uchun)
+    checkoutForm: null, // {full_name, phone, address} - savat -> to'lov oralig'ida saqlanadi
+    promo: null, // {code, discount_percent} - to'lov ekranida qo'llangan promo-kod
+    topupPrefill: null, // to'lovda hamyon yetmagan summa - hamyon to'ldirish summasini oldindan to'ldirish uchun
   };
   var navStack = []; // bo'sh = katalog (grid) ko'rinishi
 
@@ -380,6 +387,14 @@
     return api("/api/cart").then(function (r) {
       state.cart = {};
       if (r.ok) ((r.data && r.data.items) || []).forEach(function (i) { state.cart[i.product_id] = i.quantity; });
+    });
+  }
+  function loadConfig() {
+    // 29-avgust: hamyon to'ldirish ekranida bank rekvizitlarini ko'rsatish
+    // uchun - xato bo'lsa ham botni to'xtatib qo'ymaymiz, faqat
+    // rekvizitlar bo'sh qoladi (topup ekrani buni alohida ko'rsatadi).
+    return api("/api/config").then(function (r) {
+      if (r.ok) state.paymentInfo = (r.data && r.data.payment_info) || "";
     });
   }
 
@@ -586,16 +601,18 @@
   };
 
   // ---------- Savat ----------
-  // MUHIM: bu yerda buyurtma TO'G'RIDAN-TO'G'RI yaratilmaydi va to'lov
-  // so'ralmaydi - buyurtma berish, to'lov usuli, promo-kod hammasi
-  // ishonchli Telegram CHAT oqimida (checkout.py) qoladi, chunki aynan
-  // shu joyning Mini App JS/webview orqali ishlashi muammoli chiqqan edi.
-  // Lekin qulaylik uchun "✅ Buyurtmani yakunlash" tugmasi bor - u
-  // buyurtma YARATMAYDI, faqat mijozning CHATIGA savat xulosasi va "✅
-  // Buyurtma berish" tugmasini yuborib (server orqali, /api/request_checkout),
-  // Mini App'ni yopadi - shundan keyingi hamma narsa (buyurtmani yaratish,
-  // to'lov) xuddi chatning o'zida "🛒 Savat" bosilgandagidek davom etadi.
-  var finishingCheckout = false;
+  // MUHIM (29-avgust, foydalanuvchi so'rovi bilan O'ZGARDI): ILGARI bu
+  // yerda buyurtma yaratilmasdan, mijoz chatga qaytarilardi (to'lov faqat
+  // chatda bo'lardi) - Mini App'ning webview'i ishonchsiz chiqib qolgani
+  // uchun shunday qilingan edi. ENDI foydalanuvchi ANIQ so'radi: to'lov
+  // (hamyondan) TO'LIQ Mini App ICHIDA bo'lsin. "✅ Buyurtmani yakunlash"
+  // tugmasi tepasida (shaxsiy ma'lumotlar tepasida emas, PASTIDA - so'rov
+  // shunday: "...ni tepasida shaxsiy ma'lumotlari... bo'lsin") ism/telefon/
+  // manzil ko'rsatiladi - profildan oldindan to'ldirilgan, lekin TAHRIRLASH
+  // mumkin (boshqa odamga sovg'a qilib yuborish uchun). Tugma bosilganda
+  // /api/request_checkout ENDI chaqirilmaydi (backend'da qoldirilgan,
+  // lekin frontend uni ishlatmaydi) - buning o'rniga yangi "checkout"
+  // ko'rinishiga o'tiladi.
   VIEW_RENDERERS.cart = function (el) {
     var pids = Object.keys(state.cart).filter(function (pid) { return state.cart[pid] > 0; });
     if (!pids.length) {
@@ -618,37 +635,266 @@
         '</div>'
       );
     }).join("");
-    el.innerHTML = '<div class="cart-list">' + rows + '</div><div class="cart-total">Jami: ' + fmtPrice(cartSubtotal()) + " so'm</div>" +
-      '<button class="page-cta" id="cart-finish-btn">✅ Buyurtmani yakunlash</button>' +
-      '<div class="cart-hint">Tugma bosilganda savat xulosasi va "✅ Buyurtma berish" tugmasi chatingizga yuboriladi — shu yerdan davom etasiz.</div>';
+    var p = state.profile || {};
+    el.innerHTML =
+      '<div class="cart-list">' + rows + '</div>' +
+      '<div class="cart-total">Jami: ' + fmtPrice(cartSubtotal()) + " so'm</div>" +
+      '<div class="screen" style="padding-top:4px">' +
+        '<div class="form-group"><label class="form-label">Ism-familiya</label><input class="form-input" id="ck-name" value="' + escapeHtml(p.full_name || "") + '"></div>' +
+        '<div class="form-group"><label class="form-label">Telefon</label><input class="form-input" id="ck-phone" value="' + escapeHtml(p.phone || "") + '"></div>' +
+        '<div class="form-group"><label class="form-label">Manzil</label><input class="form-input" id="ck-address" value="' + escapeHtml(p.address || "") + '"></div>' +
+        '<div class="form-hint">Boshqa odamga sovg\'a qilib yubormoqchi bo\'lsangiz, shu ma\'lumotlarni tahrirlashingiz mumkin.</div>' +
+        '<div class="form-error hidden" id="ck-error"></div>' +
+        '<button class="page-cta" id="cart-finish-btn">✅ Buyurtmani yakunlash</button>' +
+      '</div>';
     el.querySelectorAll(".cart-row").forEach(function (row) {
       var pid = Number(row.getAttribute("data-pid"));
       row.querySelector(".dec").onclick = function () { changeQty(pid, -1); };
       row.querySelector(".inc").onclick = function () { changeQty(pid, 1); };
     });
-    document.getElementById("cart-finish-btn").onclick = finishCheckoutInChat;
+    document.getElementById("cart-finish-btn").onclick = goToCheckout;
+
+    // Profil hali yuklanmagan bo'lsa - fonda yuklab, maydonlarni to'ldiramiz
+    // (agar mijoz shu orada allaqachon biror narsa yozgan bo'lsa, uni
+    // bosib yubormaymiz).
+    if (!state.profile) {
+      api("/api/profile").then(function (r) {
+        if (!r.ok || currentView() !== "cart") return;
+        state.profile = r.data;
+        var nameEl = document.getElementById("ck-name");
+        var phoneEl = document.getElementById("ck-phone");
+        var addrEl = document.getElementById("ck-address");
+        if (nameEl && !nameEl.value) nameEl.value = r.data.full_name || "";
+        if (phoneEl && !phoneEl.value) phoneEl.value = r.data.phone || "";
+        if (addrEl && !addrEl.value) addrEl.value = r.data.address || "";
+      });
+    }
   };
 
-  function finishCheckoutInChat() {
-    if (finishingCheckout) return;
-    finishingCheckout = true;
-    var btn = document.getElementById("cart-finish-btn");
+  function goToCheckout() {
+    var full_name = document.getElementById("ck-name").value.trim();
+    var phone = document.getElementById("ck-phone").value.trim();
+    var address = document.getElementById("ck-address").value.trim();
+    var errEl = document.getElementById("ck-error");
+    if (full_name.length < 2 || phone.length < 7 || address.length < 3) {
+      errEl.textContent = "Iltimos, ism, telefon va manzilni to'g'ri to'ldiring.";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    errEl.classList.add("hidden");
+    state.checkoutForm = { full_name: full_name, phone: phone, address: address };
+    pushView("checkout");
+  }
+
+  // ---------- To'lov (checkout) - 29-avgust: YANGI, Mini App ichida ----------
+  // MUHIM: chegirma FAQAT foiz (discount_percent) sifatida saqlanadi va
+  // har safar joriy savat summasidan qayta hisoblanadi (serverdagi kabi
+  // butun songa yaxlitlab) - shu bilan mijoz promo qo'llagandan keyin
+  // savatni o'zgartirsa ham, ko'rsatilgan chegirma summasi noto'g'ri
+  // chiqib qolmaydi. Yakuniy summa va balans HAR DOIM server tomonda
+  // (/api/checkout) qayta tekshiriladi - bu yerdagi hisob faqat ko'rsatish
+  // uchun.
+  var submittingCheckout = false;
+  VIEW_RENDERERS.checkout = function (el) {
+    var pids = Object.keys(state.cart).filter(function (pid) { return state.cart[pid] > 0; });
+    if (!pids.length) {
+      el.innerHTML = '<div class="screen"><div class="empty">Savatingiz bo\'sh.</div></div>';
+      return;
+    }
+    var itemsHtml = pids.map(function (pid) {
+      var p = state.products.filter(function (x) { return x.id === Number(pid); })[0];
+      if (!p) return "";
+      return '<div class="card-line">' + state.cart[pid] + ' x ' + escapeHtml(p.name) + ' — ' + fmtPrice(p.price * state.cart[pid]) + " so'm</div>";
+    }).join("");
+    var subtotal = cartSubtotal();
+    var promo = state.promo;
+    var discount = promo ? Math.floor(subtotal * promo.discount_percent / 100) : 0;
+    var total = Math.max(subtotal - discount, 0);
+    var balance = (state.profile && state.profile.balance) || 0;
+    var enough = balance >= total;
+
+    el.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">💳 To\'lov</div>' +
+        '<div class="info-card"><div class="card-line"><b>Buyurtmangiz:</b></div>' + itemsHtml + '</div>' +
+        '<div class="form-group"><label class="form-label">Promo-kod (bo\'lsa)</label>' +
+          '<div style="display:flex;gap:8px;align-items:flex-start">' +
+            '<input class="form-input" id="ck-promo" placeholder="Masalan: FIGO10" value="' + escapeHtml(promo ? promo.code : "") + '" style="flex:1">' +
+            '<button class="page-cta" id="ck-promo-apply" style="width:auto;margin:0;padding:0 18px;height:47px">✅</button>' +
+          '</div>' +
+          '<div class="form-hint" id="ck-promo-msg" style="margin-bottom:0"></div>' +
+        '</div>' +
+        '<div class="info-card">' +
+          '<div class="card-line">Mahsulotlar: ' + fmtPrice(subtotal) + " so'm</div>" +
+          (discount ? '<div class="card-line">Chegirma (−' + promo.discount_percent + '%): −' + fmtPrice(discount) + " so'm</div>" : "") +
+          '<div class="card-line"><b>Jami: ' + fmtPrice(total) + " so'm</b></div>" +
+          '<div class="card-line">💰 Hamyoningizda: ' + fmtPrice(balance) + " so'm</div>" +
+        '</div>' +
+        (enough
+          ? '<button class="page-cta" id="ck-pay-btn">✅ Hamyondan to\'lash (' + fmtPrice(total) + " so'm)</button>"
+          : (
+              '<div class="form-error" style="margin-bottom:10px">Hamyoningizda ' + fmtPrice(total - balance) + " so'm yetishmayapti." + '</div>' +
+              '<button class="page-cta" id="ck-topup-btn">💰 Hamyonni to\'ldirish</button>'
+            )
+        ) +
+      '</div>';
+
+    document.getElementById("ck-promo-apply").onclick = applyPromo;
+    var payBtn = document.getElementById("ck-pay-btn");
+    if (payBtn) payBtn.onclick = submitCheckout;
+    var topupBtn = document.getElementById("ck-topup-btn");
+    if (topupBtn) topupBtn.onclick = function () {
+      state.topupPrefill = Math.max(total - balance, 0);
+      pushView("topup");
+    };
+  };
+
+  function applyPromo() {
+    var codeInput = document.getElementById("ck-promo");
+    var code = codeInput.value.trim();
+    var msgEl = document.getElementById("ck-promo-msg");
+    if (!code) {
+      state.promo = null;
+      render();
+      return;
+    }
+    var btn = document.getElementById("ck-promo-apply");
+    btn.disabled = true;
+    api("/api/promo/check", { method: "POST", body: JSON.stringify({ code: code }) }).then(function (r) {
+      if (r.ok && r.data.valid) {
+        state.promo = { code: r.data.code, discount_percent: r.data.discount_percent };
+        render();
+        showToast("✅ Promo-kod qo'llandi: -" + r.data.discount_percent + "%");
+      } else {
+        state.promo = null;
+        btn.disabled = false;
+        if (msgEl) msgEl.textContent = "Promo-kod topilmadi yoki yaroqsiz.";
+      }
+    });
+  }
+
+  function submitCheckout() {
+    if (submittingCheckout) return;
+    submittingCheckout = true;
+    var btn = document.getElementById("ck-pay-btn");
     if (btn) { btn.disabled = true; btn.textContent = "⏳ Yuborilmoqda..."; }
-    api("/api/request_checkout", { method: "POST" })
-      .then(function (r) {
-        if (r.ok) {
-          showToast("✅ Chatga yuborildi — shu yerdan davom eting");
-          if (tg) setTimeout(function () { tg.close(); }, 500);
+    var form = state.checkoutForm || {};
+    api("/api/checkout", {
+      method: "POST",
+      body: JSON.stringify({
+        full_name: form.full_name, phone: form.phone, address: form.address,
+        payment_method: "balance",
+        promo_code: state.promo ? state.promo.code : null,
+      }),
+    }).then(function (r) {
+      submittingCheckout = false;
+      if (r.ok) {
+        state.checkoutForm = null;
+        state.promo = null;
+        navStack = [];
+        render();
+        showToast("✅ Buyurtmangiz qabul qilindi!");
+        loadCart().then(function () { renderGrid(); updateMainButton(); });
+        api("/api/profile").then(function (pr) { if (pr.ok) state.profile = pr.data; });
+      } else {
+        if (btn) { btn.disabled = false; btn.textContent = "✅ Hamyondan to'lash"; }
+        if (r.data && r.data.error === "insufficient_balance") {
+          showToast("Hamyoningizda yetarli mablag' yo'q.");
+          api("/api/profile").then(function (pr) { if (pr.ok) state.profile = pr.data; render(); });
+        } else if (r.data && r.data.error === "empty_cart") {
+          showToast("Savatingiz bo'sh.");
+          popView();
         } else {
-          if (btn) { btn.disabled = false; btn.textContent = "✅ Buyurtmani yakunlash"; }
-          showToast("Yuborib bo'lmadi. Chatdagi \"🛒 Savat\" tugmasidan foydalaning.");
+          showToast("Buyurtma berib bo'lmadi. Qaytadan urinib ko'ring.");
         }
-      })
-      .catch(function () {
-        if (btn) { btn.disabled = false; btn.textContent = "✅ Buyurtmani yakunlash"; }
-        showToast("Yuborib bo'lmadi. Chatdagi \"🛒 Savat\" tugmasidan foydalaning.");
-      })
-      .then(function () { finishingCheckout = false; });
+      }
+    });
+  }
+
+  // ---------- Hamyonni to'ldirish (topup) - 29-avgust: YANGI ----------
+  // 2 ta usul: 1) Click orqali avtomatik - hali Click kompaniyasidan API
+  // olinmagani uchun HOZIRCHA faqat ko'rinadi, bosilmaydi ("Tez kunda").
+  // 2) Bank kartasiga o'tkazib, chekning skrinshotini yuborish - skrinshot
+  // MAJBURIY (foydalanuvchi so'rovi bilan qat'iy talab qilinadi, xuddi
+  // chatdagi eski oqim ham endi shunday - handlers/profile.py'ga qarang).
+  // So'rov yuborilgach BALANS DARHOL o'zgarmaydi - operator admin panelda
+  // tasdiqlagach qo'shiladi (eski chat oqimi bilan bir xil mantiq).
+  var topupScreenshot = null;
+  VIEW_RENDERERS.topup = function (el) {
+    topupScreenshot = null;
+    var prefill = state.topupPrefill;
+    el.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">💰 Hamyonni to\'ldirish</div>' +
+        '<div class="form-group"><label class="form-label">Summasi (so\'m)</label>' +
+          '<input class="form-input" id="tu-amount" type="number" inputmode="numeric" placeholder="Masalan: 100000" value="' + (prefill ? String(prefill) : "") + '"></div>' +
+
+        '<div class="info-card" style="opacity:0.6">' +
+          '<div class="card-line"><b>⚡ Click orqali</b> — Tez kunda</div>' +
+          '<div class="card-line">Hozircha ishlamaydi. Pastdagi bank kartasi usulidan foydalaning.</div>' +
+        '</div>' +
+
+        '<div class="form-group"><label class="form-label">💳 Bank kartasi rekvizitlari</label>' +
+          '<div class="info-card"><div class="card-line">' +
+            (state.paymentInfo ? escapeHtml(state.paymentInfo).replace(/\n/g, "<br>") : "Rekvizitlar hozircha mavjud emas, operatorga yozing.") +
+          '</div></div>' +
+        '</div>' +
+
+        '<div class="form-group"><label class="form-label">To\'lov chekining skrinshoti (MAJBURIY)</label>' +
+          '<div class="photo-row" id="tu-photo-row"><button class="photo-pick-btn" id="tu-photo-pick">+</button></div>' +
+          '<input type="file" id="tu-photo-input" accept="image/*" style="display:none"></div>' +
+
+        '<div class="form-error hidden" id="tu-error"></div>' +
+        '<button class="page-cta" id="tu-submit">✅ So\'rov yuborish</button>' +
+      '</div>';
+
+    document.getElementById("tu-photo-pick").onclick = function () { document.getElementById("tu-photo-input").click(); };
+    document.getElementById("tu-photo-input").onchange = function (e) {
+      var file = (e.target.files || [])[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        topupScreenshot = reader.result;
+        document.getElementById("tu-photo-row").innerHTML = '<img class="photo-thumb" src="' + topupScreenshot + '">';
+      };
+      reader.readAsDataURL(file);
+    };
+    document.getElementById("tu-submit").onclick = submitTopup;
+  };
+
+  function submitTopup() {
+    var amountStr = (document.getElementById("tu-amount").value || "").replace(/\s/g, "");
+    var errEl = document.getElementById("tu-error");
+    var amount = parseInt(amountStr, 10);
+    var problems = [];
+    if (!amountStr || isNaN(amount) || amount <= 0) problems.push("summani to'g'ri kiriting");
+    if (!topupScreenshot) problems.push("chekning skrinshotini yuklang (MAJBURIY)");
+    if (problems.length) {
+      errEl.textContent = "Iltimos: " + problems.join(", ") + ".";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    errEl.classList.add("hidden");
+    var btn = document.getElementById("tu-submit");
+    btn.disabled = true; btn.textContent = "⏳ Yuborilmoqda...";
+    api("/api/topup", {
+      method: "POST",
+      body: JSON.stringify({ amount: amount, screenshot: topupScreenshot }),
+    }).then(function (r) {
+      if (r.ok) {
+        state.topupPrefill = null;
+        showToast("✅ So'rovingiz yuborildi — operator tasdiqlagach hamyoningizga qo'shiladi");
+        popView();
+      } else {
+        btn.disabled = false; btn.textContent = "✅ So'rov yuborish";
+        if (r.data && r.data.error === "screenshot_required") {
+          errEl.textContent = "Iltimos, chekning skrinshotini yuklang (MAJBURIY).";
+          errEl.classList.remove("hidden");
+        } else {
+          showToast("Yuborib bo'lmadi. Qaytadan urinib ko'ring.");
+        }
+      }
+    });
   }
 
   // ---------- Profil ----------
@@ -673,12 +919,17 @@
       '<div class="screen">' +
         '<div class="screen-title">👤 Profil</div>' +
         '<div class="info-card"><div class="card-line">💰 Hamyon balansi: <b>' + fmtPrice(p.balance || 0) + " so'm</b></div></div>" +
+        '<button class="page-cta" id="pf-topup" style="margin-top:0;margin-bottom:18px">💰 Hamyonni to\'ldirish</button>' +
         '<div class="form-group"><label class="form-label">Ism-familiya</label><input class="form-input" id="pf-name" value="' + escapeHtml(p.full_name || "") + '"></div>' +
         '<div class="form-group"><label class="form-label">Telefon</label><input class="form-input" id="pf-phone" value="' + escapeHtml(p.phone || "") + '"></div>' +
         '<div class="form-group"><label class="form-label">Manzil</label><input class="form-input" id="pf-address" value="' + escapeHtml(p.address || "") + '"></div>' +
         '<div class="form-error hidden" id="pf-error"></div>' +
         '<button class="page-cta" id="pf-save">✅ Saqlash</button>' +
       '</div>';
+    document.getElementById("pf-topup").onclick = function () {
+      state.topupPrefill = null;
+      pushView("topup");
+    };
     document.getElementById("pf-save").onclick = function () {
       var full_name = document.getElementById("pf-name").value.trim();
       var phone = document.getElementById("pf-phone").value.trim();
@@ -845,7 +1096,7 @@
       renderTabs(); renderSubtabs(); renderGrid();
       return loadCart();
     })
-    .then(function () { renderGrid(); updateMainButton(); })
+    .then(function () { renderGrid(); updateMainButton(); return loadConfig(); })
     .catch(function () {
       document.getElementById("grid").innerHTML = '<div class="empty">Yuklashda xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.</div>';
     });
