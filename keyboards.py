@@ -313,11 +313,14 @@ def topup_admin_keyboard(request_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def contact_message_admin_keyboard(user_id: int | None = None) -> InlineKeyboardMarkup:
-    """29-avgust: Mini App'dagi "💬 Chat"/"☎️ Aloqa" bo'limi orqali mijoz
-    yozgan xabar admin(lar)ga yuborilganda, tepasidagi tugma - to'g'ridan-
-    to'g'ri mijoz bilan yozishmoq uchun."""
+def contact_message_admin_keyboard(message_id: int, user_id: int | None = None) -> InlineKeyboardMarkup:
+    """29-avgust: Mini App'dagi "💬 Operatorga yozish" bo'limi orqali mijoz
+    yozgan xabar admin(lar)ga yuborilganda tugmalar - "✅ Bajarildi" bilan
+    murojaatni to'g'ridan-to'g'ri chatdan yopish mumkin (admin panelda
+    "💬 Murojaatlar" bo'limida ham ko'rinadi, ishi bitmaguncha "ochiq"
+    ro'yxatda turadi), va mijoz bilan to'g'ridan-to'g'ri yozishmoq uchun."""
     builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Bajarildi", callback_data=f"resolve_contact:{message_id}")
     _add_contact_button(builder, user_id)
     builder.adjust(1)
     return builder.as_markup()

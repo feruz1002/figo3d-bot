@@ -15,13 +15,46 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     -webkit-tap-highlight-color: transparent; }
   #app { min-height: 100vh; padding-bottom: 40px; }
-  header { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 12px 14px 0; }
-  header h1 { margin: 0 0 10px; font-size: 19px; font-weight: 700; }
-  #tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; scrollbar-width: none; }
-  #tabs::-webkit-scrollbar { display: none; }
+  header { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 12px 58px 4px 14px; }
+  header h1 { margin: 0 0 4px; font-size: 19px; font-weight: 700; }
+  #current-tab-label { color: var(--hint); font-size: 13px; font-weight: 500; }
   .tab { flex: none; border: none; border-radius: 999px; padding: 8px 14px; background: var(--secondary-bg);
     color: var(--text); font-size: 13.5px; font-weight: 500; }
   .tab.active { background: var(--button); color: var(--button-text); }
+
+  /* ---------- 29-avgust: yuqoridagi tab'lar o'rniga o'ng tomondan
+     chiqadigan (slide-out) menyu - "ko'rinadigan/ko'rinmaydigan qilish"
+     imkoniyati ☰ tugmasi orqali. Mijozlar Mini App'idagi chap menyuga
+     o'xshash, faqat OYNA O'NG TOMONDAN chiqadi. ---------- */
+  #menu-toggle {
+    position: fixed; top: 14px; right: 12px; z-index: 26; width: 38px; height: 38px;
+    border: none; border-radius: 10px; background: var(--secondary-bg); color: var(--text);
+    font-size: 18px; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  #sidebar-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 24;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+  }
+  #sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
+  #sidebar {
+    position: fixed; top: 0; bottom: 0; right: 0; width: 78%; max-width: 300px; z-index: 25;
+    background: var(--bg); box-shadow: -2px 0 18px rgba(0,0,0,0.2);
+    transform: translateX(100%); transition: transform 0.22s ease;
+    overflow-y: auto; padding: 16px 0 20px;
+  }
+  #sidebar.open { transform: translateX(0); }
+  #sidebar .sidebar-title { font-size: 17px; font-weight: 700; padding: 4px 18px 14px; }
+  .sidebar-item {
+    display: flex; align-items: center; width: 100%; border: none; background: transparent;
+    color: var(--text); font-size: 15px; font-weight: 500; padding: 13px 18px; text-align: left;
+  }
+  .sidebar-item.active { background: var(--secondary-bg); font-weight: 700; }
+  .sidebar-item:active { background: var(--secondary-bg); }
+  .sidebar-item .badge {
+    margin-left: auto; background: #ff3b30; color: #fff; font-size: 11px; font-weight: 700;
+    border-radius: 999px; padding: 2px 7px; min-width: 18px; text-align: center;
+  }
   #content { padding: 4px 14px 20px; }
   .empty { text-align: center; color: var(--hint); padding: 50px 20px; font-size: 15px; }
   .card { background: var(--secondary-bg); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
@@ -61,10 +94,16 @@
 </style>
 </head>
 <body>
+<button id="menu-toggle">☰</button>
+<div id="sidebar-backdrop"></div>
+<nav id="sidebar">
+  <div class="sidebar-title">🛠 Bo'limlar</div>
+  <div id="sidebar-items"></div>
+</nav>
 <div id="app">
   <header>
     <h1>🛠 Boshqaruv paneli</h1>
-    <div id="tabs"></div>
+    <div id="current-tab-label"></div>
   </header>
   <main id="content"></main>
 </div>
@@ -170,6 +209,8 @@
     { key: "orders", label: "📦 Buyurtmalar" },
     { key: "custom", label: "🎨 Shaxsiy" },
     { key: "topups", label: "💰 To'ldirish" },
+    { key: "contacts", label: "💬 Murojaatlar" },
+    { key: "customers", label: "👥 Mijozlar" },
     { key: "products", label: "🗂 Mahsulotlar" },
     { key: "announcements", label: "📰 Yangiliklar" },
     { key: "stats", label: "📊 Statistika" },
@@ -180,18 +221,42 @@
   // formani ochadi (pastdagi "fab".onclick'ga qarang).
   var FAB_TABS = { products: true, announcements: true };
 
-  function renderTabs() {
-    var el = document.getElementById("tabs");
-    el.innerHTML = "";
-    TABS.forEach(function (t) {
-      var btn = document.createElement("button");
-      btn.className = "tab" + (t.key === activeTab ? " active" : "");
-      btn.textContent = t.label;
-      btn.onclick = function () { activeTab = t.key; renderTabs(); loadActiveTab(); };
-      el.appendChild(btn);
+  // ---------- 29-avgust: o'ng tomondan chiqadigan menyu ----------
+  function renderSidebarNav() {
+    var el = document.getElementById("sidebar-items");
+    el.innerHTML = TABS.map(function (t) {
+      return '<button class="sidebar-item' + (t.key === activeTab ? " active" : "") + '" data-tab="' + t.key + '">' + t.label + '</button>';
+    }).join("");
+    el.querySelectorAll("[data-tab]").forEach(function (btn) {
+      btn.onclick = function () {
+        activeTab = btn.getAttribute("data-tab");
+        closeSidebar();
+        renderSidebarNav();
+        updateCurrentTabLabel();
+        document.getElementById("fab").style.display = FAB_TABS[activeTab] ? "block" : "none";
+        loadActiveTab();
+      };
     });
-    document.getElementById("fab").style.display = FAB_TABS[activeTab] ? "block" : "none";
   }
+
+  function updateCurrentTabLabel() {
+    var t = TABS.filter(function (x) { return x.key === activeTab; })[0];
+    document.getElementById("current-tab-label").textContent = t ? t.label : "";
+  }
+
+  function openSidebar() {
+    document.getElementById("sidebar").classList.add("open");
+    document.getElementById("sidebar-backdrop").classList.add("open");
+  }
+  function closeSidebar() {
+    document.getElementById("sidebar").classList.remove("open");
+    document.getElementById("sidebar-backdrop").classList.remove("open");
+  }
+  document.getElementById("menu-toggle").onclick = function () {
+    var sidebar = document.getElementById("sidebar");
+    if (sidebar.classList.contains("open")) closeSidebar(); else openSidebar();
+  };
+  document.getElementById("sidebar-backdrop").onclick = closeSidebar;
 
   function loadActiveTab() {
     var content = document.getElementById("content");
@@ -199,6 +264,8 @@
     if (activeTab === "orders") loadOrders();
     else if (activeTab === "custom") loadCustomOrders();
     else if (activeTab === "topups") loadTopups();
+    else if (activeTab === "contacts") loadContactMessages();
+    else if (activeTab === "customers") loadCustomers();
     else if (activeTab === "products") loadProducts();
     else if (activeTab === "announcements") loadAnnouncements();
     else if (activeTab === "stats") loadStats();
@@ -522,6 +589,223 @@
     });
   }
 
+  // ---------- Murojaatlar/arizalar (29-avgust) ----------
+  // Mijoz Mini App'dagi "💬 Operatorga yozish" orqali yozgan xabarlar -
+  // ishi bitmaguncha "💬 Ochiq" tabida ko'rinib turadi, "✅ Bajarildi"
+  // bosilgach "✅ Bajarilgan" arxiviga o'tadi (xuddi shaxsiy buyurtmalar
+  // kabi - foydalanuvchi so'rovi: "ariza haqidagi ma'lumot ishi
+  // bitmaguncha admin panelda ko'rinishi kerak").
+  var CONTACT_STAGES = [
+    { key: "open", label: "💬 Ochiq" },
+    { key: "resolved", label: "✅ Bajarilgan" },
+  ];
+  var activeContactStage = "open";
+
+  function loadContactMessages() {
+    var content = document.getElementById("content");
+    content.innerHTML =
+      '<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:10px;scrollbar-width:none">' +
+        CONTACT_STAGES.map(function (s) {
+          return '<button class="tab' + (s.key === activeContactStage ? " active" : "") + '" data-contact-stage="' + s.key + '" style="flex:none">' + s.label + '</button>';
+        }).join("") +
+      '</div>' +
+      '<div id="contact-stage-content"><div class="empty">Yuklanmoqda...</div></div>';
+    content.querySelectorAll("[data-contact-stage]").forEach(function (btn) {
+      btn.onclick = function () { activeContactStage = btn.getAttribute("data-contact-stage"); loadContactMessages(); };
+    });
+    loadContactStage(activeContactStage);
+  }
+
+  function loadContactStage(stage) {
+    var url = "/admin/api/contact_messages" + (stage === "resolved" ? "?resolved=1" : "");
+    api(url).then(function (r) {
+      if (activeTab !== "contacts" || activeContactStage !== stage) return;
+      var el = document.getElementById("contact-stage-content");
+      if (!el) return;
+      if (!r.ok) { el.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
+      var items = r.data.messages || [];
+      if (!items.length) {
+        el.innerHTML = '<div class="empty">' +
+          (stage === "resolved" ? "Hozircha bajarilgan murojaat yo'q." : "Hozircha ochiq murojaat yo'q. 🎉") +
+          '</div>';
+        return;
+      }
+      el.innerHTML = items.map(function (m) {
+        return (
+          '<div class="card" data-id="' + m.id + '">' +
+            '<div class="card-title">#' + m.id + ' — Foydalanuvchi ID: ' + m.user_id + '</div>' +
+            '<div class="card-line">' + escapeHtml(m.message) + '</div>' +
+            '<div class="card-line" style="opacity:.7">' + escapeHtml(m.created_at || "") + '</div>' +
+            (stage === "open" ? '<div class="card-actions"><button class="card-btn" data-action="resolve">✅ Bajarildi</button></div>' : "") +
+            contactLinkHtml(m.customer_username) +
+          '</div>'
+        );
+      }).join("");
+      wireContactButtons(el);
+      if (stage === "open") {
+        el.querySelectorAll('[data-action="resolve"]').forEach(function (btn) {
+          btn.onclick = function () {
+            var id = btn.closest(".card").getAttribute("data-id");
+            btn.disabled = true;
+            api("/admin/api/contact_messages/" + id + "/resolve", { method: "POST" }).then(function (r2) {
+              if (r2.ok) { showToast("✅ Bajarildi deb belgilandi"); loadContactStage(stage); }
+              else { btn.disabled = false; showToast("Xatolik yuz berdi."); }
+            });
+          };
+        });
+      }
+    });
+  }
+
+  // ---------- Mijozlar (29-avgust) ----------
+  // Qidiruv (ID/ism/telefon/username), to'liq ma'lumot (profil + buyurtma
+  // tarixi + hisob to'ldirish tarixi), profilni tahrirlash, hamyonni
+  // qo'lda tuzatish va bloklash/blokdan chiqarish - hammasi bitta joyda.
+  var customersSearchTimer = null;
+
+  function loadCustomers() {
+    var content = document.getElementById("content");
+    content.innerHTML =
+      '<div class="form-group" style="margin-bottom:10px">' +
+        '<input class="form-input" id="cust-search" placeholder="Telegram ID, ism, telefon yoki username bo\'yicha qidiring...">' +
+      '</div>' +
+      '<div id="customers-list"><div class="empty">Yuklanmoqda...</div></div>';
+    document.getElementById("cust-search").oninput = function () {
+      clearTimeout(customersSearchTimer);
+      customersSearchTimer = setTimeout(searchCustomers, 350);
+    };
+    searchCustomers();
+  }
+
+  function searchCustomers() {
+    var input = document.getElementById("cust-search");
+    var q = input ? input.value : "";
+    api("/admin/api/customers?q=" + encodeURIComponent(q)).then(function (r) {
+      if (activeTab !== "customers") return;
+      var el = document.getElementById("customers-list");
+      if (!el) return;
+      if (!r.ok) { el.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
+      var users = r.data.users || [];
+      if (!users.length) { el.innerHTML = '<div class="empty">Mijoz topilmadi.</div>'; return; }
+      el.innerHTML = users.map(function (u) {
+        var name = u.full_name || "(ism kiritilmagan)";
+        var blockedBadge = u.blocked ? ' <span style="color:#ff3b30;font-weight:700">🚫 Bloklangan</span>' : "";
+        return (
+          '<div class="card" data-uid="' + u.user_id + '" style="cursor:pointer">' +
+            '<div class="card-title">' + escapeHtml(name) + blockedBadge + '</div>' +
+            '<div class="card-line">ID: ' + u.user_id + (u.username ? ' · @' + escapeHtml(u.username) : '') + '</div>' +
+            '<div class="card-line">📱 ' + escapeHtml(u.phone || "—") + '</div>' +
+            '<div class="card-line">💰 ' + fmtPrice(u.balance || 0) + " so'm</div>" +
+          '</div>'
+        );
+      }).join("");
+      el.querySelectorAll("[data-uid]").forEach(function (card) {
+        card.onclick = function () { openCustomerDetail(Number(card.getAttribute("data-uid"))); };
+      });
+    });
+  }
+
+  function openCustomerDetail(userId) {
+    var overlay = document.getElementById("overlay");
+    overlay.innerHTML = '<div class="screen"><div class="empty">Yuklanmoqda...</div></div>';
+    overlay.classList.remove("hidden");
+    if (tg) tg.BackButton.show();
+    api("/admin/api/customers/" + userId).then(function (r) {
+      if (!r.ok) { overlay.innerHTML = '<div class="screen"><div class="empty">Yuklab bo\'lmadi.</div></div>'; return; }
+      renderCustomerDetail(overlay, r.data);
+    });
+  }
+
+  var TOPUP_STATUS_LABELS = {
+    "kutilmoqda": "🕓 Kutilmoqda",
+    "tasdiqlandi": "✅ Tasdiqlandi",
+    "rad etildi": "❌ Rad etildi",
+  };
+
+  function renderCustomerDetail(overlay, data) {
+    var p = data.profile;
+    var orders = data.orders || [];
+    var topups = data.topups || [];
+    var ordersHtml = orders.length
+      ? orders.map(function (o) {
+          var statusLabel = STATUS_LABELS[o.status] || o.status;
+          return '<div class="card-line">#' + o.id + ' — ' + fmtPrice(o.total_price) + " so'm — " + statusLabel + '</div>';
+        }).join("")
+      : '<div class="card-line">Hali buyurtma yo\'q.</div>';
+    var topupsHtml = topups.length
+      ? topups.map(function (t) {
+          var statusLabel = TOPUP_STATUS_LABELS[t.status] || t.status;
+          var amt = (t.approved_amount != null) ? t.approved_amount : t.amount;
+          return '<div class="card-line">#' + t.id + ' — ' + fmtPrice(amt) + " so'm — " + statusLabel + '</div>';
+        }).join("")
+      : '<div class="card-line">Hali so\'rov yo\'q.</div>';
+
+    overlay.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">👤 Mijoz #' + p.user_id + (p.username ? ' (@' + escapeHtml(p.username) + ')' : '') + '</div>' +
+
+        '<div class="form-group"><label class="form-label">Ism-familiya</label><input class="form-input" id="cd-name" value="' + escapeHtml(p.full_name || "") + '"></div>' +
+        '<div class="form-group"><label class="form-label">Telefon</label><input class="form-input" id="cd-phone" value="' + escapeHtml(p.phone || "") + '"></div>' +
+        '<div class="form-group"><label class="form-label">Manzil</label><input class="form-input" id="cd-address" value="' + escapeHtml(p.address || "") + '"></div>' +
+        '<button class="card-btn" id="cd-save-profile" style="margin-bottom:16px">✅ Ma\'lumotlarni saqlash</button>' +
+
+        '<div class="card">' +
+          '<div class="card-title">💰 Hamyon: ' + fmtPrice(p.balance || 0) + " so'm</div>" +
+          '<div class="form-group" style="margin:10px 0 8px"><label class="form-label">Tuzatish summasi (manfiy son = ayirish)</label>' +
+            '<input class="form-input" id="cd-delta" type="number" inputmode="numeric" placeholder="Masalan: 50000 yoki -20000"></div>' +
+          '<div class="form-group" style="margin-bottom:0"><label class="form-label">Izoh (ixtiyoriy, mijozga ko\'rinadi)</label><input class="form-input" id="cd-note"></div>' +
+          '<div class="card-actions"><button class="card-btn" id="cd-adjust">✅ Qo\'llash</button></div>' +
+        '</div>' +
+
+        '<div class="card"><div class="card-title">📦 Buyurtmalar</div>' + ordersHtml + '</div>' +
+        '<div class="card"><div class="card-title">💳 Hisob to\'ldirish tarixi</div>' + topupsHtml + '</div>' +
+
+        '<button class="card-btn' + (p.blocked ? '' : ' danger') + '" id="cd-block" style="margin-top:6px">' +
+          (p.blocked ? "✅ Blokdan chiqarish" : "🚫 Bloklash") +
+        '</button>' +
+      '</div>';
+
+    document.getElementById("cd-save-profile").onclick = function () {
+      var btn = document.getElementById("cd-save-profile");
+      btn.disabled = true;
+      api("/admin/api/customers/" + p.user_id + "/profile", {
+        method: "POST",
+        body: JSON.stringify({
+          full_name: document.getElementById("cd-name").value.trim(),
+          phone: document.getElementById("cd-phone").value.trim(),
+          address: document.getElementById("cd-address").value.trim(),
+        }),
+      }).then(function (r) {
+        btn.disabled = false;
+        if (r.ok) showToast("Saqlandi ✅"); else showToast("Xatolik yuz berdi.");
+      });
+    };
+
+    document.getElementById("cd-adjust").onclick = function () {
+      var delta = parseInt(document.getElementById("cd-delta").value, 10);
+      var note = document.getElementById("cd-note").value.trim();
+      if (!delta) { showToast("Iltimos, summani to'g'ri kiriting."); return; }
+      var btn = document.getElementById("cd-adjust");
+      btn.disabled = true;
+      api("/admin/api/balance_adjust", { method: "POST", body: JSON.stringify({ user_id: p.user_id, delta: delta, note: note || null }) }).then(function (r) {
+        btn.disabled = false;
+        if (r.ok) { showToast("✅ Balans yangilandi: " + fmtPrice(r.data.new_balance) + " so'm"); openCustomerDetail(p.user_id); }
+        else showToast("Xatolik yuz berdi.");
+      });
+    };
+
+    document.getElementById("cd-block").onclick = function () {
+      var newBlocked = !p.blocked;
+      var btn = document.getElementById("cd-block");
+      btn.disabled = true;
+      api("/admin/api/customers/" + p.user_id + "/block", { method: "POST", body: JSON.stringify({ blocked: newBlocked }) }).then(function (r) {
+        btn.disabled = false;
+        if (r.ok) { showToast(newBlocked ? "🚫 Bloklandi" : "✅ Blokdan chiqarildi"); openCustomerDetail(p.user_id); }
+        else showToast("Xatolik yuz berdi.");
+      });
+    };
+  }
+
   // ---------- Mahsulotlar ----------
   // MUHIM: state.categories endi {name, subcategories: [...]} obyektlar
   // ro'yxati (webapp_api.py'dagi /api/catalog javobi 27-avgustda shunga
@@ -841,11 +1125,13 @@
       '<div class="lockscreen"><div class="icon">🔒</div><h2>Kirish taqiqlangan</h2>' +
       '<p style="color:var(--hint);font-size:14.5px">Bu panel faqat ruxsat etilgan adminlar uchun.</p></div>';
     document.getElementById("fab").style.display = "none";
+    document.getElementById("menu-toggle").style.display = "none";
   }
 
   api("/admin/api/orders?open=1").then(function (r) {
     if (r.status === 401) { showLocked(); return; }
-    renderTabs();
+    renderSidebarNav();
+    updateCurrentTabLabel();
     loadActiveTab();
   });
 })();

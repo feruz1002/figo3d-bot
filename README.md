@@ -543,6 +543,43 @@ adminlarga) Telegram orqali yetib boradi, ostida "💬 Mijoz bilan
 bog'lanish" tugmasi bilan (to'g'ridan-to'g'ri mijozning shaxsiy chatiga
 o'tish uchun, agar @username saqlangan bo'lsa).
 
+**Yangilandi (29-avgust, 2-marta):** murojaat endi bazaga ham saqlanadi
+va admin panelning yangi **"💬 Murojaatlar"** bo'limida ko'rinadi — "💬
+Ochiq" tabida ishi bitmaguncha turadi, "✅ Bajarildi" bosilgach (admin
+panelning o'zidan yoki chatdagi tasdiqlash xabaridagi tugmadan) "✅
+Bajarilgan" arxiviga o'tadi. Shu bilan hech qanday murojaat "yo'qolib"
+qolmaydi — chatdagi xabarni ko'rmay qolgan taqdiringizda ham keyinroq
+admin panelga kirib, hali javobsiz murojaatlarni ko'rishingiz mumkin.
+
+### ✅ Admin panelga "👥 Mijozlar" bo'limi qo'shildi (29-avgust)
+
+Endi admin panelda mijozlar haqida to'liq ma'lumot bitta joyda:
+
+- **Qidiruv** — Telegram ID, ism, telefon yoki username bo'yicha (bo'sh
+  qoldirsangiz — so'nggi faol mijozlar ro'yxati chiqadi)
+- Mijoz kartasini bosganda **to'liq profil** ochiladi: ism, telefon,
+  manzil (bu yerdan **tahrirlash** ham mumkin — masalan mijoz noto'g'ri
+  kiritgan yoki telefon orqali kelishib yangilash kerak bo'lsa)
+- **💰 Hamyon** — joriy balans va uni to'g'ridan-to'g'ri shu yerdan qo'lda
+  tuzatish (musbat = qo'shish, manfiy = ayirish, izoh bilan)
+- **📦 Buyurtmalar tarixi** va **💳 Hisob to'ldirish tarixi** — mijozning
+  barcha o'tgan buyurtmalari va to'ldirish so'rovlari (holati bilan)
+- **🚫 Bloklash / ✅ Blokdan chiqarish** — bitta tugma bilan. Bloklangan
+  mijoz endi: buyurtma bera olmaydi, savatga mahsulot qo'sha olmaydi,
+  hamyonini to'ldira olmaydi va operatorga murojaat yubora olmaydi (lekin
+  katalogni ko'rishi va profilini ko'rishi mumkin — to'liq "qulflash"
+  emas, faqat xarid/to'lov amallari to'xtatiladi). Bloklash/blokdan
+  chiqarishda mijozga avtomatik xabar boradi.
+
+### ✅ Admin panel menyusi — endi o'ng tomondan chiqadigan oyna (29-avgust)
+
+Avval bo'limlar (Buyurtmalar, Shaxsiy, To'ldirish va h.k.) tepada
+gorizontal tugmalar qatorida edi. Endi ular **☰** tugmasi (yuqori o'ng
+burchakda) orqali ochiladigan, o'ng tomondan chiqadigan chiroyli menyu
+oynasida — bosilganda ro'yxat ochiladi, bo'lim tanlansa avtomatik yopiladi.
+Tashqarisiga bossangiz yoki ☰ ni qayta bossangiz — yopiladi. Joriy ochiq
+bo'lim nomi sarlavha ostida doim ko'rinib turadi.
+
 ### Mahsulot qo'shish/o'chirish — endi kod bilan ishlash SHART EMAS
 
 **Bu eng muhim o'zgarish.** Avval mahsulot va rasmlarni qo'shish uchun

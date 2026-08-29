@@ -205,6 +205,27 @@ async def custom_order_contacted(callback: CallbackQuery):
     await callback.answer("Belgilandi")
 
 
+@admin_router.callback_query(F.data.startswith("resolve_contact:"))
+async def resolve_contact_message(callback: CallbackQuery):
+    """29-avgust: mijoz murojaatini ("💬 Operatorga yozish") to'g'ridan-
+    to'g'ri chatdagi "✅ Bajarildi" tugmasi orqali yopish - admin panelning
+    "💬 Murojaatlar" bo'limidagi tugma bilan bir xil natijaga olib keladi
+    (db.resolve_contact_message)."""
+    if not _is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+
+    message_id = int(callback.data.split(":", 1)[1])
+    ok = await db.resolve_contact_message(message_id)
+    if not ok:
+        await callback.answer("Bu murojaat allaqachon bajarilgan yoki topilmadi", show_alert=True)
+        return
+
+    old_text = callback.message.html_text or ""
+    await callback.message.edit_text(old_text + "\n\n✅ Bajarildi")
+    await callback.answer("Belgilandi")
+
+
 @admin_router.callback_query(F.data.startswith("topup_approve:"))
 async def topup_approve(callback: CallbackQuery, bot: Bot):
     if not _is_admin(callback.from_user.id):

@@ -272,6 +272,117 @@ async def api_admin_balance_adjust(request: web.Request):
     return web.json_response({"ok": True, "new_balance": new_balance})
 
 
+# ---------- Mijoz murojaatlari / arizalar (29-avgust) ----------
+# Mijoz Mini App'dagi "💬 Operatorga yozish" orqali yozgan xabarlar - ishi
+# bitmaguncha ("ochiq") shu yerda ko'rinib turadi (webapp_api.api_contact_message
+# xabarni yaratadi, admin uni shu yerdan yoki chatdagi "✅ Bajarildi"
+# tugmasi orqali yopadi - handlers/admin.py'ga qarang).
+
+async def api_admin_contact_messages(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    status = "yopilgan" if request.query.get("resolved") == "1" else "ochiq"
+    messages = await db.get_contact_messages(status=status, limit=100)
+    return web.json_response({"messages": messages})
+
+
+async def api_admin_contact_message_resolve(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        message_id = int(request.match_info["message_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    ok = await db.resolve_contact_message(message_id)
+    if not ok:
+        return web.json_response({"error": "not_found_or_already_resolved"}, status=404)
+    return web.json_response({"ok": True})
+
+
+# ---------- Mijozlar (admin panel "👥 Mijozlar" bo'limi, 29-avgust) ----------
+# Qidiruv (ID/ism/telefon/username bo'yicha), to'liq ma'lumot (profil +
+# buyurtmalar + hisob to'ldirish tarixi), profilni tahrirlash va
+# bloklash/blokdan chiqarish.
+
+async def api_admin_customers_search(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    query = request.query.get("q", "")
+    users = await db.search_users(query, limit=30)
+    return web.json_response({"users": users})
+
+
+async def api_admin_customer_detail(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        user_id = int(request.match_info["user_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    profile = await db.get_user_profile(user_id)
+    if not profile:
+        return web.json_response({"error": "not_found"}, status=404)
+    orders = await db.get_user_orders(user_id, limit=20)
+    topups = await db.get_user_topup_history(user_id, limit=20)
+    return web.json_response({"profile": profile, "orders": orders, "topups": topups})
+
+
+async def api_admin_customer_profile_update(request: web.Request):
+    """Admin panelidan mijozning ism/telefon/manzilini TO'G'RIDAN-TO'G'RI
+    tahrirlash uchun (masalan mijoz noto'g'ri kiritgan yoki operator
+    telefon orqali kelishib, yangilashi kerak bo'lganda)."""
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        user_id = int(request.match_info["user_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    profile = await db.get_user_profile(user_id)
+    if not profile:
+        return web.json_response({"error": "not_found"}, status=404)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+
+    full_name = (body.get("full_name") or "").strip() or None
+    phone = (body.get("phone") or "").strip() or None
+    address = (body.get("address") or "").strip() or None
+    await db.upsert_user_profile(user_id, full_name=full_name, phone=phone, address=address)
+    return web.json_response({"ok": True})
+
+
+async def api_admin_customer_block(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        user_id = int(request.match_info["user_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    profile = await db.get_user_profile(user_id)
+    if not profile:
+        return web.json_response({"error": "not_found"}, status=404)
+
+    try:
+        body = await request.json()
+        blocked = bool(body.get("blocked"))
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+
+    await db.set_user_blocked(user_id, blocked)
+    try:
+        text = (
+            "🚫 Hisobingiz vaqtincha bloklandi. Savol bo'lsa, operator bilan bog'laning."
+            if blocked else
+            "✅ Hisobingiz blokdan chiqarildi — botdan qaytadan to'liq foydalanishingiz mumkin."
+        )
+        await request.app["bot"].send_message(user_id, text)
+    except Exception:
+        pass
+    return web.json_response({"ok": True, "blocked": blocked})
+
+
 async def api_admin_products(request: web.Request):
     if _authed_admin_id(request) is None:
         return _unauthorized()
@@ -457,6 +568,12 @@ def register_admin_routes(app: web.Application, admin_index_path: str):
     app.router.add_post("/admin/api/topups/{request_id}/approve", api_admin_topup_approve)
     app.router.add_post("/admin/api/topups/{request_id}/reject", api_admin_topup_reject)
     app.router.add_post("/admin/api/balance_adjust", api_admin_balance_adjust)
+    app.router.add_get("/admin/api/contact_messages", api_admin_contact_messages)
+    app.router.add_post("/admin/api/contact_messages/{message_id}/resolve", api_admin_contact_message_resolve)
+    app.router.add_get("/admin/api/customers", api_admin_customers_search)
+    app.router.add_get("/admin/api/customers/{user_id}", api_admin_customer_detail)
+    app.router.add_post("/admin/api/customers/{user_id}/profile", api_admin_customer_profile_update)
+    app.router.add_post("/admin/api/customers/{user_id}/block", api_admin_customer_block)
     app.router.add_get("/admin/api/products", api_admin_products)
     app.router.add_post("/admin/api/products", api_admin_product_create)
     app.router.add_post("/admin/api/products/{product_id}/delete", api_admin_product_delete)

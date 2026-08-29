@@ -121,6 +121,14 @@ CREATE TABLE IF NOT EXISTS announcements (
     photo_file_id TEXT,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS contact_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    message TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ochiq',
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -174,6 +182,11 @@ async def init_db():
         # summani alohida saqlaymiz, `amount` esa mijoz SO'RAGAN summa
         # bo'lib qolaveradi (admin_service.approve_topup'ga qarang).
         await _add_column_if_missing(conn, "topup_requests", "approved_amount INTEGER")
+        # 29-avgust: admin panelidagi "👥 Mijozlar" bo'limida mijozni
+        # bloklash/blokdan chiqarish uchun - bloklangan mijoz endi buyurtma
+        # bera olmaydi, hamyonini to'ldira olmaydi va operatorga murojaat
+        # yubora olmaydi (webapp_api.py'dagi _check_not_blocked'ga qarang).
+        await _add_column_if_missing(conn, "users", "blocked INTEGER NOT NULL DEFAULT 0")
 
         # Baza bo'sh bo'lsa (bot birinchi marta ishga tushganda) - namuna
         # mahsulotlar bilan to'ldiramiz, shunda katalog darhol bo'sh bo'lib
@@ -845,6 +858,19 @@ async def get_pending_topup_requests(limit: int = 50):
         return [dict(r) for r in rows]
 
 
+async def get_user_topup_history(user_id: int, limit: int = 30) -> list:
+    """29-avgust: admin panelidagi "👥 Mijozlar" bo'limida bitta mijozning
+    hisob to'ldirish tarixini ko'rsatish uchun (holatidan qat'i nazar -
+    kutilmoqda/tasdiqlandi/rad etildi hammasi)."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT * FROM topup_requests WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+            (user_id, limit),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
 async def get_open_custom_orders(limit: int = 50):
     """Admin panel uchun: hali "bog'lanildi" deb belgilanmagan shaxsiy
     buyurtma so'rovlari."""
@@ -877,6 +903,51 @@ async def get_all_user_ids() -> list:
         cursor = await conn.execute("SELECT user_id FROM users")
         rows = await cursor.fetchall()
         return [r["user_id"] for r in rows]
+
+
+# ---------- MIJOZLAR (admin panel "👥 Mijozlar" bo'limi uchun, 29-avgust) ----------
+
+async def search_users(query: str | None, limit: int = 30) -> list:
+    """Admin panelidagi mijoz qidiruvi uchun: agar `query` faqat raqamlardan
+    iborat bo'lsa - Telegram ID bo'yicha (aniq mos kelgan birinchi, keyin
+    qisman mos kelganlar), aks holda ism/telefon/username bo'yicha qisman
+    qidiradi. `query` bo'sh bo'lsa - so'nggi faol mijozlarni qaytaradi
+    (bo'lim birinchi ochilganda ro'yxat bo'sh bo'lib qolmasligi uchun)."""
+    q = (query or "").strip()
+    async with get_db_connection() as conn:
+        if not q:
+            cursor = await conn.execute(
+                "SELECT * FROM users ORDER BY updated_at DESC LIMIT ?", (limit,)
+            )
+        else:
+            # MUHIM (tuzatildi): AVVAL faqat raqamlardan iborat so'rov FAQAT
+            # Telegram ID bo'yicha qidirilardi - lekin telefon raqami ham
+            # faqat raqamlardan iborat bo'ladi, shuning uchun masalan
+            # "1112233" kiritilsa telefon mos kelsa ham topilmasdi. Endi HAR
+            # DOIM barcha maydonlar (ID, ism, telefon, username) bo'yicha
+            # birga qidiriladi, aniq ID mosligi esa tepaga chiqariladi.
+            like = f"%{q}%"
+            id_exact = int(q) if q.isdigit() else -1
+            cursor = await conn.execute(
+                "SELECT * FROM users WHERE CAST(user_id AS TEXT) LIKE ? OR full_name LIKE ? "
+                "OR phone LIKE ? OR username LIKE ? "
+                "ORDER BY (user_id = ?) DESC, updated_at DESC LIMIT ?",
+                (like, like, like, like, id_exact, limit),
+            )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def set_user_blocked(user_id: int, blocked: bool):
+    """Mijozni bloklaydi/blokdan chiqaradi - bloklangan mijoz endi
+    buyurtma bera olmaydi, hamyonini to'ldira olmaydi va operatorga
+    murojaat yubora olmaydi (webapp_api.py'dagi _check_not_blocked'ga
+    qarang), lekin katalogni ko'rishi va profilini ko'rishi mumkin."""
+    async with get_db_connection() as conn:
+        await conn.execute(
+            "UPDATE users SET blocked = ? WHERE user_id = ?", (1 if blocked else 0, user_id)
+        )
+        await conn.commit()
 
 
 async def get_customer_count() -> int:
@@ -1051,3 +1122,53 @@ async def delete_announcement(announcement_id: int):
     async with get_db_connection() as conn:
         await conn.execute("DELETE FROM announcements WHERE id = ?", (announcement_id,))
         await conn.commit()
+
+
+# ---------- Mijoz murojaatlari / arizalar (29-avgust: mijoz Mini App'dagi
+# "💬 Operatorga yozish" orqali yozgan xabarlar - admin panelda ishi
+# BITMAGUNCHA ("ochiq") ko'rinib turishi kerak, keyin "yopilgan" arxivga
+# o'tadi) ----------
+
+async def create_contact_message(user_id: int, message: str) -> int:
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "INSERT INTO contact_messages (user_id, message, status, created_at) VALUES (?, ?, 'ochiq', ?)",
+            (user_id, message, now),
+        )
+        await conn.commit()
+        return cursor.lastrowid
+
+
+async def get_contact_message(message_id: int):
+    async with get_db_connection() as conn:
+        cursor = await conn.execute("SELECT * FROM contact_messages WHERE id = ?", (message_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def get_contact_messages(status: str = "ochiq", limit: int = 100):
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT * FROM contact_messages WHERE status = ? ORDER BY id DESC LIMIT ?",
+            (status, limit),
+        )
+        rows = await cursor.fetchall()
+    # (deadlock'ning oldini olish uchun - get_all_orders'dagi izohga qarang)
+    return await _attach_customer_usernames([dict(r) for r in rows])
+
+
+async def resolve_contact_message(message_id: int) -> bool:
+    """Murojaatni "yopilgan" deb belgilaydi. Qaytaradi: True agar so'rov
+    topilib yangilangan bo'lsa, aks holda False (allaqachon yopilgan yoki
+    umuman mavjud emas). MUHIM: `_CursorWrapper` (turso_db.py) `rowcount`
+    xususiyatini taqdim etmaydi - shuning uchun UPDATE'dan OLDIN holatni
+    o'zimiz tekshiramiz (approve_topup'dagi kabi)."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute("SELECT status FROM contact_messages WHERE id = ?", (message_id,))
+        row = await cursor.fetchone()
+        if not row or row["status"] != "ochiq":
+            return False
+        await conn.execute("UPDATE contact_messages SET status = 'yopilgan' WHERE id = ?", (message_id,))
+        await conn.commit()
+        return True

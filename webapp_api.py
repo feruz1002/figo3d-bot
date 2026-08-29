@@ -38,6 +38,23 @@ def _authed_username(request: web.Request):
     return data["user"].get("username")
 
 
+async def _check_not_blocked(user_id: int):
+    """29-avgust: admin panelidagi "👥 Mijozlar" bo'limida bloklangan
+    mijozlar uchun - endi savat/buyurtma berish/hamyon to'ldirish/
+    operatorga murojaat yuborish kabi "faol" amallar to'xtatiladi (katalog
+    ko'rish va profilni ko'rish esa hamon ishlaydi - to'liq qulflab
+    qo'yish shart emas). Qaytaradi: None (bloklanmagan) yoki xato javobi
+    (web.Response) - chaqiruvchi shuni to'g'ridan-to'g'ri qaytarishi
+    kerak."""
+    profile = await db.get_user_profile(user_id)
+    if profile and profile.get("blocked"):
+        return web.json_response(
+            {"error": "blocked", "message": "Sizning hisobingiz bloklangan. Savol bo'lsa, operator bilan bog'laning."},
+            status=403,
+        )
+    return None
+
+
 async def api_catalog(request: web.Request):
     """MUHIM (27-avgust, "katalog ichida katalog" so'roviga javoban):
     `categories` endi oddiy matn ro'yxati emas, balki har biri o'z ichidagi
@@ -88,6 +105,9 @@ async def api_cart_set_qty(request: web.Request):
         return web.json_response({"error": "bad_request"}, status=400)
 
     if quantity > 0:
+        blocked_resp = await _check_not_blocked(user_id)
+        if blocked_resp is not None:
+            return blocked_resp
         product = await db.get_product_by_id(product_id)
         if not product:
             return web.json_response({"error": "not_found"}, status=404)
@@ -176,6 +196,9 @@ async def api_custom_order(request: web.Request):
     user_id = _authed_user_id(request)
     if user_id is None:
         return web.json_response({"error": "unauthorized"}, status=401)
+    blocked_resp = await _check_not_blocked(user_id)
+    if blocked_resp is not None:
+        return blocked_resp
 
     try:
         body = await request.json()
@@ -226,6 +249,9 @@ async def api_topup(request: web.Request):
     user_id = _authed_user_id(request)
     if user_id is None:
         return web.json_response({"error": "unauthorized"}, status=401)
+    blocked_resp = await _check_not_blocked(user_id)
+    if blocked_resp is not None:
+        return blocked_resp
 
     try:
         body = await request.json()
@@ -314,6 +340,9 @@ async def api_checkout(request: web.Request):
     user_id = _authed_user_id(request)
     if user_id is None:
         return web.json_response({"error": "unauthorized"}, status=401)
+    blocked_resp = await _check_not_blocked(user_id)
+    if blocked_resp is not None:
+        return blocked_resp
 
     try:
         body = await request.json()
@@ -424,10 +453,19 @@ async def api_contact_message(request: web.Request):
     OLMASDI). Shuning uchun Mini App ichida haqiqiy "operatorga yozish"
     formasi qo'shildi - shu endpoint orqali xabar to'g'ridan-to'g'ri
     adminlarga yetkaziladi (ular "💬 Mijoz bilan bog'lanish" tugmasi bilan
-    darhol javob yoza olishadi)."""
+    darhol javob yoza olishadi).
+
+    29-avgust: endi xabar BAZAGA HAM saqlanadi (avval faqat chatga
+    yuborilib, hech qayerda saqlanmasdi) va admin panelning "💬
+    Murojaatlar" bo'limida ishi bitmaguncha ("ochiq" holatda) ko'rinib
+    turadi - foydalanuvchi so'rovi: "ariza haqidagi ma'lumot admin panelda
+    ham ko'rinishi kerak, ishi bitmaguncha"."""
     user_id = _authed_user_id(request)
     if user_id is None:
         return web.json_response({"error": "unauthorized"}, status=401)
+    blocked_resp = await _check_not_blocked(user_id)
+    if blocked_resp is not None:
+        return blocked_resp
 
     try:
         body = await request.json()
@@ -439,6 +477,7 @@ async def api_contact_message(request: web.Request):
         return web.json_response({"error": "invalid_input"}, status=400)
 
     await db.remember_username(user_id, _authed_username(request))
+    message_id = await db.create_contact_message(user_id, text)
 
     bot = request.app["bot"]
     from keyboards import contact_message_admin_keyboard
@@ -446,13 +485,13 @@ async def api_contact_message(request: web.Request):
     profile = await db.get_user_profile(user_id)
     name_line = f" ({profile['full_name']})" if profile and profile["full_name"] else ""
     caption = (
-        f"💬 Mijozdan yangi murojaat{name_line}\n\n"
+        f"💬 Mijozdan yangi murojaat #{message_id}{name_line}\n\n"
         f"Foydalanuvchi ID: {user_id}\n\n"
         f"{text}"
     )
-    await notify_admins(bot, text=caption, reply_markup=contact_message_admin_keyboard(user_id))
+    await notify_admins(bot, text=caption, reply_markup=contact_message_admin_keyboard(message_id, user_id))
 
-    return web.json_response({"ok": True})
+    return web.json_response({"ok": True, "message_id": message_id})
 
 
 async def api_announcements(request: web.Request):
