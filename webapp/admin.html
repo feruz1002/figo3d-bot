@@ -436,32 +436,84 @@
   }
 
   // ---------- Hisob to'ldirish ----------
+  // MUHIM (29-avgust, foydalanuvchi so'rovi): skrinshotda/tranzaksiyada
+  // ko'rsatilgan summa mijoz botga yozgan summadan farq qilishi mumkin
+  // (kam/ko'p tushgan yoki tranzaksiyada xatolik bo'lgan) - shuning uchun
+  // "✅ Tasdiqlash" endi HAR DOIM shu kartadagi summani (dastlab so'ralgan
+  // summa bilan to'ldirilgan, lekin TAHRIRLANADIGAN input) yuboradi -
+  // admin kerak bo'lsa raqamni o'zgartirib, keyin tasdiqlaydi.
   function loadTopups() {
     api("/admin/api/topups").then(function (r) {
       var content = document.getElementById("content");
       if (!r.ok) { content.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
       var topups = r.data.topups || [];
-      if (!topups.length) { content.innerHTML = '<div class="empty">Kutilayotgan so\'rov yo\'q.</div>'; return; }
-      content.innerHTML = topups.map(function (t) {
-        return (
-          '<div class="card" data-id="' + t.id + '">' +
-            (t.screenshot_file_id ? '<img src="' + photoUrl(t.screenshot_file_id) + '" style="width:100%;border-radius:10px;margin-bottom:8px">' : '') +
-            '<div class="card-title">#' + t.id + ' — ' + fmtPrice(t.amount) + " so'm</div>" +
-            '<div class="card-line">Foydalanuvchi ID: ' + t.user_id + '</div>' +
-            '<div class="card-actions">' +
-              '<button class="card-btn" data-action="approve">✅ Tasdiqlash</button>' +
-              '<button class="card-btn danger" data-action="reject">❌ Rad etish</button>' +
-            '</div>' +
-          '</div>'
-        );
-      }).join("");
+      var manualHtml =
+        '<div class="card">' +
+          '<div class="card-title">🧾 Balansni qo\'lda tuzatish</div>' +
+          '<div class="card-line">Hisob to\'ldirish so\'roviga bog\'liq bo\'lmagan holda (masalan tranzaksiyada xatolik bo\'lib, so\'rov yaratilmagan bo\'lsa) mijozning hamyoniga to\'g\'ridan-to\'g\'ri pul qo\'shish/ayirish.</div>' +
+          '<div class="form-group" style="margin:10px 0 8px"><label class="form-label">Mijoz Telegram ID</label><input class="form-input" id="badj-uid" type="number" inputmode="numeric" placeholder="Masalan: 123456789"></div>' +
+          '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Summasi (manfiy son = ayirish)</label><input class="form-input" id="badj-delta" type="number" inputmode="numeric" placeholder="Masalan: 50000 yoki -20000"></div>' +
+          '<div class="form-group" style="margin-bottom:0"><label class="form-label">Izoh (ixtiyoriy, mijozga ko\'rinadi)</label><input class="form-input" id="badj-note" placeholder="Masalan: tranzaksiyadagi xatolik uchun"></div>' +
+          '<div class="card-actions"><button class="card-btn" id="badj-submit">✅ Qo\'llash</button></div>' +
+        '</div>';
+
+      if (!topups.length) {
+        content.innerHTML = manualHtml + '<div class="empty">Kutilayotgan so\'rov yo\'q.</div>';
+      } else {
+        content.innerHTML = manualHtml + topups.map(function (t) {
+          return (
+            '<div class="card" data-id="' + t.id + '">' +
+              (t.screenshot_file_id ? '<img src="' + photoUrl(t.screenshot_file_id) + '" style="width:100%;border-radius:10px;margin-bottom:8px">' : '') +
+              '<div class="card-title">#' + t.id + ' — mijoz so\'ragan: ' + fmtPrice(t.amount) + " so'm</div>" +
+              '<div class="card-line">Foydalanuvchi ID: ' + t.user_id + '</div>' +
+              '<div class="form-group" style="margin:8px 0 0"><label class="form-label">Tasdiqlanadigan summa (kerak bo\'lsa o\'zgartiring)</label>' +
+                '<input class="form-input" data-amount-input value="' + t.amount + '" type="number" inputmode="numeric"></div>' +
+              '<div class="card-actions">' +
+                '<button class="card-btn" data-action="approve">✅ Tasdiqlash</button>' +
+                '<button class="card-btn danger" data-action="reject">❌ Rad etish</button>' +
+              '</div>' +
+            '</div>'
+          );
+        }).join("");
+      }
+
+      document.getElementById("badj-submit").onclick = function () {
+        var uid = parseInt(document.getElementById("badj-uid").value, 10);
+        var delta = parseInt(document.getElementById("badj-delta").value, 10);
+        var note = document.getElementById("badj-note").value.trim();
+        if (!uid || !delta) { showToast("Iltimos, Telegram ID va summani to'g'ri kiriting."); return; }
+        var btn = document.getElementById("badj-submit");
+        btn.disabled = true;
+        api("/admin/api/balance_adjust", { method: "POST", body: JSON.stringify({ user_id: uid, delta: delta, note: note || null }) })
+          .then(function (r) {
+            btn.disabled = false;
+            if (r.ok) {
+              showToast("✅ Balans yangilandi: " + fmtPrice(r.data.new_balance) + " so'm");
+              document.getElementById("badj-uid").value = "";
+              document.getElementById("badj-delta").value = "";
+              document.getElementById("badj-note").value = "";
+            } else if (r.data && r.data.error === "not_found") {
+              showToast("Bu ID botda topilmadi - mijoz hali botga /start bosmagan bo'lishi mumkin.");
+            } else {
+              showToast("Xatolik yuz berdi.");
+            }
+          });
+      };
+
       content.querySelectorAll('[data-action="approve"],[data-action="reject"]').forEach(function (btn) {
         btn.onclick = function () {
           var card = btn.closest(".card");
           var id = card.getAttribute("data-id");
           var action = btn.getAttribute("data-action");
+          var body = {};
+          if (action === "approve") {
+            var amountInput = card.querySelector("[data-amount-input]");
+            var amount = parseInt(amountInput.value, 10);
+            if (!amount || amount <= 0) { showToast("Iltimos, to'g'ri summa kiriting."); return; }
+            body.amount = amount;
+          }
           card.querySelectorAll(".card-btn").forEach(function (b) { b.disabled = true; });
-          api("/admin/api/topups/" + id + "/" + action, { method: "POST" }).then(function (r) {
+          api("/admin/api/topups/" + id + "/" + action, { method: "POST", body: JSON.stringify(body) }).then(function (r) {
             if (r.ok) { showToast(action === "approve" ? "Tasdiqlandi" : "Rad etildi"); loadTopups(); }
             else { card.querySelectorAll(".card-btn").forEach(function (b) { b.disabled = false; }); showToast("Xatolik yuz berdi."); }
           });

@@ -160,25 +160,81 @@ async def mark_custom_order_contacted(custom_order_id: int):
     return order, None
 
 
-async def approve_topup(request_id: int):
+async def approve_topup(request_id: int, amount: int | None = None):
     """Qaytaradi: (request, new_balance, None) muvaffaqiyatda, yoki
-    (None, None, sabab) - sabab "not_found" yoki "already_processed"."""
+    (None, None, sabab) - sabab "not_found", "already_processed" yoki
+    "invalid_amount".
+
+    MUHIM (29-avgust, foydalanuvchi so'rovi): `amount` berilsa - mijoz
+    SO'RAGAN summa (`req["amount"]`) o'rniga aynan SHU summa hamyonga
+    qo'shiladi. Bu skrinshotda/tranzaksiyada ko'rsatilgan summa so'ralgan
+    summadan farq qilganda (kam/ko'p tushgan yoki tranzaksiyada xatolik
+    bo'lganda) admin haqiqiy summani qo'lda kiritib tasdiqlashi uchun -
+    handlers/admin.py ("✏️ Boshqa summa") va admin_webapp_api.py'ga
+    qarang."""
     req = await db.get_topup_request(request_id)
     if not req:
         return None, None, "not_found"
     if req["status"] != "kutilmoqda":
         return None, None, "already_processed"
-    new_balance = await db.adjust_balance(req["user_id"], req["amount"])
-    await db.update_topup_status(request_id, "tasdiqlandi")
+
+    final_amount = req["amount"] if amount is None else amount
+    if not isinstance(final_amount, int) or final_amount <= 0:
+        return None, None, "invalid_amount"
+
+    new_balance = await db.adjust_balance(req["user_id"], final_amount)
+    await db.update_topup_status(request_id, "tasdiqlandi", approved_amount=final_amount)
+    req = dict(req)
+    req["approved_amount"] = final_amount
     return req, new_balance, None
 
 
 async def notify_customer_topup_approved(bot, req, new_balance):
+    approved = req.get("approved_amount") or req["amount"]
+    requested = req["amount"]
+    # Agar admin so'ralganidan FARQLI summa tasdiqlagan bo'lsa (masalan
+    # tranzaksiyada kam/ko'p tushgan) - mijoz nega summa farqli ekanini
+    # tushunishi uchun buni ANIQ aytib o'tamiz, jimgina qoldirmaymiz.
+    note = ""
+    if approved != requested:
+        note = (
+            f"\n\nℹ️ Siz {format_price(requested)} so'm so'ragan edingiz, "
+            f"lekin to'lov tafsilotlariga ko'ra {format_price(approved)} so'm tasdiqlandi. "
+            "Savol bo'lsa, operator bilan bog'laning."
+        )
     try:
         await bot.send_message(
             req["user_id"],
-            f"✅ Hisobingiz {format_price(req['amount'])} so'mga to'ldirildi!\n"
+            f"✅ Hisobingiz {format_price(approved)} so'mga to'ldirildi!{note}\n"
             f"💰 Joriy balans: {format_price(new_balance)} so'm",
+        )
+    except Exception:
+        pass
+
+
+async def manual_balance_adjust(user_id: int, delta: int, note: str | None = None):
+    """29-avgust: admin panelidan, HECH QANDAY topup so'roviga bog'liq
+    bo'lmagan holda, istalgan mijozning hamyoniga to'g'ridan-to'g'ri pul
+    qo'shish/ayirish uchun (masalan tranzaksiyada xatolik bo'lib, lekin
+    hech qanday so'rov yaratilmagan holatlar uchun). Faqat botni kamida
+    bir marta ko'rgan (users jadvalida yozuvi bor) foydalanuvchilar uchun
+    ishlaydi - tasodifiy/noto'g'ri ID kiritilganda xato qaytaradi.
+    Qaytaradi: (new_balance, None) yoki (None, "not_found")."""
+    profile = await db.get_user_profile(user_id)
+    if not profile:
+        return None, "not_found"
+    new_balance = await db.adjust_balance(user_id, delta)
+    return new_balance, None
+
+
+async def notify_customer_balance_adjusted(bot, user_id: int, delta: int, new_balance: int, note: str | None):
+    sign = "+" if delta >= 0 else "−"
+    note_line = f"\nIzoh: {note}" if note else ""
+    try:
+        await bot.send_message(
+            user_id,
+            f"💰 Hamyoningizga o'zgartirish kiritildi: {sign}{format_price(abs(delta))} so'm.{note_line}\n"
+            f"Joriy balans: {format_price(new_balance)} so'm",
         )
     except Exception:
         pass

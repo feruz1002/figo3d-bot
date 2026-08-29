@@ -168,6 +168,12 @@ async def init_db():
         # https://t.me/<username> havolasi ishlatiladi (remember_username'ga
         # qarang) - bu haqiqiy https havola bo'lgani uchun bloklanmaydi.
         await _add_column_if_missing(conn, "users", "username TEXT")
+        # 29-avgust: hisob to'ldirish so'rovini tasdiqlashda admin so'ralgan
+        # summani emas, HAQIQIY (tranzaksiyada ko'rinib turgan) summani
+        # qo'lda kiritishi mumkin bo'lishi uchun - shu asl (approved)
+        # summani alohida saqlaymiz, `amount` esa mijoz SO'RAGAN summa
+        # bo'lib qolaveradi (admin_service.approve_topup'ga qarang).
+        await _add_column_if_missing(conn, "topup_requests", "approved_amount INTEGER")
 
         # Baza bo'sh bo'lsa (bot birinchi marta ishga tushganda) - namuna
         # mahsulotlar bilan to'ldiramiz, shunda katalog darhol bo'sh bo'lib
@@ -809,11 +815,21 @@ async def get_topup_request(request_id: int):
         return dict(row) if row else None
 
 
-async def update_topup_status(request_id: int, status: str):
+async def update_topup_status(request_id: int, status: str, approved_amount: int | None = None):
+    """`approved_amount` - agar berilsa, admin so'ralgan summadan FARQLI
+    (masalan tranzaksiyada kam/ko'p tushgan) summani tasdiqlaganini
+    bildiradi - asl so'ralgan `amount` o'zgarishsiz qoladi, faqat shu
+    alohida ustunga yozib qo'yiladi (audit/tarix uchun)."""
     async with get_db_connection() as conn:
-        await conn.execute(
-            "UPDATE topup_requests SET status = ? WHERE id = ?", (status, request_id)
-        )
+        if approved_amount is not None:
+            await conn.execute(
+                "UPDATE topup_requests SET status = ?, approved_amount = ? WHERE id = ?",
+                (status, approved_amount, request_id),
+            )
+        else:
+            await conn.execute(
+                "UPDATE topup_requests SET status = ? WHERE id = ?", (status, request_id)
+            )
         await conn.commit()
 
 

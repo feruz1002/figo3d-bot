@@ -48,3 +48,10 @@ class AdminOrderStates(StatesGroup):
     """Admin buyurtmani "⚠️ Muammo" deb belgilaganda, sababni (izohni)
     chatda so'rab olish uchun (handlers/admin.py'ga qarang)."""
     waiting_problem_reason = State()
+
+
+class AdminTopupStates(StatesGroup):
+    """29-avgust: admin hisob to'ldirish so'rovini "✏️ Boshqa summa" bilan
+    tasdiqlayotganda, haqiqiy summani chatda so'rab olish uchun
+    (handlers/admin.py'ga qarang)."""
+    waiting_custom_amount = State()

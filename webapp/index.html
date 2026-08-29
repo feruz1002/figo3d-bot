@@ -230,6 +230,7 @@
     // 29-avgust: to'lov endi Mini App ICHIDA (checkout/topup ko'rinishlari) -
     // pastdagi maydonlar shu oqim uchun.
     paymentInfo: "", // /api/config'dan (hamyon to'ldirishda bank rekvizitlari uchun)
+    contactInfo: "", // /api/config'dan ("Operatorga yozish" ekranida ko'rsatiladi)
     checkoutForm: null, // {full_name, phone, address} - savat -> to'lov oralig'ida saqlanadi
     promo: null, // {code, discount_percent} - to'lov ekranida qo'llangan promo-kod
     topupPrefill: null, // to'lovda hamyon yetmagan summa - hamyon to'ldirish summasini oldindan to'ldirish uchun
@@ -291,13 +292,16 @@
   function photoUrl(fileId) { return "/api/photo/" + encodeURIComponent(fileId); }
 
   // ---------- Chap tomonlama menyu ----------
-  // MUHIM: "Mahsulotlar" va "Savat" - ichkarida allaqachon bor bo'lgan
-  // ko'rinishlarga (grid/cart) o'tkazadi, xolos. "Profil", "Buyurtmalar",
-  // "Shaxsiy buyurtmalar", "Yangiliklar" - yangi (o'z view'iga ega)
-  // bo'limlar, pastda VIEW_RENDERERS'ga qo'shilgan. "Chat" esa Mini App'ni
-  // yopib, mijozni ORQADA allaqachon ochiq turgan bot chatiga qaytaradi -
-  // bu yerda alohida yozishmoq oynasi QURILMAGAN (foydalanuvchi bilan
-  // kelishilganidek - eng sodda va eng ishonchli yo'l).
+  // MUHIM (29-avgust, TUZATILDI): ILGARI "Chat" bosilganda shunchaki Mini
+  // App'ni yopib (tg.close()), mijozni botning ORQADA turgan chatiga
+  // qaytarardi - lekin pastki chat tugmalari olib tashlangandan keyin
+  // (shu round'ning boshqa qismi) u yerda mijozdan erkin matnni ushlab
+  // adminga yo'naltiradigan HECH QANDAY handler yo'q edi, shuning uchun
+  // mijoz "murojaat yo'lay olmayapti" degan shikoyat qildi. Endi bu
+  // to'g'ridan-to'g'ri Mini App ICHIDA ishlaydigan "Operatorga yozish"
+  // formasiga almashtirildi (pastda VIEW_RENDERERS.contact) - xabar
+  // serverga (/api/contact_message) yuboriladi va ADMINGA Telegram orqali
+  // yetadi.
   var SIDEBAR_ITEMS = [
     { key: "profile", icon: "👤", label: "Profil" },
     { key: "grid", icon: "🗂", label: "Mahsulotlar" },
@@ -305,7 +309,7 @@
     { key: "cart", icon: "🛒", label: "Savat" },
     { key: "orders", icon: "📦", label: "Buyurtmalar" },
     { key: "announcements", icon: "📰", label: "Yangiliklar" },
-    { key: "chat", icon: "💬", label: "Chat" },
+    { key: "contact", icon: "💬", label: "Operatorga yozish" },
   ];
 
   function renderSidebar() {
@@ -334,18 +338,14 @@
 
   function onSidebarSelect(key) {
     closeSidebar();
-    if (key === "chat") {
-      if (tg) tg.close();
-      return;
-    }
     if (key === "grid") {
       navStack = [];
       render();
       return;
     }
-    // "cart"/"profile"/"orders"/"custom"/"announcements" - hammasi bitta
-    // umumiy naqsh: navStack'ga qo'shiladi, VIEW_RENDERERS orqali #overlay
-    // ichida ko'rsatiladi (xuddi mahsulot tafsiloti kabi).
+    // "cart"/"profile"/"orders"/"custom"/"announcements"/"contact" -
+    // hammasi bitta umumiy naqsh: navStack'ga qo'shiladi, VIEW_RENDERERS
+    // orqali #overlay ichida ko'rsatiladi (xuddi mahsulot tafsiloti kabi).
     pushView(key);
   }
   renderSidebar();
@@ -394,7 +394,10 @@
     // uchun - xato bo'lsa ham botni to'xtatib qo'ymaymiz, faqat
     // rekvizitlar bo'sh qoladi (topup ekrani buni alohida ko'rsatadi).
     return api("/api/config").then(function (r) {
-      if (r.ok) state.paymentInfo = (r.data && r.data.payment_info) || "";
+      if (r.ok) {
+        state.paymentInfo = (r.data && r.data.payment_info) || "";
+        state.contactInfo = (r.data && r.data.contact_info) || "";
+      }
     });
   }
 
@@ -1013,6 +1016,44 @@
       el.innerHTML = '<div class="screen"><div class="screen-title">📰 Yangiliklar</div>' + body + '</div>';
     });
   };
+
+  // ---------- Operatorga yozish (29-avgust: YANGI, "Chat" o'rniga) ----------
+  VIEW_RENDERERS.contact = function (el) {
+    el.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">💬 Operatorga yozish</div>' +
+        (state.contactInfo
+          ? '<div class="info-card"><div class="card-line">' + escapeHtml(state.contactInfo).replace(/\n/g, "<br>") + '</div></div>'
+          : "") +
+        '<div class="form-group"><label class="form-label">Xabaringiz</label>' +
+          '<textarea class="form-textarea" id="cm-text" placeholder="Savolingiz yoki murojaatingizni shu yerga yozing..." style="min-height:120px"></textarea></div>' +
+        '<div class="form-error hidden" id="cm-error"></div>' +
+        '<button class="page-cta" id="cm-submit">✅ Yuborish</button>' +
+      '</div>';
+    document.getElementById("cm-submit").onclick = submitContactMessage;
+  };
+
+  function submitContactMessage() {
+    var text = document.getElementById("cm-text").value.trim();
+    var errEl = document.getElementById("cm-error");
+    if (text.length < 3) {
+      errEl.textContent = "Iltimos, xabaringizni yozing.";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    errEl.classList.add("hidden");
+    var btn = document.getElementById("cm-submit");
+    btn.disabled = true; btn.textContent = "⏳ Yuborilmoqda...";
+    api("/api/contact_message", { method: "POST", body: JSON.stringify({ message: text }) }).then(function (r) {
+      if (r.ok) {
+        showToast("✅ Murojaatingiz operatorga yuborildi");
+        popView();
+      } else {
+        btn.disabled = false; btn.textContent = "✅ Yuborish";
+        showToast("Yuborib bo'lmadi. Qaytadan urinib ko'ring.");
+      }
+    });
+  }
 
   // ---------- Shaxsiy buyurtma (o'z rasmidan) ----------
   // MUHIM: bu yerdagi /api/custom_order endpoint ham avvaldan mavjud edi

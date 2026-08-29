@@ -414,6 +414,47 @@ async def api_request_checkout(request: web.Request):
     return web.json_response({"ok": True})
 
 
+async def api_contact_message(request: web.Request):
+    """29-avgust (foydalanuvchi so'rovi): mijoz "chat" tugmasini bosganda
+    adminga murojaat yubora OLMAYOTGAN edi - sababi, pastki chat tugmalari
+    olib tashlangandan keyin (28-avgust) mijoz botning oddiy chatida
+    yozadigan bo'lsa ham buni HECH KIM o'qib turmasdi (botda "erkin matn"ni
+    ushlab, adminga yo'naltiradigan handler UMUMAN YO'Q edi - eski "☎️
+    Aloqa" tugmasi ham faqat STATIK matn ko'rsatardi, mijozdan xabar
+    OLMASDI). Shuning uchun Mini App ichida haqiqiy "operatorga yozish"
+    formasi qo'shildi - shu endpoint orqali xabar to'g'ridan-to'g'ri
+    adminlarga yetkaziladi (ular "💬 Mijoz bilan bog'lanish" tugmasi bilan
+    darhol javob yoza olishadi)."""
+    user_id = _authed_user_id(request)
+    if user_id is None:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+
+    text = _valid_str(body.get("message"), 3)
+    if not text:
+        return web.json_response({"error": "invalid_input"}, status=400)
+
+    await db.remember_username(user_id, _authed_username(request))
+
+    bot = request.app["bot"]
+    from keyboards import contact_message_admin_keyboard
+
+    profile = await db.get_user_profile(user_id)
+    name_line = f" ({profile['full_name']})" if profile and profile["full_name"] else ""
+    caption = (
+        f"💬 Mijozdan yangi murojaat{name_line}\n\n"
+        f"Foydalanuvchi ID: {user_id}\n\n"
+        f"{text}"
+    )
+    await notify_admins(bot, text=caption, reply_markup=contact_message_admin_keyboard(user_id))
+
+    return web.json_response({"ok": True})
+
+
 async def api_announcements(request: web.Request):
     """Mini App'ning "📰 Yangiliklar" bo'limi uchun - admin panel orqali
     qo'shilgan e'lon/aksiyalar ro'yxati, eng yangisidan boshlab."""
@@ -473,4 +514,5 @@ def register_webapp_routes(app: web.Application, webapp_index_path: str):
     app.router.add_post("/api/checkout", api_checkout)
     app.router.add_post("/api/request_checkout", api_request_checkout)
     app.router.add_get("/api/announcements", api_announcements)
+    app.router.add_post("/api/contact_message", api_contact_message)
     app.router.add_get("/api/photo/{file_id}", api_photo)

@@ -490,6 +490,59 @@ qilganlarga emas) avtomatik Telegram xabari yuboriladi — e'lon matni va
 Agar kimdir botni bloklagan yoki hali `/start` bosmagan bo'lsa, xabar
 shunchaki o'sha birovga yetmaydi — qolganlarga to'sqinlik qilmaydi.
 
+### ✅ Hisob to'ldirishni tasdiqlashda summani qo'lda tuzatish (29-avgust)
+
+**Muammo:** mijoz "necha so'm to'ldirmoqchisiz" deb so'ralganda bir summa
+yozadi, lekin keyin bank kartasiga BOSHQA summa o'tkazishi mumkin (kam,
+ko'p, yoki tranzaksiyada xatolik bo'lib umuman noaniq bo'lishi mumkin) —
+avval "✅ Tasdiqlash" tugmasi HAR DOIM mijoz SO'RAGAN summani hamyonga
+qo'shardi, skrinshotda haqiqatda nima ko'rinishidan qat'i nazar.
+
+**Endi tuzatildi — 2 joyda:**
+
+- **Admin panel → "💰 To'ldirish" bo'limi:** har bir so'rov kartasida endi
+  summa maydoni bor — dastlab mijoz so'ragan summa bilan to'ldirilgan,
+  lekin siz uni skrinshotga qarab kerakli songa **o'zgartirib**, keyin
+  "✅ Tasdiqlash" bosishingiz mumkin. Aynan shu (tahrirlangan) summa
+  hamyonga qo'shiladi.
+- **Chatdagi tasdiqlash tugmalari:** "✅ Tasdiqlash" (bu hamon so'ralgan
+  summani to'liq tasdiqlaydi — mos kelgan holatlar uchun tezkor) yonida
+  endi **"✏️ Boshqa summa"** tugmasi ham bor — bosilganda bot "Necha so'm
+  tasdiqlaysiz?" deb so'raydi, siz raqam yozasiz, shu summa qo'shiladi.
+
+Ikkala usulda ham, agar tasdiqlangan summa mijoz so'raganidan farq qilsa,
+mijozga yuboriladigan xabarda bu **aniq tushuntiriladi** ("Siz X so'm
+so'ragan edingiz, lekin to'lov tafsilotlariga ko'ra Y so'm tasdiqlandi") —
+mijoz hayron qolib qolmasligi uchun.
+
+**Qo'shimcha: "🧾 Balansni qo'lda tuzatish"** — admin panelning "💰
+To'ldirish" bo'limi tepasida endi alohida mini-forma bor: istalgan
+mijozning Telegram ID'sini kiritib, istalgan summani (musbat = qo'shish,
+manfiy = ayirish) va ixtiyoriy izoh bilan hamyoniga TO'G'RIDAN-TO'G'RI
+ta'sir qilish mumkin — bu hech qanday hisob to'ldirish so'roviga bog'liq
+emas. Foydali holat: mijoz pul o'tkazgan, lekin biror sababga ko'ra bot
+orqali so'rov yaratilmagan yoki tranzaksiyada xatolik bo'lgan — shu orqali
+kompensatsiya qilib qo'yish mumkin. Mijozga bu haqda ham avtomatik xabar
+boradi.
+
+### ✅ "Operatorga yozish" — mijoz endi Mini App ichidan murojaat yubora oladi (29-avgust)
+
+**Muammo topildi:** pastki chat tugmalari olib tashlangandan keyin (yuqoriga
+qarang), Mini App sidebar'idagi "💬 Chat" tugmasi shunchaki ilovani yopib,
+mijozni botning oddiy chatiga qaytarardi — lekin u yerda mijoz yozgan erkin
+matnni "ushlab", sizga yo'naltiradigan HECH QANDAY mexanizm yo'q edi
+(eski "☎️ Aloqa" tugmasi ham faqat STATIK aloqa ma'lumotini ko'rsatardi,
+mijozdan xabar OLMASDI). Shuning uchun mijozlar "murojaat yubora
+olmayapman" deb shikoyat qilishgan — bu to'g'ri edi, funksiya haqiqatan
+ham yo'q edi.
+
+**Tuzatildi:** sidebar'dagi bu bo'lim endi **"💬 Operatorga yozish"** deb
+nomlangan va to'liq ishlaydigan forma — mijoz aloqa ma'lumotlarini ko'radi,
+xabarini yozadi, "✅ Yuborish"ni bosadi — xabar SHU ZAHOTI sizga (barcha
+adminlarga) Telegram orqali yetib boradi, ostida "💬 Mijoz bilan
+bog'lanish" tugmasi bilan (to'g'ridan-to'g'ri mijozning shaxsiy chatiga
+o'tish uchun, agar @username saqlangan bo'lsa).
+
 ### Mahsulot qo'shish/o'chirish — endi kod bilan ishlash SHART EMAS
 
 **Bu eng muhim o'zgarish.** Avval mahsulot va rasmlarni qo'shish uchun

@@ -299,8 +299,25 @@ def profile_keyboard() -> InlineKeyboardMarkup:
 
 
 def topup_admin_keyboard(request_id: int) -> InlineKeyboardMarkup:
+    # 29-avgust: "✏️ Boshqa summa" qo'shildi - skrinshotda/tranzaksiyada
+    # ko'rsatilgan summa mijoz SO'RAGAN summadan farq qilsa (kam/ko'p
+    # tushgan yoki tranzaksiyada xatolik bo'lsa), admin "✅ Tasdiqlash"ni
+    # (bu doim so'ralgan summani tasdiqlaydi) bosish o'rniga shu tugma
+    # orqali haqiqiy summani qo'lda kiritib tasdiqlashi mumkin
+    # (handlers/admin.py'ga qarang).
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Tasdiqlash", callback_data=f"topup_approve:{request_id}")
+    builder.button(text="✏️ Boshqa summa", callback_data=f"topup_custom_amount:{request_id}")
     builder.button(text="❌ Rad etish", callback_data=f"topup_reject:{request_id}")
-    builder.adjust(2)
+    builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def contact_message_admin_keyboard(user_id: int | None = None) -> InlineKeyboardMarkup:
+    """29-avgust: Mini App'dagi "💬 Chat"/"☎️ Aloqa" bo'limi orqali mijoz
+    yozgan xabar admin(lar)ga yuborilganda, tepasidagi tugma - to'g'ridan-
+    to'g'ri mijoz bilan yozishmoq uchun."""
+    builder = InlineKeyboardBuilder()
+    _add_contact_button(builder, user_id)
+    builder.adjust(1)
     return builder.as_markup()

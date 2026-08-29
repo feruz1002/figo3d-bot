@@ -14,14 +14,15 @@ ANIQ beriladi."""
 from html import escape as _html_escape
 
 from aiogram import Router, F, Bot
-from aiogram.filters import Command, CommandObject
+from aiogram.filters import Command, CommandObject, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 import admin_service
 import db
 from config import is_admin as _is_admin
-from handlers.states import AdminOrderStates
+from handlers.catalog import format_price
+from handlers.states import AdminOrderStates, AdminTopupStates
 from keyboards import (
     BTN_CANCEL,
     admin_order_archive_keyboard,
@@ -250,6 +251,72 @@ async def topup_reject(callback: CallbackQuery, bot: Bot):
 
     await admin_service.notify_customer_topup_rejected(bot, req)
     await callback.answer("Rad etildi")
+
+
+# ---------- 29-avgust: hisob to'ldirishni "boshqa summa" bilan tasdiqlash ----------
+# MUHIM: skrinshotda/tranzaksiyada ko'rsatilgan summa mijoz botga yozgan
+# summadan farq qilishi mumkin (kam/ko'p tushgan yoki tranzaksiyada
+# xatolik bo'lgan) - shu holatlarda "✅ Tasdiqlash" (bu doim so'ralgan
+# summani qo'shadi) o'rniga admin shu tugma orqali haqiqiy summani QO'LDA
+# kiritib tasdiqlaydi. Asl xabar (screenshot/caption) O'ZGARTIRILMAYDI -
+# tasdiqlangach, ALOHIDA yangi xabar bilan tasdiqlanadi (soddaroq va
+# ishonchliroq, xabarni tahrirlash uchun message_id/chat_id'ni FSM orqali
+# tashib yurish shart emas).
+@admin_router.callback_query(F.data.startswith("topup_custom_amount:"))
+async def topup_custom_amount_start(callback: CallbackQuery, state: FSMContext):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+
+    request_id = int(callback.data.split(":", 1)[1])
+    req = await db.get_topup_request(request_id)
+    if not req:
+        await callback.answer("So'rov topilmadi", show_alert=True)
+        return
+    if req["status"] != "kutilmoqda":
+        await callback.answer("Bu so'rov allaqachon ko'rib chiqilgan", show_alert=True)
+        return
+
+    await state.set_state(AdminTopupStates.waiting_custom_amount)
+    await state.update_data(request_id=request_id)
+    await callback.message.answer(
+        f"✏️ So'rov #{request_id} — mijoz {format_price(req['amount'])} so'm so'ragan edi.\n\n"
+        "Tranzaksiya/skrinshot asosida haqiqatda necha so'm tasdiqlaysiz? Raqam bilan yozing:",
+        reply_markup=cancel_only_keyboard(),
+    )
+    await callback.answer()
+
+
+@admin_router.message(F.text == BTN_CANCEL, StateFilter(AdminTopupStates))
+async def topup_custom_amount_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Bekor qilindi.", reply_markup=main_menu_keyboard(is_admin=True))
+
+
+@admin_router.message(AdminTopupStates.waiting_custom_amount)
+async def topup_custom_amount_submit(message: Message, state: FSMContext, bot: Bot):
+    text = (message.text or "").replace(" ", "").replace("so'm", "").strip()
+    if not text.isdigit() or int(text) <= 0:
+        await message.answer("Iltimos, faqat musbat son kiriting (masalan: 90000).")
+        return
+
+    data = await state.get_data()
+    request_id = data.get("request_id")
+    amount = int(text)
+    await state.clear()
+
+    req, new_balance, reason = await admin_service.approve_topup(request_id, amount=amount)
+    if req is None:
+        msg = "So'rov topilmadi" if reason == "not_found" else "Bu so'rov allaqachon ko'rib chiqilgan"
+        await message.answer(f"⚠️ {msg}.", reply_markup=main_menu_keyboard(is_admin=True))
+        return
+
+    await message.answer(
+        f"✅ So'rov #{request_id} — {format_price(amount)} so'm tasdiqlandi "
+        f"(mijoz {format_price(req['amount'])} so'm so'ragan edi).",
+        reply_markup=main_menu_keyboard(is_admin=True),
+    )
+    await admin_service.notify_customer_topup_approved(bot, req, new_balance)
 
 
 @admin_router.message(Command("promo"))

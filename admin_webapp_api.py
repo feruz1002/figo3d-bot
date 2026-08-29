@@ -194,18 +194,36 @@ async def api_admin_topups(request: web.Request):
 
 
 async def api_admin_topup_approve(request: web.Request):
+    """29-avgust: endi ixtiyoriy `amount` (JSON tanasida) qabul qiladi -
+    berilsa, mijoz SO'RAGAN summa o'rniga shu (admin qo'lda kiritgan)
+    summa hamyonga qo'shiladi. Bu skrinshotda/tranzaksiyada ko'rsatilgan
+    summa so'ralgandan farq qilganda (kam/ko'p tushgan yoki tranzaksiyada
+    xatolik bo'lganda) ishlatiladi - webapp/admin.html'dagi "💰 To'ldirish"
+    bo'limida har bir so'rov yonida summani TAHRIRLASH mumkin."""
     if _authed_admin_id(request) is None:
         return _unauthorized()
     try:
         request_id = int(request.match_info["request_id"])
     except ValueError:
         return web.json_response({"error": "bad_request"}, status=400)
-    req, new_balance, reason = await admin_service.approve_topup(request_id)
+
+    amount = None
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if body and body.get("amount") is not None:
+        try:
+            amount = int(body["amount"])
+        except (TypeError, ValueError):
+            return web.json_response({"error": "invalid_amount"}, status=400)
+
+    req, new_balance, reason = await admin_service.approve_topup(request_id, amount=amount)
     if req is None:
-        status = 409 if reason == "already_processed" else 404
+        status = 409 if reason == "already_processed" else (400 if reason == "invalid_amount" else 404)
         return web.json_response({"error": reason}, status=status)
     await admin_service.notify_customer_topup_approved(request.app["bot"], req, new_balance)
-    return web.json_response({"ok": True})
+    return web.json_response({"ok": True, "approved_amount": req["approved_amount"]})
 
 
 async def api_admin_topup_reject(request: web.Request):
@@ -221,6 +239,37 @@ async def api_admin_topup_reject(request: web.Request):
         return web.json_response({"error": reason}, status=status)
     await admin_service.notify_customer_topup_rejected(request.app["bot"], req)
     return web.json_response({"ok": True})
+
+
+async def api_admin_balance_adjust(request: web.Request):
+    """29-avgust: mijozning hamyoniga HECH QANDAY hisob to'ldirish
+    so'roviga bog'liq bo'lmagan holda to'g'ridan-to'g'ri pul qo'shish/
+    ayirish - masalan tranzaksiyada xatolik bo'lib, lekin mijoz botga
+    so'rov yubormagan (yoki so'rovi yo'qolgan/xato ketgan) holatlar uchun.
+    Faqat botni kamida bir marta ko'rgan (users jadvalida yozuvi bor)
+    foydalanuvchi ID'lari uchun ishlaydi."""
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+
+    try:
+        user_id = int(body.get("user_id"))
+        delta = int(body.get("delta"))
+    except (TypeError, ValueError):
+        return web.json_response({"error": "invalid_input"}, status=400)
+    if delta == 0:
+        return web.json_response({"error": "invalid_input"}, status=400)
+    note = (body.get("note") or "").strip() or None
+
+    new_balance, reason = await admin_service.manual_balance_adjust(user_id, delta, note)
+    if new_balance is None:
+        return web.json_response({"error": reason}, status=404)
+
+    await admin_service.notify_customer_balance_adjusted(request.app["bot"], user_id, delta, new_balance, note)
+    return web.json_response({"ok": True, "new_balance": new_balance})
 
 
 async def api_admin_products(request: web.Request):
@@ -407,6 +456,7 @@ def register_admin_routes(app: web.Application, admin_index_path: str):
     app.router.add_get("/admin/api/topups", api_admin_topups)
     app.router.add_post("/admin/api/topups/{request_id}/approve", api_admin_topup_approve)
     app.router.add_post("/admin/api/topups/{request_id}/reject", api_admin_topup_reject)
+    app.router.add_post("/admin/api/balance_adjust", api_admin_balance_adjust)
     app.router.add_get("/admin/api/products", api_admin_products)
     app.router.add_post("/admin/api/products", api_admin_product_create)
     app.router.add_post("/admin/api/products/{product_id}/delete", api_admin_product_delete)
