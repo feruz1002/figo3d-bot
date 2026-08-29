@@ -332,6 +332,76 @@ async def api_admin_task_toggle(request: web.Request):
     return web.json_response({"ok": True, "status": new_status})
 
 
+_KNOWN_SETTINGS = {
+    # 29-avgust (foydalanuvchi so'rovi): oldin faqat AI tekshiruvi uchun
+    # bo'lgan alohida on/off endpoint umumiy "Sozlamalar" tizimiga
+    # aylantirildi - kelajakda yana shunga o'xshash switch'lar shu yerga
+    # qo'shiladi (admin panelning "⚙️ Sozlamalar" bo'limiga qarang).
+    "ai_task_review_enabled": {
+        "label": "🤖 AI tekshiruvi (vazifa skrinshotlarini avtomatik baholaydi)",
+    },
+    "task_submission_chat_notify": {
+        "label": "🎯 Vazifa bajarilgani haqida chatga xabar kelsin",
+    },
+}
+
+
+async def api_admin_settings_list(request: web.Request):
+    """29-avgust: admin panel "⚙️ Sozlamalar" bo'limi uchun barcha
+    switch/toggle sozlamalarning joriy holatini qaytaradi. `api_key_configured`
+    - Render'da ANTHROPIC_API_KEY sozlanmagan bo'lsa, admin AI tekshiruvini
+    "yoqilgan" qilib qo'ysa ham u jimgina qo'lda rejimga tushib qolishini
+    oldindan tushuntirish uchun (ai_verify.py/webapp_api.api_task_submit'ga
+    qarang)."""
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    from config import ANTHROPIC_API_KEY
+    result = []
+    for key, meta in _KNOWN_SETTINGS.items():
+        value = await db.get_setting(key, "0")
+        result.append({"key": key, "label": meta["label"], "enabled": value == "1"})
+    return web.json_response({"settings": result, "ai_api_key_configured": bool(ANTHROPIC_API_KEY)})
+
+
+async def api_admin_settings_update(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+    key = body.get("key")
+    if key not in _KNOWN_SETTINGS:
+        return web.json_response({"error": "unknown_setting"}, status=400)
+    enabled = bool(body.get("enabled"))
+    await db.set_setting(key, "1" if enabled else "0")
+    return web.json_response({"ok": True, "key": key, "enabled": enabled})
+
+
+async def api_admin_ai_approved_task_submissions(request: web.Request):
+    """29-avgust: AI o'zi (adminsiz) avtomatik tasdiqlagan so'nggi
+    so'rovlar ro'yxati - tasodifiy tekshirib (audit) turish uchun. Bu
+    yerda hech qanday amal (tasdiqlash/rad etish) yo'q - faqat ko'rish."""
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    submissions = await db.get_recent_ai_approved_submissions(limit=100)
+    return web.json_response({"submissions": submissions})
+
+
+async def api_admin_task_submissions_pending_count(request: web.Request):
+    """29-avgust (foydalanuvchi so'rovi): admin chatida HAR BIR yuborilgan
+    vazifa uchun alohida xabar kelishi minglab vazifa bo'lganda chatni
+    to'ldirib tashlashi mumkin edi - shuning uchun endi yangi so'rov haqida
+    ALOHIDA CHAT XABARI umuman yuborilmaydi (webapp_api.api_task_submit'ga
+    qarang). Buning o'rniga admin panel sidebar'idagi "🎯 Vazifalar" yonida
+    shu son (badge) ko'rinadi - admin panelni ochib turgan holda darhol
+    nechta yangi so'rov borligini ko'radi."""
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    count = await db.count_pending_task_submissions()
+    return web.json_response({"count": count})
+
+
 async def api_admin_task_submissions(request: web.Request):
     if _authed_admin_id(request) is None:
         return _unauthorized()
@@ -517,6 +587,11 @@ async def api_admin_product_create(request: web.Request):
     name = (body.get("name") or "").strip()
     description = (body.get("description") or "").strip()
     photos = body.get("photos") or []
+    # 29-avgust (foydalanuvchi so'rovi): mahsulotga 3D model (STL) fayli
+    # havolasi - ixtiyoriy. Admin buyurtmani yig'ayotganda shu havoladan
+    # to'g'ridan-to'g'ri STL faylni yuklab olishi uchun (buyurtma
+    # kartochkasidagi "🧊 STL" tugmasiga qarang).
+    stl_url = (body.get("stl_url") or "").strip() or None
 
     try:
         price = int(body.get("price"))
@@ -546,7 +621,7 @@ async def api_admin_product_create(request: web.Request):
         except Exception:
             return web.json_response({"error": "photo_upload_failed"}, status=502)
 
-    product_id = await db.create_product(category, name, description, price, subcategory=subcategory)
+    product_id = await db.create_product(category, name, description, price, subcategory=subcategory, stl_url=stl_url)
     for position, file_id in enumerate(file_ids):
         await db.add_product_photo(product_id, file_id, position)
 
@@ -672,6 +747,10 @@ def register_admin_routes(app: web.Application, admin_index_path: str):
     app.router.add_get("/admin/api/tasks", api_admin_tasks)
     app.router.add_post("/admin/api/tasks", api_admin_task_create)
     app.router.add_post("/admin/api/tasks/{task_id}/toggle", api_admin_task_toggle)
+    app.router.add_get("/admin/api/task_submissions/pending_count", api_admin_task_submissions_pending_count)
+    app.router.add_get("/admin/api/settings", api_admin_settings_list)
+    app.router.add_post("/admin/api/settings", api_admin_settings_update)
+    app.router.add_get("/admin/api/task_submissions/ai_approved", api_admin_ai_approved_task_submissions)
     app.router.add_get("/admin/api/task_submissions", api_admin_task_submissions)
     app.router.add_post("/admin/api/task_submissions/{submission_id}/approve", api_admin_task_submission_approve)
     app.router.add_post("/admin/api/task_submissions/{submission_id}/reject", api_admin_task_submission_reject)

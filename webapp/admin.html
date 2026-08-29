@@ -240,12 +240,29 @@
     { key: "products", label: "🗂 Mahsulotlar" },
     { key: "announcements", label: "📰 Yangiliklar" },
     { key: "stats", label: "📊 Statistika" },
+    { key: "settings", label: "⚙️ Sozlamalar" },
   ];
   var activeTab = "orders";
   // FAB (➕) endi ikki bo'limda ham ishlaydi (Mahsulotlar - yangi mahsulot,
   // Yangiliklar - yangi e'lon) - qaysi bo'lim ochiq bo'lsa, o'shanga mos
   // formani ochadi (pastdagi "fab".onclick'ga qarang).
   var FAB_TABS = { products: true, announcements: true, tasks: true };
+
+  // 29-avgust (foydalanuvchi so'rovi): "🎯 Vazifalar" uchun ENDI chatga har
+  // bir so'rov uchun alohida xabar kelmaydi (minglab bo'lganda chatni
+  // to'ldirib tashlamasligi uchun - webapp_api.api_task_submit'ga qarang) -
+  // o'rniga shu yerda, sidebar'dagi tugma yonida "(N)" ko'rinishida nechta
+  // tekshirilmagan so'rov borligi ko'rsatiladi.
+  function refreshTaskPendingCount() {
+    api("/admin/api/task_submissions/pending_count").then(function (r) {
+      if (!r.ok) return;
+      var count = r.data.count || 0;
+      var tab = TABS.filter(function (t) { return t.key === "tasks"; })[0];
+      if (tab) tab.label = "🎯 Vazifalar" + (count > 0 ? " (" + count + ")" : "");
+      renderSidebarNav();
+      updateCurrentTabLabel();
+    });
+  }
 
   // ---------- 29-avgust: o'ng tomondan chiqadigan menyu ----------
   function renderSidebarNav() {
@@ -296,6 +313,7 @@
     else if (activeTab === "products") loadProducts();
     else if (activeTab === "announcements") loadAnnouncements();
     else if (activeTab === "stats") loadStats();
+    else if (activeTab === "settings") loadSettingsTab();
   }
 
   // ---------- Buyurtmalar (bosqichli: Qabul qilish -> Yig'ish -> Chiqarib
@@ -344,7 +362,19 @@
   function renderOrderCard(o, stage) {
     var items = [];
     try { items = JSON.parse(o.items_json); } catch (e) {}
-    var itemsText = items.map(function (i) { return i.name + " x" + i.quantity; }).join(", ");
+    // 29-avgust (foydalanuvchi so'rovi): agar mahsulotga 3D model (STL)
+    // havolasi biriktirilgan bo'lsa (buyurtma berilgan paytda "suratga
+    // olingan" - db.create_order'ga qarang), har bir band yonida
+    // to'g'ridan-to'g'ri o'sha havolaga o'tuvchi "🧊 STL" tugmasi chiqadi -
+    // admin buyurtmani yig'ayotganda faylni darhol yuklab olishi uchun.
+    var itemsHtml = items.map(function (i) {
+      var stlBtn = i.stl_url
+        ? ' <a href="' + escapeHtml(i.stl_url) + '" target="_blank" rel="noopener" ' +
+          'style="display:inline-block;margin-left:6px;font-size:12px;background:var(--button);color:var(--button-text);' +
+          'padding:3px 9px;border-radius:8px;text-decoration:none;vertical-align:middle">🧊 STL</a>'
+        : "";
+      return '<div>' + escapeHtml(i.name) + ' x' + i.quantity + stlBtn + '</div>';
+    }).join("");
     var statusLabel = STATUS_LABELS[o.status] || o.status;
     var actionsHtml = "";
     if (stage === "new") {
@@ -375,7 +405,7 @@
     return (
       '<div class="card" data-id="' + o.id + '">' +
         '<div class="card-title">#' + o.id + ' — ' + fmtPrice(o.total_price) + " so'm</div>" +
-        '<div class="card-line">' + escapeHtml(itemsText) + '</div>' +
+        '<div class="card-line">' + itemsHtml + '</div>' +
         '<div class="card-line">👤 ' + escapeHtml(o.full_name || "") + ' · 📱 ' + escapeHtml(o.phone || "") + '</div>' +
         '<div class="card-line">📍 ' + escapeHtml(o.address || "") + '</div>' +
         '<div class="card-line">Holat: ' + statusLabel + '</div>' +
@@ -626,6 +656,7 @@
   // uchragan bo'lsa ("duplicate_of") - qizil ogohlantirish ko'rsatiladi.
   var TASK_STAGES = [
     { key: "review", label: "🆕 Tekshirish" },
+    { key: "ai", label: "🤖 AI tasdiqlagan" },
     { key: "list", label: "📋 Vazifalar" },
   ];
   var activeTaskStage = "review";
@@ -634,6 +665,56 @@
     like: "👍 Layk bosish", subscribe: "🔔 Obuna bo'lish",
     comment: "💬 Komentariya yozish", repost: "🔁 Ulashish/Repost", boshqa: "✅ Bajarish",
   };
+  var AI_VERDICT_LABEL = { ishonchli: "✅ Ishonchli", shubhali: "⚠️ Shubhali", mos_emas: "❌ Mos emas" };
+
+  function aiVerdictLineHtml(s) {
+    if (!s.ai_verdict) return "";
+    var label = AI_VERDICT_LABEL[s.ai_verdict] || s.ai_verdict;
+    return (
+      '<div class="card-line" style="background:var(--bg);border-radius:8px;padding:6px 8px;margin-top:6px">' +
+        '🤖 AI: <b>' + label + '</b>' + (s.ai_confidence ? " (ishonch: " + escapeHtml(s.ai_confidence) + ")" : "") +
+        (s.ai_reasoning ? '<br>' + escapeHtml(s.ai_reasoning) : "") +
+      '</div>'
+    );
+  }
+
+  // ---------- "⚙️ Sozlamalar" bo'limi ----------
+  // 29-avgust (foydalanuvchi so'rovi): oldin faqat "🎯 Vazifalar" tabida
+  // bo'lgan "🤖 AI tekshiruvi" tugmasi endi shu umumiy Sozlamalar bo'limiga
+  // ko'chirildi va kelajakda shunga o'xshash switch'lar ham shu yerga
+  // qo'shiladi ("bunday narsalar uchun switch buttonslar qo'shi").
+  function loadSettingsTab() {
+    var content = document.getElementById("content");
+    content.innerHTML = '<div class="empty">Yuklanmoqda...</div>';
+    api("/admin/api/settings").then(function (r) {
+      if (activeTab !== "settings") return;
+      if (!r.ok) { content.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
+      var settings = r.data.settings || [];
+      var keyWarn = !r.data.ai_api_key_configured
+        ? '<div class="card"><div class="card-line" style="color:#ff3b30">⚠️ ANTHROPIC_API_KEY hali sozlanmagan (Render -> Environment Variables) - shuning uchun "🤖 AI tekshiruvi" yoqilgan bo\'lsa ham hozircha ishlamaydi, hamma so\'rov qo\'lda tekshiriladi.</div></div>'
+        : "";
+      content.innerHTML = keyWarn + settings.map(function (s) {
+        return (
+          '<div class="card" data-key="' + s.key + '">' +
+            '<div class="card-title">' + s.label + '</div>' +
+            '<div class="card-actions"><button class="card-btn' + (s.enabled ? " danger" : "") + '" data-action="toggle">' + (s.enabled ? "⭕ O'chirish" : "✅ Yoqish") + '</button></div>' +
+          '</div>'
+        );
+      }).join("");
+      content.querySelectorAll('[data-action="toggle"]').forEach(function (btn) {
+        btn.onclick = function () {
+          var card = btn.closest(".card");
+          var key = card.getAttribute("data-key");
+          var currentlyEnabled = btn.textContent.indexOf("O'chirish") !== -1;
+          btn.disabled = true;
+          api("/admin/api/settings", { method: "POST", body: JSON.stringify({ key: key, enabled: !currentlyEnabled }) }).then(function (r2) {
+            if (r2.ok) { showToast(r2.data.enabled ? "Yoqildi" : "O'chirildi"); loadSettingsTab(); }
+            else { btn.disabled = false; showToast("Xatolik yuz berdi."); }
+          });
+        };
+      });
+    });
+  }
 
   function loadTasksTab() {
     var content = document.getElementById("content");
@@ -647,7 +728,33 @@
     content.querySelectorAll("[data-task-stage]").forEach(function (btn) {
       btn.onclick = function () { activeTaskStage = btn.getAttribute("data-task-stage"); loadTasksTab(); };
     });
-    if (activeTaskStage === "review") loadTaskReviewQueue(); else loadTaskList();
+    if (activeTaskStage === "review") loadTaskReviewQueue();
+    else if (activeTaskStage === "ai") loadAiApprovedList();
+    else loadTaskList();
+    refreshTaskPendingCount();
+  }
+
+  function loadAiApprovedList() {
+    api("/admin/api/task_submissions/ai_approved").then(function (r) {
+      if (activeTab !== "tasks" || activeTaskStage !== "ai") return;
+      var el = document.getElementById("task-stage-content");
+      if (!el) return;
+      if (!r.ok) { el.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
+      var items = r.data.submissions || [];
+      if (!items.length) { el.innerHTML = '<div class="empty">AI hali hech narsani avtomatik tasdiqlamagan.</div>'; return; }
+      el.innerHTML = '<div class="card"><div class="card-line">Bu ro\'yxat faqat ko\'rish uchun (audit) - AI avtomatik tasdiqlagan so\'rovlar, xato bo\'lsa "💰 To\'ldirish" bo\'limidagi "Balansni qo\'lda tuzatish" orqali tuzatishingiz mumkin.</div></div>' +
+        items.map(function (s) {
+          var icon = TASK_PLATFORM_ICON[s.task_platform] || "🔗";
+          return (
+            '<div class="card">' +
+              (s.screenshot_file_id ? '<img src="' + photoUrl(s.screenshot_file_id) + '" style="width:100%;border-radius:10px;margin-bottom:8px">' : '') +
+              '<div class="card-title">' + icon + ' ' + escapeHtml(s.task_title || "") + '</div>' +
+              '<div class="card-line">Mukofot: 🎁 ' + fmtPrice(s.task_reward || 0) + " so'm — Foydalanuvchi ID: " + s.user_id + '</div>' +
+              aiVerdictLineHtml(s) +
+            '</div>'
+          );
+        }).join("");
+    });
   }
 
   function loadTaskReviewQueue() {
@@ -670,6 +777,7 @@
             '<div class="card-title">' + icon + ' ' + escapeHtml(s.task_title || "") + '</div>' +
             '<div class="card-line">Mukofot: 🎁 ' + fmtPrice(s.task_reward || 0) + " so'm</div>" +
             '<div class="card-line">Foydalanuvchi ID: ' + s.user_id + '</div>' +
+            aiVerdictLineHtml(s) +
             dupHtml +
             '<div class="card-actions">' +
               '<button class="card-btn" data-action="approve">✅ Tasdiqlash</button>' +
@@ -685,7 +793,7 @@
           var action = btn.getAttribute("data-action");
           card.querySelectorAll(".card-btn").forEach(function (b) { b.disabled = true; });
           api("/admin/api/task_submissions/" + id + "/" + action, { method: "POST" }).then(function (r2) {
-            if (r2.ok) { showToast(action === "approve" ? "Tasdiqlandi" : "Rad etildi"); loadTaskReviewQueue(); }
+            if (r2.ok) { showToast(action === "approve" ? "Tasdiqlandi" : "Rad etildi"); loadTaskReviewQueue(); refreshTaskPendingCount(); }
             else { card.querySelectorAll(".card-btn").forEach(function (b) { b.disabled = false; }); showToast("Xatolik yuz berdi."); }
           });
         };
@@ -1246,6 +1354,8 @@
         '<div class="form-group"><label class="form-label">Nomi</label><input class="form-input" id="p-name"></div>' +
         '<div class="form-group"><label class="form-label">Tavsifi</label><textarea class="form-textarea" id="p-desc"></textarea></div>' +
         '<div class="form-group"><label class="form-label">Narxi (so\'m)</label><input class="form-input" id="p-price" type="number"></div>' +
+        '<div class="form-group"><label class="form-label">🧊 3D model (STL) havolasi (ixtiyoriy)</label>' +
+          '<input class="form-input" id="p-stl-url" type="url" placeholder="https://... (STL faylni yuklab olish havolasi)"></div>' +
         '<div class="form-group"><label class="form-label">Rasmlar (kamida 1 ta)</label>' +
           '<div class="photo-row" id="photo-row"><button class="photo-pick-btn" id="photo-pick">+</button></div>' +
           '<input type="file" id="photo-input" accept="image/*" multiple style="display:none"></div>' +
@@ -1291,6 +1401,7 @@
     var name = document.getElementById("p-name").value.trim();
     var description = document.getElementById("p-desc").value.trim();
     var priceStr = document.getElementById("p-price").value.trim();
+    var stlUrl = document.getElementById("p-stl-url").value.trim();
     var errEl = document.getElementById("p-error");
     var problems = [];
     if (!category) problems.push("bo'limni kiriting");
@@ -1309,7 +1420,7 @@
     submitBtn.textContent = "⏳ Saqlanmoqda...";
     api("/admin/api/products", {
       method: "POST",
-      body: JSON.stringify({ category: category, subcategory: subcategory, name: name, description: description, price: price, photos: pickedPhotos }),
+      body: JSON.stringify({ category: category, subcategory: subcategory, name: name, description: description, price: price, stl_url: stlUrl || null, photos: pickedPhotos }),
     }).then(function (r) {
       if (r.ok) {
         showToast("Mahsulot qo'shildi ✅");
@@ -1346,6 +1457,7 @@
     renderSidebarNav();
     updateCurrentTabLabel();
     loadActiveTab();
+    refreshTaskPendingCount();
   });
 })();
 </script>

@@ -369,22 +369,79 @@ async def api_task_submit(request: web.Request):
     submission_id = await db.create_task_submission(task_id, user_id, screenshot_file_id, image_hash)
     await db.remember_username(user_id, _authed_username(request))
 
-    duplicate = await db.find_duplicate_submission_by_hash(image_hash, submission_id)
+    # MUHIM (29-avgust, foydalanuvchi so'rovi): AVVAL bu yerda topup/shaxsiy
+    # buyurtma kabi HAR bir yuborilgan skrinshot uchun ALOHIDA chat xabari
+    # yuborilardi - lekin vazifalar minglab bo'lishi mumkinligi sababli bu
+    # ADMIN CHATINI TO'LDIRIB TASHLASHI mumkin edi. Shuning uchun endi
+    # bunday xabar UMUMAN yuborilmaydi - ko'rib chiqish FAQAT admin
+    # panelning "🎯 Vazifalar -> 🆕 Tekshirish" navbati orqali bo'ladi (u
+    # yerda sidebar'da "🎯 Vazifalar (N)" ko'rinishida nechta so'rov
+    # kutayotgani ko'rinadi - api_admin_task_submissions_pending_count'ga
+    # qarang).
+    #
+    # DIQQAT (texnik cheklov): Telegram'dan skrinshot uchun "file_id" olish
+    # (yuqoridagi _upload_photo_get_file_id) baribir uni ADMIN_IDS[0]'ning
+    # shaxsiy chatiga BITTA oddiy (izohsiz) rasm sifatida yuboradi - bu
+    # Telegram Bot API'ning o'zi shunday ishlashi sababli (file_id olish
+    # uchun rasmni biron joyga yuborish SHART) va topup/shaxsiy buyurtma/
+    # mahsulot rasmlarida ham bor - hozircha o'zgartirilmagan.
 
-    from handlers.catalog import format_price
-    from keyboards import task_submission_admin_keyboard
-    caption = (
-        f"🎯 Yangi vazifa tasdig'i #{submission_id}\n\n"
-        f"Vazifa: {task['title']}\n"
-        f"Mukofot: {format_price(task['reward_amount'])} so'm\n"
-        f"Foydalanuvchi ID: {user_id}"
-    )
-    if duplicate:
-        caption += (
-            f"\n\n⚠️ DIQQAT: bu rasm avvalroq #{duplicate['id']}-so'rovda "
-            f"(foydalanuvchi {duplicate['user_id']}) ham yuborilgan - ehtiyot bo'lib tekshiring!"
-        )
-    await notify_admins(bot, photo=screenshot_file_id, caption=caption, reply_markup=task_submission_admin_keyboard(submission_id))
+    # MUHIM (29-avgust, foydalanuvchi so'rovi): "🤖 AI tekshiruvi" - admin
+    # panelda YOQILGAN bo'lsagina (va ANTHROPIC_API_KEY sozlangan bo'lsagina)
+    # ishga tushadi. AI skrinshotni baholaydi; agar u "ishonchli" VA "yuqori"
+    # ishonch darajasida deb topsa, HAMDA bu rasm boshqa hech qayerda
+    # ishlatilmagan bo'lsa (image_hash dublikat emas) - so'rov ADMINSIZ,
+    # DARHOL avtomatik tasdiqlanadi va mukofot hamyonga tushadi. Boshqa
+    # barcha holatlarda (shubhali/mos_emas/dublikat/AI o'chirilgan/AI
+    # xatolik bergan) - so'rov odatdagidek "🆕 Tekshirish" navbatida qoladi,
+    # lekin endi AI'ning bahosi ham ko'rinadi (bor bo'lsa) - bu admin
+    # qarorini sezilarli tezlashtiradi. Hech qachon AI o'zi rad ETMAYDI -
+    # noaniq/salbiy baho doim odamga qoldiriladi (pul yo'qotish xavfi
+    # yo'q, faqat noto'g'ri rad etish xavfi bo'lishi mumkin edi).
+    ai_enabled = (await db.get_setting("ai_task_review_enabled", "0")) == "1"
+    auto_approved = False
+    if ai_enabled:
+        from ai_verify import _extract_mime, verify_task_screenshot
+        ai_result = await verify_task_screenshot(raw, _extract_mime(photo_data_url), task)
+        if ai_result:
+            await db.set_task_submission_ai_result(
+                submission_id, ai_result["verdict"], ai_result.get("confidence"), ai_result.get("reasoning"),
+            )
+            if ai_result["verdict"] == "ishonchli" and ai_result.get("confidence") == "yuqori":
+                duplicate = await db.find_duplicate_submission_by_hash(image_hash, submission_id)
+                if not duplicate:
+                    import admin_service
+                    sub, task_obj, new_balance, reason = await admin_service.approve_task_submission(
+                        submission_id, approved_by="ai",
+                    )
+                    if sub:
+                        await admin_service.notify_customer_task_approved(bot, sub, task_obj, new_balance)
+                        auto_approved = True
+
+    # 29-avgust (foydalanuvchi so'rovi): AI avtomatik tasdiqlamagan
+    # so'rovlar uchun chatga xabar yuborish - endi ENDI DEFAULT bo'yicha
+    # O'CHIRILGAN (yuqoridagi izohga qarang: minglab vazifa chatni to'ldirib
+    # yuborishi mumkin edi) - lekin admin panelning "⚙️ Sozlamalar" bo'limida
+    # "🎯 Vazifa bajarilgani haqida chatga xabar kelsin" switch'ini YOQSA,
+    # bu yerda odatdagidek (topup/shaxsiy buyurtma kabi) alohida chat xabari
+    # keladi. Ko'rib chiqish har doim, xabar yoqilgan-yoqilmaganidan qat'i
+    # nazar, "🎯 Vazifalar -> 🆕 Tekshirish" navbatida (badge bilan) mavjud.
+    if not auto_approved:
+        chat_notify = (await db.get_setting("task_submission_chat_notify", "0")) == "1"
+        if chat_notify:
+            username = _authed_username(request)
+            caption = (
+                f"🎯 Yangi vazifa bajarilgani haqida xabar #{submission_id}\n\n"
+                f"Vazifa: {task.get('title')}\n"
+                f"Platforma: {task.get('platform')}\n"
+                f"Mukofot: {task.get('reward_amount')} so'm\n\n"
+                "Skrinshotni ko'rib, tasdiqlang yoki rad eting."
+            )
+            from keyboards import task_submission_admin_keyboard
+            await notify_admins(
+                bot, photo=screenshot_file_id, caption=caption,
+                reply_markup=task_submission_admin_keyboard(submission_id),
+            )
 
     return web.json_response({"ok": True, "submission_id": submission_id})
 

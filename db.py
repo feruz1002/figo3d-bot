@@ -157,6 +157,11 @@ CREATE TABLE IF NOT EXISTS task_submissions (
     created_at TEXT NOT NULL,
     reviewed_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
 """
 
 
@@ -215,6 +220,19 @@ async def init_db():
         # bera olmaydi, hamyonini to'ldira olmaydi va operatorga murojaat
         # yubora olmaydi (webapp_api.py'dagi _check_not_blocked'ga qarang).
         await _add_column_if_missing(conn, "users", "blocked INTEGER NOT NULL DEFAULT 0")
+        # 29-avgust: "🎯 Vazifalar" skrinshotlarini sun'iy intellekt (AI)
+        # yordamida oldindan baholash uchun - admin_service.approve_task_submission
+        # va ai_verify.py'ga qarang. `approved_by` - "admin" (qo'lda) yoki
+        # "ai" (avtomatik, yuqori ishonch bilan) - audit/tarix uchun.
+        await _add_column_if_missing(conn, "task_submissions", "ai_verdict TEXT")
+        await _add_column_if_missing(conn, "task_submissions", "ai_confidence TEXT")
+        await _add_column_if_missing(conn, "task_submissions", "ai_reasoning TEXT")
+        await _add_column_if_missing(conn, "task_submissions", "approved_by TEXT")
+        # 29-avgust: mahsulotga 3D model (STL) fayli havolasini biriktirish
+        # uchun (foydalanuvchi so'rovi) - admin buyurtmani yig'ayotganda
+        # to'g'ridan-to'g'ri shu havoladan STL faylni yuklab olishi uchun
+        # (webapp/admin.html'dagi buyurtma kartochkasiga qarang).
+        await _add_column_if_missing(conn, "products", "stl_url TEXT")
 
         # Baza bo'sh bo'lsa (bot birinchi marta ishga tushganda) - namuna
         # mahsulotlar bilan to'ldiramiz, shunda katalog darhol bo'sh bo'lib
@@ -252,6 +270,7 @@ async def _row_to_product(conn, row) -> dict:
         "price": row["price"],
         "photos": [r[0] for r in photo_rows],
         "video": row["video_file_id"],
+        "stl_url": row["stl_url"] if "stl_url" in row.keys() else None,
     }
 
 
@@ -323,14 +342,15 @@ async def list_active_products() -> list:
 
 
 async def create_product(
-    category: str, name: str, description: str, price: int, subcategory: str | None = None
+    category: str, name: str, description: str, price: int,
+    subcategory: str | None = None, stl_url: str | None = None,
 ) -> int:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     async with get_db_connection() as conn:
         cursor = await conn.execute(
-            """INSERT INTO products (category, subcategory, name, description, price, active, created_at)
-               VALUES (?, ?, ?, ?, ?, 1, ?)""",
-            (category, subcategory or None, name, description, price, now),
+            """INSERT INTO products (category, subcategory, name, description, price, stl_url, active, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, 1, ?)""",
+            (category, subcategory or None, name, description, price, stl_url or None, now),
         )
         await conn.commit()
         return cursor.lastrowid
@@ -498,11 +518,18 @@ async def create_order(
     cart = await get_cart(user_id)
     subtotal = sum(item["product"]["price"] * item["quantity"] for item in cart)
     total_price = max(subtotal - discount_amount, 0)
+    # MUHIM (29-avgust, foydalanuvchi so'rovi): "stl_url" ham shu yerda
+    # "suratga olinadi" (snapshot) - xuddi nom/narx kabi. Bu ataylab shunday:
+    # agar admin keyinroq mahsulotni tahrirlasa/o'chirsa ham, ESKI
+    # buyurtmadagi STL havolasi O'ZGARMAY qoladi - admin haqiqiy
+    # buyurtmani necha kun/hafta o'tib yig'ayotganda ham to'g'ri fayl
+    # bilan ishlayveradi.
     items_snapshot = [
         {
             "name": item["product"]["name"],
             "price": item["product"]["price"],
             "quantity": item["quantity"],
+            "stl_url": item["product"].get("stl_url"),
         }
         for item in cart
     ]
@@ -1017,11 +1044,77 @@ async def get_pending_task_submissions(limit: int = 100) -> list:
         return [dict(r) for r in rows]
 
 
-async def update_task_submission_status(submission_id: int, status: str):
+async def count_pending_task_submissions() -> int:
+    """Admin panel sidebar'idagi "🎯 Vazifalar" yonidagi son (badge) uchun -
+    minglab so'rov bo'lsa ham TEZKOR ishlashi uchun to'liq ro'yxatni emas,
+    faqat sonini so'raymiz."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute("SELECT COUNT(*) FROM task_submissions WHERE status = 'kutilmoqda'")
+        (count,) = await cursor.fetchone()
+        return count or 0
+
+
+async def update_task_submission_status(submission_id: int, status: str, approved_by: str | None = None):
+    """`approved_by` - "admin" yoki "ai" (faqat tasdiqlashda beriladi, audit
+    uchun) - berilmasa (masalan rad etishda) shu ustunga tegilmaydi."""
+    async with get_db_connection() as conn:
+        if approved_by is not None:
+            await conn.execute(
+                "UPDATE task_submissions SET status = ?, reviewed_at = ?, approved_by = ? WHERE id = ?",
+                (status, datetime.now(timezone.utc).isoformat(timespec="seconds"), approved_by, submission_id),
+            )
+        else:
+            await conn.execute(
+                "UPDATE task_submissions SET status = ?, reviewed_at = ? WHERE id = ?",
+                (status, datetime.now(timezone.utc).isoformat(timespec="seconds"), submission_id),
+            )
+        await conn.commit()
+
+
+async def set_task_submission_ai_result(submission_id: int, verdict: str, confidence: str | None, reasoning: str | None):
     async with get_db_connection() as conn:
         await conn.execute(
-            "UPDATE task_submissions SET status = ?, reviewed_at = ? WHERE id = ?",
-            (status, datetime.now(timezone.utc).isoformat(timespec="seconds"), submission_id),
+            "UPDATE task_submissions SET ai_verdict = ?, ai_confidence = ?, ai_reasoning = ? WHERE id = ?",
+            (verdict, confidence, reasoning, submission_id),
+        )
+        await conn.commit()
+
+
+async def get_recent_ai_approved_submissions(limit: int = 50) -> list:
+    """Admin panelning "🤖 AI tasdiqlagan" bo'limi uchun - AI o'zi (adminsiz)
+    avtomatik tasdiqlagan so'nggi so'rovlar, tasodifiy tekshirib
+    (audit/spot-check) turish uchun."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            """SELECT ts.*, t.title AS task_title, t.reward_amount AS task_reward, t.platform AS task_platform
+               FROM task_submissions ts JOIN tasks t ON t.id = ts.task_id
+               WHERE ts.approved_by = 'ai'
+               ORDER BY ts.id DESC LIMIT ?""",
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+# ---------- DASTUR SOZLAMALARI (kalit-qiymat, 29-avgust) ----------
+# Kod ichida "hardcode" qilinmagan, lekin qayta deploy qilmasdan admin
+# panelidan o'zgartirilishi kerak bo'lgan sozlamalar uchun (masalan "🤖 AI
+# tekshiruvi yoqilgan/o'chirilgan" - ANTHROPIC_API_KEY sozlangan bo'lsa ham,
+# admin buni istalgan payt vaqtincha o'chirib qo'yishi mumkin).
+
+async def get_setting(key: str, default: str | None = None) -> str | None:
+    async with get_db_connection() as conn:
+        cursor = await conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,))
+        row = await cursor.fetchone()
+        return row[0] if row else default
+
+
+async def set_setting(key: str, value: str):
+    async with get_db_connection() as conn:
+        await conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
         )
         await conn.commit()
 
