@@ -313,6 +313,17 @@ def topup_admin_keyboard(request_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def task_submission_admin_keyboard(submission_id: int) -> InlineKeyboardMarkup:
+    """29-avgust: "🎯 Vazifalar" - mijoz yuborgan skrinshotni admin
+    to'g'ridan-to'g'ri chatdan (admin panelni ochmasdan) tasdiqlashi/rad
+    etishi uchun - xuddi topup_admin_keyboard bilan bir xil naqsh."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Tasdiqlash", callback_data=f"task_approve:{submission_id}")
+    builder.button(text="❌ Rad etish", callback_data=f"task_reject:{submission_id}")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
 def contact_message_admin_keyboard(message_id: int, user_id: int | None = None) -> InlineKeyboardMarkup:
     """29-avgust: Mini App'dagi "💬 Operatorga yozish" bo'limi orqali mijoz
     yozgan xabar admin(lar)ga yuborilganda tugmalar - "✅ Bajarildi" bilan

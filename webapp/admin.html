@@ -234,6 +234,7 @@
     { key: "orders", label: "📦 Buyurtmalar" },
     { key: "custom", label: "🎨 Shaxsiy" },
     { key: "topups", label: "💰 To'ldirish" },
+    { key: "tasks", label: "🎯 Vazifalar" },
     { key: "contacts", label: "💬 Murojaatlar" },
     { key: "customers", label: "👥 Mijozlar" },
     { key: "products", label: "🗂 Mahsulotlar" },
@@ -244,7 +245,7 @@
   // FAB (➕) endi ikki bo'limda ham ishlaydi (Mahsulotlar - yangi mahsulot,
   // Yangiliklar - yangi e'lon) - qaysi bo'lim ochiq bo'lsa, o'shanga mos
   // formani ochadi (pastdagi "fab".onclick'ga qarang).
-  var FAB_TABS = { products: true, announcements: true };
+  var FAB_TABS = { products: true, announcements: true, tasks: true };
 
   // ---------- 29-avgust: o'ng tomondan chiqadigan menyu ----------
   function renderSidebarNav() {
@@ -289,6 +290,7 @@
     if (activeTab === "orders") loadOrders();
     else if (activeTab === "custom") loadCustomOrders();
     else if (activeTab === "topups") loadTopups();
+    else if (activeTab === "tasks") loadTasksTab();
     else if (activeTab === "contacts") loadContactMessages();
     else if (activeTab === "customers") loadCustomers();
     else if (activeTab === "products") loadProducts();
@@ -611,6 +613,191 @@
           });
         };
       });
+    });
+  }
+
+  // ---------- Vazifalar ("🎯 Vazifalar" - tanga/mukofot tizimi, 29-avgust) ----------
+  // Instagram/YouTube kabi tarmoqlarda like/obuna/komentariya kabi
+  // vazifalar - mijoz bajarib skrinshot yuboradi (webapp/index.html), bu
+  // yerda "🆕 Tekshirish" navbatida ko'rinadi. Skrinshot orqali
+  // haqiqiyligini 100% avtomatik tekshirib bo'lmaydi (Instagram/YouTube bu
+  // ma'lumotni tashqi dasturga bermaydi) - shuning uchun HAR DOIM admin
+  // ko'rib tasdiqlaydi/rad etadi. Bir xil rasm boshqa so'rovda ham
+  // uchragan bo'lsa ("duplicate_of") - qizil ogohlantirish ko'rsatiladi.
+  var TASK_STAGES = [
+    { key: "review", label: "🆕 Tekshirish" },
+    { key: "list", label: "📋 Vazifalar" },
+  ];
+  var activeTaskStage = "review";
+  var TASK_PLATFORM_ICON = { instagram: "📸", youtube: "▶️", boshqa: "🔗" };
+  var TASK_TYPE_LABEL = {
+    like: "👍 Layk bosish", subscribe: "🔔 Obuna bo'lish",
+    comment: "💬 Komentariya yozish", repost: "🔁 Ulashish/Repost", boshqa: "✅ Bajarish",
+  };
+
+  function loadTasksTab() {
+    var content = document.getElementById("content");
+    content.innerHTML =
+      '<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:10px;scrollbar-width:none">' +
+        TASK_STAGES.map(function (s) {
+          return '<button class="tab' + (s.key === activeTaskStage ? " active" : "") + '" data-task-stage="' + s.key + '" style="flex:none">' + s.label + '</button>';
+        }).join("") +
+      '</div>' +
+      '<div id="task-stage-content"><div class="empty">Yuklanmoqda...</div></div>';
+    content.querySelectorAll("[data-task-stage]").forEach(function (btn) {
+      btn.onclick = function () { activeTaskStage = btn.getAttribute("data-task-stage"); loadTasksTab(); };
+    });
+    if (activeTaskStage === "review") loadTaskReviewQueue(); else loadTaskList();
+  }
+
+  function loadTaskReviewQueue() {
+    api("/admin/api/task_submissions").then(function (r) {
+      if (activeTab !== "tasks" || activeTaskStage !== "review") return;
+      var el = document.getElementById("task-stage-content");
+      if (!el) return;
+      if (!r.ok) { el.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
+      var items = r.data.submissions || [];
+      if (!items.length) { el.innerHTML = '<div class="empty">Tekshirish uchun so\'rov yo\'q.</div>'; return; }
+      el.innerHTML = items.map(function (s) {
+        var icon = TASK_PLATFORM_ICON[s.task_platform] || "🔗";
+        var dup = s.duplicate_of;
+        var dupHtml = dup
+          ? '<div class="card-line" style="color:#ff3b30;font-weight:600">⚠️ Bu rasm avvalroq #' + dup.id + '-so\'rovda (foydalanuvchi ' + dup.user_id + ', holati: ' + dup.status + ') ham yuborilgan!</div>'
+          : "";
+        return (
+          '<div class="card" data-id="' + s.id + '">' +
+            (s.screenshot_file_id ? '<img src="' + photoUrl(s.screenshot_file_id) + '" style="width:100%;border-radius:10px;margin-bottom:8px">' : '') +
+            '<div class="card-title">' + icon + ' ' + escapeHtml(s.task_title || "") + '</div>' +
+            '<div class="card-line">Mukofot: 🎁 ' + fmtPrice(s.task_reward || 0) + " so'm</div>" +
+            '<div class="card-line">Foydalanuvchi ID: ' + s.user_id + '</div>' +
+            dupHtml +
+            '<div class="card-actions">' +
+              '<button class="card-btn" data-action="approve">✅ Tasdiqlash</button>' +
+              '<button class="card-btn danger" data-action="reject">❌ Rad etish</button>' +
+            '</div>' +
+          '</div>'
+        );
+      }).join("");
+      el.querySelectorAll('[data-action="approve"],[data-action="reject"]').forEach(function (btn) {
+        btn.onclick = function () {
+          var card = btn.closest(".card");
+          var id = card.getAttribute("data-id");
+          var action = btn.getAttribute("data-action");
+          card.querySelectorAll(".card-btn").forEach(function (b) { b.disabled = true; });
+          api("/admin/api/task_submissions/" + id + "/" + action, { method: "POST" }).then(function (r2) {
+            if (r2.ok) { showToast(action === "approve" ? "Tasdiqlandi" : "Rad etildi"); loadTaskReviewQueue(); }
+            else { card.querySelectorAll(".card-btn").forEach(function (b) { b.disabled = false; }); showToast("Xatolik yuz berdi."); }
+          });
+        };
+      });
+    });
+  }
+
+  function loadTaskList() {
+    api("/admin/api/tasks").then(function (r) {
+      if (activeTab !== "tasks" || activeTaskStage !== "list") return;
+      var el = document.getElementById("task-stage-content");
+      if (!el) return;
+      if (!r.ok) { el.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
+      var items = r.data.tasks || [];
+      if (!items.length) { el.innerHTML = '<div class="empty">Hozircha vazifa yo\'q. Pastdagi ➕ orqali qo\'shing.</div>'; return; }
+      el.innerHTML = items.map(function (t) {
+        var icon = TASK_PLATFORM_ICON[t.platform] || "🔗";
+        var isActive = t.status === "faol";
+        return (
+          '<div class="card" data-id="' + t.id + '">' +
+            '<div class="card-title">' + icon + ' ' + escapeHtml(t.title) + (isActive ? '' : ' <span style="color:var(--hint);font-weight:400">(tugagan)</span>') + '</div>' +
+            '<div class="card-line">' + (TASK_TYPE_LABEL[t.task_type] || t.task_type) + ' — 🎁 ' + fmtPrice(t.reward_amount) + " so'm</div>" +
+            '<div class="card-line"><a href="' + escapeHtml(t.target_url) + '" target="_blank" rel="noopener">' + escapeHtml(t.target_url) + '</a></div>' +
+            '<div class="card-actions"><button class="card-btn' + (isActive ? " danger" : "") + '" data-action="toggle">' + (isActive ? "⏸ Tugatish" : "▶️ Faollashtirish") + '</button></div>' +
+          '</div>'
+        );
+      }).join("");
+      el.querySelectorAll('[data-action="toggle"]').forEach(function (btn) {
+        btn.onclick = function () {
+          var id = btn.closest(".card").getAttribute("data-id");
+          btn.disabled = true;
+          api("/admin/api/tasks/" + id + "/toggle", { method: "POST" }).then(function (r2) {
+            if (r2.ok) loadTaskList();
+            else { btn.disabled = false; showToast("Xatolik yuz berdi."); }
+          });
+        };
+      });
+    });
+  }
+
+  function openAddTaskForm() {
+    var overlay = document.getElementById("overlay");
+    overlay.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">➕ Yangi vazifa</div>' +
+        '<div class="form-group"><label class="form-label">Tarmoq</label>' +
+          '<select class="form-select" id="tk-platform">' +
+            '<option value="instagram">📸 Instagram</option>' +
+            '<option value="youtube">▶️ YouTube</option>' +
+            '<option value="boshqa">🔗 Boshqa</option>' +
+          '</select></div>' +
+        '<div class="form-group"><label class="form-label">Vazifa turi</label>' +
+          '<select class="form-select" id="tk-type">' +
+            '<option value="like">👍 Layk bosish</option>' +
+            '<option value="subscribe">🔔 Obuna bo\'lish</option>' +
+            '<option value="comment">💬 Komentariya yozish</option>' +
+            '<option value="repost">🔁 Ulashish/Repost</option>' +
+            '<option value="boshqa">✅ Boshqa</option>' +
+          '</select></div>' +
+        '<div class="form-group"><label class="form-label">Sarlavha (mijozga ko\'rinadi)</label><input class="form-input" id="tk-title" placeholder="Masalan: Instagram videomizga like bosing"></div>' +
+        '<div class="form-group"><label class="form-label">Tavsif (ixtiyoriy)</label><textarea class="form-textarea" id="tk-desc" placeholder="Qo\'shimcha ko\'rsatma"></textarea></div>' +
+        '<div class="form-group"><label class="form-label">Havola</label><input class="form-input" id="tk-url" placeholder="https://instagram.com/..."></div>' +
+        '<div class="form-group"><label class="form-label">Mukofot (so\'m)</label><input class="form-input" id="tk-reward" type="number" inputmode="numeric" placeholder="Masalan: 2000"></div>' +
+        '<div class="form-error hidden" id="tk-error"></div>' +
+        '<button class="card-btn" id="tk-submit" style="margin-top:6px">✅ Saqlash</button>' +
+        '<button class="card-btn" id="tk-cancel" style="margin-top:8px;background:var(--secondary-bg);color:var(--text)">Bekor qilish</button>' +
+      '</div>';
+    overlay.classList.remove("hidden");
+    if (tg) tg.BackButton.show();
+    document.getElementById("tk-cancel").onclick = closeOverlay;
+    document.getElementById("tk-submit").onclick = submitNewTask;
+  }
+
+  function submitNewTask() {
+    var platform = document.getElementById("tk-platform").value;
+    var task_type = document.getElementById("tk-type").value;
+    var title = document.getElementById("tk-title").value.trim();
+    var description = document.getElementById("tk-desc").value.trim();
+    var target_url = document.getElementById("tk-url").value.trim();
+    var reward = parseInt(document.getElementById("tk-reward").value, 10);
+    var errEl = document.getElementById("tk-error");
+    var problems = [];
+    if (!title) problems.push("sarlavhani kiriting");
+    if (!target_url) problems.push("havolani kiriting");
+    if (!reward || reward <= 0) problems.push("mukofotni to'g'ri kiriting");
+    if (problems.length) {
+      errEl.textContent = "Iltimos: " + problems.join(", ") + ".";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    errEl.classList.add("hidden");
+    var submitBtn = document.getElementById("tk-submit");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "⏳ Saqlanmoqda...";
+    api("/admin/api/tasks", {
+      method: "POST",
+      body: JSON.stringify({
+        platform: platform, task_type: task_type, title: title,
+        description: description, target_url: target_url, reward_amount: reward,
+      }),
+    }).then(function (r) {
+      if (r.ok) {
+        showToast("Vazifa qo'shildi ✅");
+        closeOverlay();
+        activeTaskStage = "list";
+        loadTasksTab();
+      } else {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "✅ Saqlash";
+        errEl.textContent = "Xatolik yuz berdi. Qaytadan urinib ko'ring.";
+        errEl.classList.remove("hidden");
+      }
     });
   }
 
@@ -1140,6 +1327,7 @@
 
   document.getElementById("fab").onclick = function () {
     if (activeTab === "announcements") openAddAnnouncementForm();
+    else if (activeTab === "tasks") openAddTaskForm();
     else openAddProductForm();
   };
   if (tg) tg.BackButton.onClick(closeOverlay);

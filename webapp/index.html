@@ -169,6 +169,16 @@
   .info-card { background: var(--secondary-bg); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
   .info-card .card-line { font-size: 13.5px; color: var(--hint); line-height: 1.6; }
   .info-card .card-line b { color: var(--text); }
+
+  /* "🎯 Vazifalar" bo'limi (29-avgust) */
+  .task-card { background: var(--secondary-bg); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
+  .task-card .task-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .task-card .task-line { font-size: 13px; color: var(--hint); line-height: 1.5; }
+  .task-badge { display: inline-block; font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: 999px; margin-top: 8px; }
+  .task-badge.wait { background: #fff3cd; color: #8a6d00; }
+  .task-badge.ok { background: #d4edda; color: #1b7a34; }
+  .task-badge.rejected { background: #fde2e1; color: #c1272d; }
+  .task-btn { margin-top: 8px; border: none; border-radius: 10px; padding: 9px 16px; background: var(--button); color: var(--button-text); font-size: 13.5px; font-weight: 600; }
   .news-card { background: var(--secondary-bg); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
   .news-card img { width: 100%; border-radius: 10px; margin-bottom: 8px; }
   .news-card .news-text { font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
@@ -359,6 +369,7 @@
   var SIDEBAR_ITEMS = [
     { key: "profile", icon: "👤", label: "Profil" },
     { key: "grid", icon: "🗂", label: "Mahsulotlar" },
+    { key: "tasks", icon: "🎯", label: "Vazifalar" },
     { key: "custom", icon: "🎨", label: "Shaxsiy buyurtmalar" },
     { key: "cart", icon: "🛒", label: "Savat" },
     { key: "orders", icon: "📦", label: "Buyurtmalar" },
@@ -947,6 +958,133 @@
         if (r.data && r.data.error === "screenshot_required") {
           errEl.textContent = "Iltimos, chekning skrinshotini yuklang (MAJBURIY).";
           errEl.classList.remove("hidden");
+        } else {
+          showToast("Yuborib bo'lmadi. Qaytadan urinib ko'ring.");
+        }
+      }
+    });
+  }
+
+  // ---------- Vazifalar (🎯 tanga/mukofot tizimi, 29-avgust) ----------
+  // Instagram/YouTube kabi tarmoqlarda like/obuna/komentariya kabi
+  // vazifalar - mijoz bajarib skrinshot yuboradi, operator tasdiqlasa
+  // mukofot to'g'ridan-to'g'ri hamyonga (so'm sifatida) qo'shiladi.
+  // Skrinshot 100% avtomatik tekshirilmaydi (Instagram/YouTube bu
+  // ma'lumotni tashqi dasturga bermaydi) - HAR DOIM operator ko'rib chiqadi.
+  var TASK_PLATFORM_ICON = { instagram: "📸", youtube: "▶️", boshqa: "🔗" };
+  var TASK_TYPE_LABEL = {
+    like: "👍 Layk bosish", subscribe: "🔔 Obuna bo'lish",
+    comment: "💬 Komentariya yozish", repost: "🔁 Ulashish/Repost", boshqa: "✅ Bajarish",
+  };
+  var taskList = [];
+  var selectedTask = null;
+  var taskScreenshot = null;
+
+  VIEW_RENDERERS.tasks = function (el) {
+    el.innerHTML = '<div class="screen"><div class="screen-title">🎯 Vazifalar</div><div class="empty">Yuklanmoqda...</div></div>';
+    api("/api/tasks").then(function (r) {
+      if (currentView() !== "tasks") return;
+      if (!r.ok) { el.innerHTML = '<div class="screen"><div class="empty">Yuklab bo\'lmadi.</div></div>'; return; }
+      taskList = (r.data && r.data.tasks) || [];
+      if (!taskList.length) {
+        el.innerHTML = '<div class="screen"><div class="screen-title">🎯 Vazifalar</div><div class="empty">Hozircha vazifa yo\'q.</div></div>';
+        return;
+      }
+      var cards = taskList.map(function (t) {
+        var icon = TASK_PLATFORM_ICON[t.platform] || "🔗";
+        var actionHtml;
+        if (t.my_status === "tasdiqlandi") actionHtml = '<span class="task-badge ok">✅ Tasdiqlandi</span>';
+        else if (t.my_status === "kutilmoqda") actionHtml = '<span class="task-badge wait">⏳ Ko\'rib chiqilmoqda</span>';
+        else {
+          var label = (t.my_status === "rad etildi") ? "🔁 Qaytadan urinish" : "Bajarish";
+          actionHtml = '<button class="task-btn" data-tid="' + t.id + '">' + label + '</button>';
+        }
+        return (
+          '<div class="task-card">' +
+            '<div class="task-title">' + icon + ' ' + escapeHtml(t.title) + '</div>' +
+            '<div class="task-line">' + (TASK_TYPE_LABEL[t.task_type] || t.task_type) + ' — 🎁 ' + fmtPrice(t.reward_amount) + " so'm</div>" +
+            (t.my_status === "rad etildi" ? '<div class="task-line" style="color:#c1272d">❌ Avvalgi urinish rad etildi</div>' : "") +
+            actionHtml +
+          '</div>'
+        );
+      }).join("");
+      el.innerHTML =
+        '<div class="screen">' +
+          '<div class="screen-title">🎯 Vazifalar</div>' +
+          '<div class="form-hint">Vazifani bajaring, skrinshot yuboring — operator tekshirib tasdiqlasa, mukofot hamyoningizga qo\'shiladi.</div>' +
+        '</div>' + cards;
+      el.querySelectorAll("[data-tid]").forEach(function (btn) {
+        btn.onclick = function () {
+          var t = taskList.filter(function (x) { return x.id === Number(btn.getAttribute("data-tid")); })[0];
+          if (t) openTaskDetail(t);
+        };
+      });
+    });
+  };
+
+  function openTaskDetail(t) {
+    selectedTask = t;
+    pushView("taskDetail");
+  }
+
+  VIEW_RENDERERS.taskDetail = function (el) {
+    taskScreenshot = null;
+    var t = selectedTask;
+    if (!t) { el.innerHTML = '<div class="screen"><div class="empty">Vazifa topilmadi.</div></div>'; return; }
+    var icon = TASK_PLATFORM_ICON[t.platform] || "🔗";
+    el.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">' + icon + ' ' + escapeHtml(t.title) + '</div>' +
+        '<div class="info-card">' +
+          '<div class="card-line"><b>Vazifa turi:</b> ' + (TASK_TYPE_LABEL[t.task_type] || t.task_type) + '</div>' +
+          '<div class="card-line"><b>Mukofot:</b> 🎁 ' + fmtPrice(t.reward_amount) + " so'm</div>" +
+          (t.description ? '<div class="card-line" style="margin-top:6px">' + escapeHtml(t.description).replace(/\n/g, "<br>") + '</div>' : "") +
+        '</div>' +
+        '<a class="page-cta" style="display:block;text-align:center;text-decoration:none;margin-bottom:16px" href="' + escapeHtml(t.target_url) + '" target="_blank" rel="noopener">🔗 Havolani ochish</a>' +
+        '<div class="form-group"><label class="form-label">Bajarganingizni tasdiqlovchi skrinshot (MAJBURIY)</label>' +
+          '<div class="photo-row" id="tk-photo-row"><button class="photo-pick-btn" id="tk-photo-pick">+</button></div>' +
+          '<input type="file" id="tk-photo-input" accept="image/*" style="display:none"></div>' +
+        '<div class="form-error hidden" id="tk-error"></div>' +
+        '<button class="page-cta" id="tk-submit">✅ Skrinshotni yuborish</button>' +
+      '</div>';
+
+    document.getElementById("tk-photo-pick").onclick = function () { document.getElementById("tk-photo-input").click(); };
+    document.getElementById("tk-photo-input").onchange = function (e) {
+      var file = (e.target.files || [])[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        taskScreenshot = reader.result;
+        document.getElementById("tk-photo-row").innerHTML = '<img class="photo-thumb" src="' + taskScreenshot + '">';
+      };
+      reader.readAsDataURL(file);
+    };
+    document.getElementById("tk-submit").onclick = submitTaskProof;
+  };
+
+  function submitTaskProof() {
+    var t = selectedTask;
+    var errEl = document.getElementById("tk-error");
+    if (!taskScreenshot) {
+      errEl.textContent = "Iltimos, skrinshot yuklang (MAJBURIY).";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    errEl.classList.add("hidden");
+    var btn = document.getElementById("tk-submit");
+    btn.disabled = true; btn.textContent = "⏳ Yuborilmoqda...";
+    api("/api/task_submit", {
+      method: "POST",
+      body: JSON.stringify({ task_id: t.id, screenshot: taskScreenshot }),
+    }).then(function (r) {
+      if (r.ok) {
+        showToast("✅ Yuborildi — operator tekshirib chiqqach mukofot hamyoningizga qo'shiladi");
+        popView();
+      } else {
+        btn.disabled = false; btn.textContent = "✅ Skrinshotni yuborish";
+        if (r.data && r.data.error === "already_submitted") {
+          showToast("Bu vazifa uchun so'rovingiz allaqachon ko'rib chiqilmoqda.");
+          popView();
         } else {
           showToast("Yuborib bo'lmadi. Qaytadan urinib ko'ring.");
         }

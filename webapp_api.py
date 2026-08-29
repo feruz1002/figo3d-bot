@@ -6,6 +6,7 @@ yuklab olinadi, oddiy <img src="..."> bilan to'g'ridan-to'g'ri ko'rsatib
 bo'lmaydi. Shuning uchun bu yerda serverning o'zi (tokenini oshkor
 qilmasdan) rasmni Telegramdan yuklab, brauzerga uzatib beradi."""
 import base64
+import hashlib
 
 from aiogram.types import BufferedInputFile
 from aiohttp import web
@@ -299,6 +300,95 @@ async def api_topup(request: web.Request):
     return web.json_response({"ok": True, "request_id": request_id})
 
 
+# ---------- VAZIFALAR ("🎯 Vazifalar" - tanga/mukofot tizimi, 29-avgust) ----------
+# Admin (yoki kelajakda boshqa biznes egalari admin orqali) Instagram/
+# YouTube'da like/obuna/komentariya kabi vazifalar joylashtiradi, mijoz
+# bajarib skrinshot yuboradi, admin tasdiqlagach mukofot to'g'ridan-to'g'ri
+# hamyonga (so'm sifatida) qo'shiladi - xuddi hisob to'ldirish (topup) bilan
+# bir xil oqim.
+
+async def api_tasks(request: web.Request):
+    user_id = _authed_user_id(request)
+    if user_id is None:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    tasks = await db.get_active_tasks()
+    submissions_map = await db.get_user_task_submissions_map(user_id)
+    for t in tasks:
+        # "kutilmoqda" / "tasdiqlandi" / "rad etildi" yoki None (hali
+        # umuman yubormagan) - Mini App shu bo'yicha tugma/nishon ko'rsatadi.
+        t["my_status"] = submissions_map.get(t["id"])
+    return web.json_response({"tasks": tasks})
+
+
+async def api_task_submit(request: web.Request):
+    user_id = _authed_user_id(request)
+    if user_id is None:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    blocked_resp = await _check_not_blocked(user_id)
+    if blocked_resp is not None:
+        return blocked_resp
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+
+    try:
+        task_id = int(body.get("task_id"))
+    except (TypeError, ValueError):
+        return web.json_response({"error": "invalid_input"}, status=400)
+
+    task = await db.get_task(task_id)
+    if not task or task["status"] != "faol":
+        return web.json_response({"error": "task_not_found"}, status=404)
+
+    if await db.has_open_task_submission(task_id, user_id):
+        return web.json_response({"error": "already_submitted"}, status=409)
+
+    photo_data_url = body.get("screenshot")
+    if not photo_data_url:
+        return web.json_response({"error": "screenshot_required"}, status=400)
+
+    bot = request.app["bot"]
+    try:
+        raw = _decode_photo(photo_data_url)
+        if len(raw) > 10 * 1024 * 1024:
+            return web.json_response({"error": "photo_too_large"}, status=400)
+        # MUHIM: rasm mazmunidan hisoblangan "barmoq izi" (sha256) saqlanadi -
+        # kimdir bir marta olingan skrinshotni qayta-qayta (yoki turli
+        # vazifalar/akkauntlar bilan) yuborsa, admin panelida avtomatik
+        # ogohlantirish sifatida ko'rinadi (bu firibgarlikni to'liq oldini
+        # olmaydi, lekin sezilarli qiyinlashtiradi).
+        image_hash = hashlib.sha256(raw).hexdigest()
+        screenshot_file_id = await _upload_photo_get_file_id(bot, "task_proof.jpg", photo_data_url)
+    except ValueError:
+        return web.json_response({"error": "photo_too_large"}, status=400)
+    except Exception:
+        return web.json_response({"error": "photo_upload_failed"}, status=502)
+
+    submission_id = await db.create_task_submission(task_id, user_id, screenshot_file_id, image_hash)
+    await db.remember_username(user_id, _authed_username(request))
+
+    duplicate = await db.find_duplicate_submission_by_hash(image_hash, submission_id)
+
+    from handlers.catalog import format_price
+    from keyboards import task_submission_admin_keyboard
+    caption = (
+        f"🎯 Yangi vazifa tasdig'i #{submission_id}\n\n"
+        f"Vazifa: {task['title']}\n"
+        f"Mukofot: {format_price(task['reward_amount'])} so'm\n"
+        f"Foydalanuvchi ID: {user_id}"
+    )
+    if duplicate:
+        caption += (
+            f"\n\n⚠️ DIQQAT: bu rasm avvalroq #{duplicate['id']}-so'rovda "
+            f"(foydalanuvchi {duplicate['user_id']}) ham yuborilgan - ehtiyot bo'lib tekshiring!"
+        )
+    await notify_admins(bot, photo=screenshot_file_id, caption=caption, reply_markup=task_submission_admin_keyboard(submission_id))
+
+    return web.json_response({"ok": True, "submission_id": submission_id})
+
+
 async def api_promo_check(request: web.Request):
     user_id = _authed_user_id(request)
     if user_id is None:
@@ -549,6 +639,8 @@ def register_webapp_routes(app: web.Application, webapp_index_path: str):
     app.router.add_get("/api/orders", api_orders)
     app.router.add_post("/api/custom_order", api_custom_order)
     app.router.add_post("/api/topup", api_topup)
+    app.router.add_get("/api/tasks", api_tasks)
+    app.router.add_post("/api/task_submit", api_task_submit)
     app.router.add_post("/api/promo/check", api_promo_check)
     app.router.add_post("/api/checkout", api_checkout)
     app.router.add_post("/api/request_checkout", api_request_checkout)

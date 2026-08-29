@@ -258,3 +258,63 @@ async def notify_customer_topup_rejected(bot, req):
         )
     except Exception:
         pass
+
+
+# ---------- VAZIFALAR ("🎯 Vazifalar" - tanga/mukofot tizimi, 29-avgust) ----------
+# xuddi hisob to'ldirish (topup) bilan bir xil naqsh: mijoz skrinshot bilan
+# so'rov ("kutilmoqda") yaratadi, admin (chatdan yoki panel'dan) tasdiqlasa
+# mukofot to'g'ridan-to'g'ri hamyonga qo'shiladi.
+
+async def approve_task_submission(submission_id: int):
+    """Qaytaradi: (submission, task, new_balance, None) muvaffaqiyatda,
+    yoki (None, None, None, sabab) - sabab "not_found" yoki
+    "already_processed"."""
+    submission = await db.get_task_submission(submission_id)
+    if not submission:
+        return None, None, None, "not_found"
+    if submission["status"] != "kutilmoqda":
+        return None, None, None, "already_processed"
+
+    task = await db.get_task(submission["task_id"])
+    reward = task["reward_amount"] if task else 0
+    new_balance = await db.adjust_balance(submission["user_id"], reward)
+    await db.update_task_submission_status(submission_id, "tasdiqlandi")
+    submission = dict(submission)
+    submission["status"] = "tasdiqlandi"
+    return submission, task, new_balance, None
+
+
+async def notify_customer_task_approved(bot, submission, task, new_balance):
+    reward = task["reward_amount"] if task else 0
+    title = task["title"] if task else "Vazifa"
+    try:
+        await bot.send_message(
+            submission["user_id"],
+            f"✅ \"{title}\" vazifasi tasdiqlandi! Hamyoningizga {format_price(reward)} so'm qo'shildi.\n"
+            f"💰 Joriy balans: {format_price(new_balance)} so'm",
+        )
+    except Exception:
+        pass
+
+
+async def reject_task_submission(submission_id: int):
+    submission = await db.get_task_submission(submission_id)
+    if not submission:
+        return None, None, "not_found"
+    if submission["status"] != "kutilmoqda":
+        return None, None, "already_processed"
+    await db.update_task_submission_status(submission_id, "rad etildi")
+    task = await db.get_task(submission["task_id"])
+    return submission, task, None
+
+
+async def notify_customer_task_rejected(bot, submission, task):
+    title = task["title"] if task else "Vazifa"
+    try:
+        await bot.send_message(
+            submission["user_id"],
+            f"❌ \"{title}\" vazifasi uchun yuborgan skrinshotingiz rad etildi. "
+            "Vazifani to'g'ri bajarib, qaytadan urinib ko'rishingiz mumkin.",
+        )
+    except Exception:
+        pass

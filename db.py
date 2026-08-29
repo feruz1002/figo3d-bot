@@ -20,6 +20,11 @@ Bu yerda jadvallar:
   custom_orders   - mijozning o'z rasmi asosidagi shaxsiy buyurtmalari
   users           - mijoz profili (ism/telefon/manzil) va hamyon balansi
   topup_requests  - hamyonni to'ldirish so'rovlari (admin tasdig'i kutiladi)
+  tasks           - "🎯 Vazifalar" bo'limidagi vazifalar (masalan Instagram/
+                     YouTube'da like/obuna/komentariya) - bajarilsa mijozga
+                     hamyoniga to'g'ridan-to'g'ri so'm sifatida sovg'a beriladi
+  task_submissions - mijozning bitta vazifa uchun yuborgan skrinshoti va
+                     uning holati (kutilmoqda/tasdiqlandi/rad etildi)
 """
 import json
 from datetime import datetime, timedelta, timezone
@@ -128,6 +133,29 @@ CREATE TABLE IF NOT EXISTS contact_messages (
     message TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'ochiq',
     created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    platform TEXT NOT NULL,
+    task_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    target_url TEXT NOT NULL,
+    reward_amount INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'faol',
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS task_submissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    screenshot_file_id TEXT,
+    image_hash TEXT,
+    status TEXT NOT NULL DEFAULT 'kutilmoqda',
+    created_at TEXT NOT NULL,
+    reviewed_at TEXT
 );
 """
 
@@ -869,6 +897,150 @@ async def get_user_topup_history(user_id: int, limit: int = 30) -> list:
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
+
+
+# ---------- VAZIFALAR ("🎯 Vazifalar" - tanga/mukofot tizimi, 29-avgust) ----------
+# Admin (yoki kelajakda boshqa biznes egalari) Instagram/YouTube kabi
+# tarmoqlarda like/obuna/komentariya kabi vazifalar joylashtiradi, mijoz
+# bajarib skrinshot yuklaydi, admin tasdiqlasa mukofot to'g'ridan-to'g'ri
+# mijozning hamyoniga (so'm sifatida) qo'shiladi. Screenshot orqali
+# haqiqiyligini 100% avtomatik tekshirib bo'lmaydi (Instagram/YouTube bu
+# ma'lumotni tashqi dasturga bermaydi) - shuning uchun HAR DOIM admin
+# ko'rib tasdiqlaydi, dastur esa faqat firibgarlikni qiyinlashtiradigan
+# yordamchi belgi sifatida bir xil rasm boshqa joyda ham yuborilganini
+# (image_hash orqali) aniqlab, adminga ogohlantiradi.
+
+async def create_task(
+    platform: str, task_type: str, title: str, description: str | None,
+    target_url: str, reward_amount: int,
+) -> int:
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            """INSERT INTO tasks (platform, task_type, title, description, target_url,
+                                   reward_amount, status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'faol', ?)""",
+            (platform, task_type, title, description, target_url, reward_amount,
+             datetime.now(timezone.utc).isoformat(timespec="seconds")),
+        )
+        await conn.commit()
+        return cursor.lastrowid
+
+
+async def get_active_tasks() -> list:
+    """Mijozning Mini App'idagi "🎯 Vazifalar" bo'limida ko'rsatiladigan
+    hozircha faol vazifalar."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute("SELECT * FROM tasks WHERE status = 'faol' ORDER BY id DESC")
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def get_task(task_id: int):
+    async with get_db_connection() as conn:
+        cursor = await conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def get_all_tasks_admin(limit: int = 100) -> list:
+    """Admin panelning "📋 Vazifalar ro'yxati" bo'limi uchun - holatidan
+    (faol/tugagan) qat'i nazar hammasi."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute("SELECT * FROM tasks ORDER BY id DESC LIMIT ?", (limit,))
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def set_task_status(task_id: int, status: str):
+    async with get_db_connection() as conn:
+        await conn.execute("UPDATE tasks SET status = ? WHERE id = ?", (status, task_id))
+        await conn.commit()
+
+
+async def create_task_submission(task_id: int, user_id: int, screenshot_file_id: str | None, image_hash: str | None) -> int:
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            """INSERT INTO task_submissions (task_id, user_id, screenshot_file_id, image_hash, status, created_at)
+               VALUES (?, ?, ?, ?, 'kutilmoqda', ?)""",
+            (task_id, user_id, screenshot_file_id, image_hash,
+             datetime.now(timezone.utc).isoformat(timespec="seconds")),
+        )
+        await conn.commit()
+        return cursor.lastrowid
+
+
+async def get_task_submission(submission_id: int):
+    async with get_db_connection() as conn:
+        cursor = await conn.execute("SELECT * FROM task_submissions WHERE id = ?", (submission_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def get_user_task_submissions_map(user_id: int) -> dict:
+    """{task_id: status} ko'rinishida - Mini App har bir vazifa kartasida
+    "Bajarish" tugmasi o'rniga mijozning holatini (⏳/✅/❌) ko'rsatishi uchun."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT task_id, status FROM task_submissions WHERE user_id = ?", (user_id,)
+        )
+        rows = await cursor.fetchall()
+        return {r[0]: r[1] for r in rows}
+
+
+async def has_open_task_submission(task_id: int, user_id: int) -> bool:
+    """Mijoz shu vazifa uchun allaqachon "kutilmoqda" yoki "tasdiqlandi"
+    holatida yuborgan bo'lsa - qayta yuborishga urinishning oldini olish
+    uchun (rad etilgan bo'lsa esa qayta urinib ko'rishga ruxsat beriladi)."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT 1 FROM task_submissions WHERE task_id = ? AND user_id = ? "
+            "AND status IN ('kutilmoqda', 'tasdiqlandi') LIMIT 1",
+            (task_id, user_id),
+        )
+        row = await cursor.fetchone()
+        return row is not None
+
+
+async def get_pending_task_submissions(limit: int = 100) -> list:
+    """Admin panelning "🆕 Tekshirish" navbati uchun - vazifa nomi/mukofoti
+    bilan birga (JOIN)."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            """SELECT ts.*, t.title AS task_title, t.reward_amount AS task_reward,
+                      t.platform AS task_platform, t.task_type AS task_type_name
+               FROM task_submissions ts JOIN tasks t ON t.id = ts.task_id
+               WHERE ts.status = 'kutilmoqda'
+               ORDER BY ts.id DESC LIMIT ?""",
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def update_task_submission_status(submission_id: int, status: str):
+    async with get_db_connection() as conn:
+        await conn.execute(
+            "UPDATE task_submissions SET status = ?, reviewed_at = ? WHERE id = ?",
+            (status, datetime.now(timezone.utc).isoformat(timespec="seconds"), submission_id),
+        )
+        await conn.commit()
+
+
+async def find_duplicate_submission_by_hash(image_hash: str, exclude_submission_id: int):
+    """Xuddi shu rasm (bir xil `image_hash`) ilgari BOSHQA bir yozuvda ham
+    ishlatilgan bo'lsa - eng birinchisini qaytaradi (admin panelida "⚠️ bu
+    rasm avval ham yuborilgan" ogohlantirishi uchun). Bir xil odam bir xil
+    vazifani ikki marta yubormoqchi bo'lgan holat ham shu orqali ushlanadi."""
+    if not image_hash:
+        return None
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT id, user_id, task_id, status FROM task_submissions "
+            "WHERE image_hash = ? AND id != ? ORDER BY id ASC LIMIT 1",
+            (image_hash, exclude_submission_id),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
 
 
 async def get_open_custom_orders(limit: int = 50):

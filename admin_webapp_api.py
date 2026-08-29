@@ -272,6 +272,107 @@ async def api_admin_balance_adjust(request: web.Request):
     return web.json_response({"ok": True, "new_balance": new_balance})
 
 
+# ---------- VAZIFALAR ("🎯 Vazifalar" - tanga/mukofot tizimi, 29-avgust) ----------
+# Admin bu yerdan Instagram/YouTube kabi tarmoqlarda like/obuna/komentariya
+# kabi vazifalar yaratadi (rasm shart emas - faqat matn/havola/mukofot).
+# Mijoz Mini App'da bajarib skrinshot yuboradi (webapp_api.api_task_submit),
+# u shu yerdagi "🆕 Tekshirish" navbatiga tushadi - screenshot orqali
+# haqiqiyligini 100% avtomatik tekshirib bo'lmaydi (Instagram/YouTube bu
+# ma'lumotni tashqi dasturga bermaydi), shuning uchun HAR DOIM admin ko'rib
+# tasdiqlaydi/rad etadi (find_duplicate_submission_by_hash orqali bir xil
+# rasm ikkinchi marta ishlatilgani sezilsa - javobda ogohlantirish beriladi).
+
+async def api_admin_tasks(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    tasks = await db.get_all_tasks_admin(limit=200)
+    return web.json_response({"tasks": tasks})
+
+
+async def api_admin_task_create(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+
+    platform = (body.get("platform") or "").strip()
+    task_type = (body.get("task_type") or "").strip()
+    title = (body.get("title") or "").strip()
+    description = (body.get("description") or "").strip() or None
+    target_url = (body.get("target_url") or "").strip()
+    try:
+        reward_amount = int(body.get("reward_amount"))
+    except (TypeError, ValueError):
+        return web.json_response({"error": "invalid_input"}, status=400)
+
+    if not platform or not task_type or not title or not target_url or reward_amount <= 0:
+        return web.json_response({"error": "invalid_input"}, status=400)
+
+    task_id = await db.create_task(platform, task_type, title, description, target_url, reward_amount)
+    return web.json_response({"ok": True, "task_id": task_id})
+
+
+async def api_admin_task_toggle(request: web.Request):
+    """Vazifani "faol" <-> "tugagan" holatiga o'tkazadi (o'chirilmaydi -
+    eski topshirilgan skrinshotlar tarixi/mukofotlar bilan bog'liqligi
+    saqlanib qolishi uchun)."""
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        task_id = int(request.match_info["task_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    task = await db.get_task(task_id)
+    if not task:
+        return web.json_response({"error": "not_found"}, status=404)
+    new_status = "tugagan" if task["status"] == "faol" else "faol"
+    await db.set_task_status(task_id, new_status)
+    return web.json_response({"ok": True, "status": new_status})
+
+
+async def api_admin_task_submissions(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    submissions = await db.get_pending_task_submissions(limit=200)
+    # Har biriga - agar rasmi boshqa yozuvda ham uchragan bo'lsa - ogohlantirish belgisini qo'shamiz.
+    for s in submissions:
+        duplicate = await db.find_duplicate_submission_by_hash(s.get("image_hash"), s["id"])
+        s["duplicate_of"] = duplicate
+    return web.json_response({"submissions": submissions})
+
+
+async def api_admin_task_submission_approve(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        submission_id = int(request.match_info["submission_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    submission, task, new_balance, reason = await admin_service.approve_task_submission(submission_id)
+    if submission is None:
+        status = 409 if reason == "already_processed" else 404
+        return web.json_response({"error": reason}, status=status)
+    await admin_service.notify_customer_task_approved(request.app["bot"], submission, task, new_balance)
+    return web.json_response({"ok": True})
+
+
+async def api_admin_task_submission_reject(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        submission_id = int(request.match_info["submission_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    submission, task, reason = await admin_service.reject_task_submission(submission_id)
+    if submission is None:
+        status = 409 if reason == "already_processed" else 404
+        return web.json_response({"error": reason}, status=status)
+    await admin_service.notify_customer_task_rejected(request.app["bot"], submission, task)
+    return web.json_response({"ok": True})
+
+
 # ---------- Mijoz murojaatlari / arizalar (29-avgust) ----------
 # Mijoz Mini App'dagi "💬 Operatorga yozish" orqali yozgan xabarlar - ishi
 # bitmaguncha ("ochiq") shu yerda ko'rinib turadi (webapp_api.api_contact_message
@@ -568,6 +669,12 @@ def register_admin_routes(app: web.Application, admin_index_path: str):
     app.router.add_post("/admin/api/topups/{request_id}/approve", api_admin_topup_approve)
     app.router.add_post("/admin/api/topups/{request_id}/reject", api_admin_topup_reject)
     app.router.add_post("/admin/api/balance_adjust", api_admin_balance_adjust)
+    app.router.add_get("/admin/api/tasks", api_admin_tasks)
+    app.router.add_post("/admin/api/tasks", api_admin_task_create)
+    app.router.add_post("/admin/api/tasks/{task_id}/toggle", api_admin_task_toggle)
+    app.router.add_get("/admin/api/task_submissions", api_admin_task_submissions)
+    app.router.add_post("/admin/api/task_submissions/{submission_id}/approve", api_admin_task_submission_approve)
+    app.router.add_post("/admin/api/task_submissions/{submission_id}/reject", api_admin_task_submission_reject)
     app.router.add_get("/admin/api/contact_messages", api_admin_contact_messages)
     app.router.add_post("/admin/api/contact_messages/{message_id}/resolve", api_admin_contact_message_resolve)
     app.router.add_get("/admin/api/customers", api_admin_customers_search)

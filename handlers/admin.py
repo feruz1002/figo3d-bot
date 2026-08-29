@@ -274,6 +274,57 @@ async def topup_reject(callback: CallbackQuery, bot: Bot):
     await callback.answer("Rad etildi")
 
 
+# ---------- 29-avgust: "🎯 Vazifalar" - skrinshotni chatdan tasdiqlash/rad etish ----------
+# Admin panel'dan tashqari, xuddi topup kabi, to'g'ridan-to'g'ri chatdagi
+# xabar ostidagi tugmalar orqali ham tez tasdiqlash/rad etish mumkin.
+@admin_router.callback_query(F.data.startswith("task_approve:"))
+async def task_submission_approve(callback: CallbackQuery, bot: Bot):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+
+    submission_id = int(callback.data.split(":", 1)[1])
+    submission, task, new_balance, reason = await admin_service.approve_task_submission(submission_id)
+    if submission is None:
+        msg = "So'rov topilmadi" if reason == "not_found" else "Bu so'rov allaqachon ko'rib chiqilgan"
+        await callback.answer(msg, show_alert=True)
+        return
+
+    if callback.message.photo:
+        old_caption = callback.message.caption or ""
+        await callback.message.edit_caption(caption=old_caption + "\n\n✅ Tasdiqlandi")
+    else:
+        old_text = callback.message.html_text or ""
+        await callback.message.edit_text(old_text + "\n\n✅ Tasdiqlandi")
+
+    await admin_service.notify_customer_task_approved(bot, submission, task, new_balance)
+    await callback.answer("Tasdiqlandi")
+
+
+@admin_router.callback_query(F.data.startswith("task_reject:"))
+async def task_submission_reject(callback: CallbackQuery, bot: Bot):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+
+    submission_id = int(callback.data.split(":", 1)[1])
+    submission, task, reason = await admin_service.reject_task_submission(submission_id)
+    if submission is None:
+        msg = "So'rov topilmadi" if reason == "not_found" else "Bu so'rov allaqachon ko'rib chiqilgan"
+        await callback.answer(msg, show_alert=True)
+        return
+
+    if callback.message.photo:
+        old_caption = callback.message.caption or ""
+        await callback.message.edit_caption(caption=old_caption + "\n\n❌ Rad etildi")
+    else:
+        old_text = callback.message.html_text or ""
+        await callback.message.edit_text(old_text + "\n\n❌ Rad etildi")
+
+    await admin_service.notify_customer_task_rejected(bot, submission, task)
+    await callback.answer("Rad etildi")
+
+
 # ---------- 29-avgust: hisob to'ldirishni "boshqa summa" bilan tasdiqlash ----------
 # MUHIM: skrinshotda/tranzaksiyada ko'rsatilgan summa mijoz botga yozgan
 # summadan farq qilishi mumkin (kam/ko'p tushgan yoki tranzaksiyada
