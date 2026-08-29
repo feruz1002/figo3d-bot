@@ -3,6 +3,7 @@ Bot sozlamalari shu yerdan o'qiladi.
 Barcha maxfiy ma'lumotlar (token va h.k.) kod ichida emas, ".env" faylida yoki
 Render'ning "Environment" bo'limida saqlanadi - bu xavfsizlik uchun muhim.
 """
+import hashlib
 import os
 from dotenv import load_dotenv
 
@@ -49,16 +50,40 @@ def is_admin(user_id: int) -> bool:
 # Mahalliy kompyuterda bu bo'sh bo'ladi -> bot polling rejimida ishlaydi.
 RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL", "").strip()
 
+# MUHIM (29-avgust, "eski mahsulotlar ko'rinmayapti" muammosiga javoban):
+# Telegram (ayniqsa Desktop, Windows'da) Mini App sahifasini juda "yopishqoq"
+# keshlaydi - hatto webapp_api.py'dagi "no-cache" sarlavhalari bo'lsada,
+# ba'zan eski (deploy qilinganidan OLDINGI) HTML/JS nusxasini ko'rsatishda
+# davom etadi, chunki WebView sahifani manzil (URL) bo'yicha keshlaydi. Buni
+# oldini olish uchun manzilga fayl mazmuniga qarab hisoblangan "?v=..."
+# parametrini qo'shamiz - fayl har o'zgarganda (har yangi deploy'da) manzil
+# ham o'zgaradi, shuning uchun Telegram uni "yangi sahifa" deb hisoblab,
+# eski keshdan emas, serverdan qayta yuklaydi. (Server tomonda "/webapp" va
+# "/admin-panel" yo'llari so'rov parametriga qaramaydi - shuning uchun bu
+# xavfsiz, aiohttp uni e'tiborsiz qoldiradi.)
+def _asset_version(*relative_parts: str) -> str:
+    _path = os.path.join(os.path.dirname(os.path.abspath(__file__)), *relative_parts)
+    try:
+        with open(_path, "rb") as _f:
+            return hashlib.sha256(_f.read()).hexdigest()[:10]
+    except OSError:
+        return "0"
+
+
 # Veb-do'kon (Telegram Mini App) manzili. Faqat Render'da (webhook rejimida,
 # ya'ni haqiqiy https manzil mavjud bo'lganda) ishlaydi - Telegram Mini App
 # tugmasi https talab qiladi. Mahalliy sinovda bu None bo'ladi va bot
 # avvalgi (tugmali) katalog ko'rinishiga tushadi.
-WEBAPP_URL = (RENDER_EXTERNAL_URL.rstrip("/") + "/webapp") if RENDER_EXTERNAL_URL else None
+WEBAPP_URL = (
+    RENDER_EXTERNAL_URL.rstrip("/") + "/webapp?v=" + _asset_version("webapp", "index.html")
+) if RENDER_EXTERNAL_URL else None
 
 # Admin boshqaruv paneli (Mini App) manzili - xuddi WEBAPP_URL kabi, faqat
 # Render'da (https bilan) ishlaydi. Kirish config.ADMIN_IDS ro'yxati orqali
 # cheklanadi (webapp_auth.py + admin_webapp_api.py'ga qarang).
-ADMIN_PANEL_URL = (RENDER_EXTERNAL_URL.rstrip("/") + "/admin-panel") if RENDER_EXTERNAL_URL else None
+ADMIN_PANEL_URL = (
+    RENDER_EXTERNAL_URL.rstrip("/") + "/admin-panel?v=" + _asset_version("webapp", "admin.html")
+) if RENDER_EXTERNAL_URL else None
 
 # Render har doim shu portni beradi; mahalliy sinovda ishlatilmaydi
 PORT = int(os.getenv("PORT", "8080"))

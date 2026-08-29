@@ -142,24 +142,49 @@
     toastTimer = setTimeout(function () { el.classList.remove("show"); }, 5000);
   }
 
+  // MUHIM (29-avgust, "Telegram qotib qolyapti" muammosiga javoban): Mini App
+  // uzoq vaqt fonda qolib ketsa, o'sha payt tugamagan so'rov(lar) Telegram'ning
+  // ichki WebView komponentini uyg'onishda qiynashi mumkin edi. Shuning uchun
+  // har bir api() chaqiruvi kuzatiladi va panel fonga o'tgan zahoti hammasi
+  // bekor qilinadi (pastga qarang).
+  var pendingControllers = [];
+  function trackController(c) { if (c) pendingControllers.push(c); }
+  function untrackController(c) {
+    var idx = pendingControllers.indexOf(c);
+    if (idx !== -1) pendingControllers.splice(idx, 1);
+  }
+  function abortAllPending() {
+    pendingControllers.forEach(function (c) { try { c.abort(); } catch (e) {} });
+    pendingControllers = [];
+  }
+
   function api(path, opts) {
     opts = opts || {};
     var headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
     if (initDataStr()) headers["X-Telegram-Init-Data"] = initDataStr();
     var controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    trackController(controller);
     var timeoutId = controller ? setTimeout(function () { controller.abort(); }, 45000) : null;
     return fetch(path, Object.assign({}, opts, { headers: headers, signal: controller ? controller.signal : undefined }))
       .then(function (res) {
         if (timeoutId) clearTimeout(timeoutId);
+        untrackController(controller);
         return res.json().catch(function () { return {}; }).then(function (data) { return { ok: res.ok, status: res.status, data: data }; });
       })
       .catch(function (err) {
         if (timeoutId) clearTimeout(timeoutId);
+        untrackController(controller);
         var isAbort = err && err.name === "AbortError";
+        if (isAbort && document.hidden) {
+          return { ok: false, status: 0, data: { error: "backgrounded" } };
+        }
         showToast(isAbort ? "Server javob bermayapti. Biroz kutib, qaytadan urinib ko'ring." : "Internet aloqasida muammo.");
         return { ok: false, status: 0, data: { error: "network" } };
       });
   }
+
+  document.addEventListener("visibilitychange", function () { if (document.hidden) abortAllPending(); });
+  window.addEventListener("pagehide", abortAllPending);
 
   function photoUrl(fileId) { return "/api/photo/" + encodeURIComponent(fileId); }
 

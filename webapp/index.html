@@ -258,6 +258,25 @@
     toastTimer = setTimeout(function () { el.classList.remove("show"); }, 5000);
   }
 
+  // MUHIM (29-avgust, "Telegram qotib qolyapti" muammosiga javoban): Mini App
+  // uzoq vaqt fonda (ekran o'chgan/boshqa ilovaga o'tilgan) qolib ketsa,
+  // o'sha payt "havoda" turgan (hali tugamagan) so'rov(lar) Telegram'ning
+  // ichki WebView komponentini uyg'onishda qiynashi mumkin edi. Shuning
+  // uchun endi HAR bir api() chaqiruvi pastdagi pendingControllers ro'yxatida
+  // kuzatiladi va Mini App fonga o'tgan zahoti hammasi bekor qilinadi (pastga
+  // qarang) - bu Telegram qotib qolish xavfini kamaytiradi (garchi bu asosan
+  // Telegram'ning o'zidagi platforma darajasidagi xatti-harakat bo'lsa-da).
+  var pendingControllers = [];
+  function trackController(c) { if (c) pendingControllers.push(c); }
+  function untrackController(c) {
+    var idx = pendingControllers.indexOf(c);
+    if (idx !== -1) pendingControllers.splice(idx, 1);
+  }
+  function abortAllPending() {
+    pendingControllers.forEach(function (c) { try { c.abort(); } catch (e) {} });
+    pendingControllers = [];
+  }
+
   // {ok, status, data} qaytaradi - xato holatini ham chaqiruvchi o'zi ko'rib chiqishi mumkin.
   // Render'ning bepul tarifi uzoq ishlatilmasa "uxlab qoladi" va birinchi
   // so'rovga javob berish 30-60 soniyagacha cho'zilishi mumkin - shuning
@@ -268,17 +287,26 @@
     var headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
     if (initDataStr()) headers["X-Telegram-Init-Data"] = initDataStr();
     var controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    trackController(controller);
     var timeoutId = controller ? setTimeout(function () { controller.abort(); }, 45000) : null;
     return fetch(path, Object.assign({}, opts, { headers: headers, signal: controller ? controller.signal : undefined }))
       .then(function (res) {
         if (timeoutId) clearTimeout(timeoutId);
+        untrackController(controller);
         return res.json().catch(function () { return {}; }).then(function (data) {
           return { ok: res.ok, status: res.status, data: data };
         });
       })
       .catch(function (err) {
         if (timeoutId) clearTimeout(timeoutId);
+        untrackController(controller);
         var isAbort = err && err.name === "AbortError";
+        // Mini App o'zi fonga o'tgani sababli bekor qilingan so'rovlar uchun
+        // xato xabari (toast) ko'rsatmaymiz - foydalanuvchi buni ko'rmaydi
+        // ham, hech qanday xatolik yuz bermadi, shunchaki fonga o'tdi.
+        if (isAbort && document.hidden) {
+          return { ok: false, status: 0, data: { error: "backgrounded" } };
+        }
         showToast(
           isAbort
             ? "Server javob bermayapti (uxlab qolgan bo'lishi mumkin). Biroz kutib, qaytadan urinib ko'ring."
@@ -288,6 +316,32 @@
         return { ok: false, status: 0, data: { error: "network" } };
       });
   }
+
+  // Fonga o'tganda - kutayotgan barcha so'rovlarni bekor qilamiz. Qaytib
+  // kelganda (agar 30 soniyadan ko'proq fonda qolgan bo'lsa) - savat va
+  // sozlamalarni jimgina qaytadan yuklaymiz, shunda Telegram initData'ni
+  // yangilagan bo'lsa, Mini App buni foydalanuvchi asilo sezmasdan darhol
+  // qo'llaydi (aks holda "boshqa bo'limlarda yuklab bo'lmadi" xatosi butun
+  // ilovani qayta ochguncha davom etardi).
+  var hiddenSince = null;
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      hiddenSince = Date.now();
+      abortAllPending();
+    } else if (hiddenSince) {
+      var awayMs = Date.now() - hiddenSince;
+      hiddenSince = null;
+      if (awayMs > 30000) {
+        loadCart().then(function () {
+          if (currentView() === "grid") renderGrid();
+          if (currentView() === "cart") render();
+          updateMainButton();
+        });
+        loadConfig();
+      }
+    }
+  });
+  window.addEventListener("pagehide", abortAllPending);
 
   function photoUrl(fileId) { return "/api/photo/" + encodeURIComponent(fileId); }
 
