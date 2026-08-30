@@ -639,6 +639,49 @@ async def api_admin_product_delete(request: web.Request):
     return web.json_response({"ok": True})
 
 
+# ---------- Filament ranglari (30-avgust, foydalanuvchi so'rovi) ----------
+# Mijoz buyurtma qilayotganda savatdagi har bir mahsulot uchun shu ro'yxatdan
+# rang tanlaydi (yoki "Avtomatik" qoldiradi). Admin shu yerda mavjud ranglar
+# ro'yxatini boshqaradi - o'chirilmaydi, faqat faol/nofaol qilinadi (rang
+# vaqtincha omborda tugab qolsa, keyin qayta yoqish uchun).
+
+async def api_admin_colors(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    colors = await db.get_all_filament_colors_admin()
+    return web.json_response({"colors": colors})
+
+
+async def api_admin_color_create(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+    name = (body.get("name") or "").strip()
+    if not name:
+        return web.json_response({"error": "invalid_input"}, status=400)
+    color_id = await db.create_filament_color(name)
+    return web.json_response({"ok": True, "color_id": color_id})
+
+
+async def api_admin_color_toggle(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        color_id = int(request.match_info["color_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    colors = await db.get_all_filament_colors_admin()
+    color = next((c for c in colors if c["id"] == color_id), None)
+    if not color:
+        return web.json_response({"error": "not_found"}, status=404)
+    new_active = not color["active"]
+    await db.set_filament_color_active(color_id, new_active)
+    return web.json_response({"ok": True, "active": new_active})
+
+
 # ---------- Yangiliklar/e'lonlar (28-avgust) ----------
 
 _UZ_MONTHS = [
@@ -763,6 +806,9 @@ def register_admin_routes(app: web.Application, admin_index_path: str):
     app.router.add_get("/admin/api/products", api_admin_products)
     app.router.add_post("/admin/api/products", api_admin_product_create)
     app.router.add_post("/admin/api/products/{product_id}/delete", api_admin_product_delete)
+    app.router.add_get("/admin/api/colors", api_admin_colors)
+    app.router.add_post("/admin/api/colors", api_admin_color_create)
+    app.router.add_post("/admin/api/colors/{color_id}/toggle", api_admin_color_toggle)
     app.router.add_get("/admin/api/stats", api_admin_stats)
     app.router.add_get("/admin/api/announcements", api_admin_announcements)
     app.router.add_post("/admin/api/announcements", api_admin_announcement_create)

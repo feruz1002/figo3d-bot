@@ -235,6 +235,11 @@
   // ---------- Holat ----------
   var state = {
     categories: [], products: [], cart: {},
+    // 30-avgust (foydalanuvchi so'rovi): mijoz savatdagi har bir mahsulot
+    // uchun filament rangini tanlashi (yoki "Avtomatik" qoldirishi) mumkin.
+    // `colors` - admin panelda FAOL qilingan ranglar ro'yxati (/api/colors'dan),
+    // `cartColor` - {product_id: "Qizil"} yoki bo'sh/undefined = "Avtomatik".
+    colors: [], cartColor: {},
     detailProduct: null,
     profile: null, orders: null, announcements: null,
     // 29-avgust: to'lov endi Mini App ICHIDA (checkout/topup ko'rinishlari) -
@@ -451,7 +456,16 @@
   function loadCart() {
     return api("/api/cart").then(function (r) {
       state.cart = {};
-      if (r.ok) ((r.data && r.data.items) || []).forEach(function (i) { state.cart[i.product_id] = i.quantity; });
+      state.cartColor = {};
+      if (r.ok) ((r.data && r.data.items) || []).forEach(function (i) {
+        state.cart[i.product_id] = i.quantity;
+        if (i.color) state.cartColor[i.product_id] = i.color;
+      });
+    });
+  }
+  function loadColors() {
+    return api("/api/colors").then(function (r) {
+      state.colors = (r.ok && r.data && r.data.colors) || [];
     });
   }
   function loadConfig() {
@@ -687,17 +701,26 @@
       el.innerHTML = '<div class="cart-empty">🛒 Savatingiz bo\'sh</div>';
       return;
     }
+    // 30-avgust (foydalanuvchi so'rovi): har bir mahsulot uchun mijoz
+    // filament rangini tanlashi (yoki "🎲 Avtomatik" qoldirishi) mumkin -
+    // pastdagi ogohlantirish shu tanlovning ma'nosini tushuntiradi.
     var rows = pids.map(function (pid) {
       var p = state.products.filter(function (x) { return x.id === Number(pid); })[0];
       if (!p) return "";
       var qty = state.cart[pid];
       var img = (p.photos && p.photos[0]) ? '<img src="' + photoUrl(p.photos[0]) + '">' : '<div class="noimg small">🎁</div>';
+      var currentColor = state.cartColor[pid] || "";
+      var colorOptions = '<option value="">🎲 Avtomatik (biz tanlaymiz)</option>' +
+        state.colors.map(function (c) {
+          return '<option value="' + escapeHtml(c.name) + '"' + (c.name === currentColor ? " selected" : "") + '>🎨 ' + escapeHtml(c.name) + '</option>';
+        }).join("");
       return (
         '<div class="cart-row" data-pid="' + p.id + '">' +
           '<div class="cart-row-img">' + img + '</div>' +
           '<div class="cart-row-info">' +
             '<div class="cart-row-name">' + escapeHtml(p.name) + '</div>' +
             '<div class="cart-row-price">' + fmtPrice(p.price) + " so'm</div>" +
+            '<select class="form-input cart-row-color" data-pid="' + p.id + '" style="margin-top:6px;height:34px;font-size:13px;padding:2px 8px">' + colorOptions + '</select>' +
           '</div>' +
           '<div class="stepper"><button class="dec">−</button><span>' + qty + '</span><button class="inc">+</button></div>' +
         '</div>'
@@ -706,6 +729,7 @@
     var p = state.profile || {};
     el.innerHTML =
       '<div class="cart-list">' + rows + '</div>' +
+      '<div class="form-hint" style="margin:2px 0 10px">⚠️ Rang tanlamasangiz (yoki tanlagan rangingiz omborimizda tugab qolsa), buyurtmani yig\'ishda mos/mavjud filament rangini o\'zimiz tanlaymiz.</div>' +
       '<div class="cart-total">Jami: ' + fmtPrice(cartSubtotal()) + " so'm</div>" +
       '<div class="screen" style="padding-top:4px">' +
         '<div class="form-group"><label class="form-label">Ism-familiya</label><input class="form-input" id="ck-name" value="' + escapeHtml(p.full_name || "") + '"></div>' +
@@ -719,6 +743,23 @@
       var pid = Number(row.getAttribute("data-pid"));
       row.querySelector(".dec").onclick = function () { changeQty(pid, -1); };
       row.querySelector(".inc").onclick = function () { changeQty(pid, 1); };
+    });
+    el.querySelectorAll(".cart-row-color").forEach(function (sel) {
+      sel.onchange = function () {
+        var pid = Number(sel.getAttribute("data-pid"));
+        var color = sel.value || null;
+        sel.disabled = true;
+        api("/api/cart/set_color", { method: "POST", body: JSON.stringify({ product_id: pid, color: color }) }).then(function (r) {
+          sel.disabled = false;
+          if (r.ok) {
+            if (color) state.cartColor[pid] = color; else delete state.cartColor[pid];
+            showToast(color ? ("🎨 Rang tanlandi: " + color) : "🎲 Avtomatik rang tanlandi");
+          } else {
+            showToast("Rangni saqlab bo'lmadi. Qaytadan urinib ko'ring.");
+            render();
+          }
+        });
+      };
     });
     document.getElementById("cart-finish-btn").onclick = goToCheckout;
 
@@ -772,7 +813,8 @@
     var itemsHtml = pids.map(function (pid) {
       var p = state.products.filter(function (x) { return x.id === Number(pid); })[0];
       if (!p) return "";
-      return '<div class="card-line">' + state.cart[pid] + ' x ' + escapeHtml(p.name) + ' — ' + fmtPrice(p.price * state.cart[pid]) + " so'm</div>";
+      var colorLabel = state.cartColor[pid] ? (" (🎨 " + escapeHtml(state.cartColor[pid]) + ")") : " (🎲 Avtomatik)";
+      return '<div class="card-line">' + state.cart[pid] + ' x ' + escapeHtml(p.name) + colorLabel + ' — ' + fmtPrice(p.price * state.cart[pid]) + " so'm</div>";
     }).join("");
     var subtotal = cartSubtotal();
     var promo = state.promo;
@@ -1331,6 +1373,7 @@
       return loadCart();
     })
     .then(function () { renderGrid(); updateMainButton(); return loadConfig(); })
+    .then(function () { return loadColors(); })
     .catch(function () {
       document.getElementById("grid").innerHTML = '<div class="empty">Yuklashda xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.</div>';
     });

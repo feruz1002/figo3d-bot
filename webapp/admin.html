@@ -238,15 +238,17 @@
     { key: "contacts", label: "💬 Murojaatlar" },
     { key: "customers", label: "👥 Mijozlar" },
     { key: "products", label: "🗂 Mahsulotlar" },
+    { key: "colors", label: "🌈 Ranglar" },
     { key: "announcements", label: "📰 Yangiliklar" },
     { key: "stats", label: "📊 Statistika" },
     { key: "settings", label: "⚙️ Sozlamalar" },
   ];
   var activeTab = "orders";
-  // FAB (➕) endi ikki bo'limda ham ishlaydi (Mahsulotlar - yangi mahsulot,
-  // Yangiliklar - yangi e'lon) - qaysi bo'lim ochiq bo'lsa, o'shanga mos
-  // formani ochadi (pastdagi "fab".onclick'ga qarang).
-  var FAB_TABS = { products: true, announcements: true, tasks: true };
+  // FAB (➕) endi bir nechta bo'limda ishlaydi (Mahsulotlar - yangi mahsulot,
+  // Yangiliklar - yangi e'lon, Ranglar - yangi filament rangi) - qaysi
+  // bo'lim ochiq bo'lsa, o'shanga mos formani ochadi (pastdagi "fab".onclick'ga
+  // qarang).
+  var FAB_TABS = { products: true, announcements: true, tasks: true, colors: true };
 
   // 29-avgust (foydalanuvchi so'rovi): "🎯 Vazifalar" uchun ENDI chatga har
   // bir so'rov uchun alohida xabar kelmaydi (minglab bo'lganda chatni
@@ -311,6 +313,7 @@
     else if (activeTab === "contacts") loadContactMessages();
     else if (activeTab === "customers") loadCustomers();
     else if (activeTab === "products") loadProducts();
+    else if (activeTab === "colors") loadColorsTab();
     else if (activeTab === "announcements") loadAnnouncements();
     else if (activeTab === "stats") loadStats();
     else if (activeTab === "settings") loadSettingsTab();
@@ -367,13 +370,22 @@
     // olingan" - db.create_order'ga qarang), har bir band yonida
     // to'g'ridan-to'g'ri o'sha havolaga o'tuvchi "🧊 STL" tugmasi chiqadi -
     // admin buyurtmani yig'ayotganda faylni darhol yuklab olishi uchun.
+    // 30-avgust (foydalanuvchi so'rovi): mijoz tanlagan filament rangi ham
+    // (yoki "Avtomatik" - mijoz aniq rang tanlamagan bo'lsa) shu yerda
+    // ko'rinadi, shunda admin buyurtmani qaysi rangda chop etishni
+    // qidirib o'tirmaydi.
     var itemsHtml = items.map(function (i) {
       var stlBtn = i.stl_url
         ? ' <a href="' + escapeHtml(i.stl_url) + '" target="_blank" rel="noopener" ' +
           'style="display:inline-block;margin-left:6px;font-size:12px;background:var(--button);color:var(--button-text);' +
           'padding:3px 9px;border-radius:8px;text-decoration:none;vertical-align:middle">🧊 STL</a>'
         : "";
-      return '<div>' + escapeHtml(i.name) + ' x' + i.quantity + stlBtn + '</div>';
+      var colorLabel = i.color
+        ? ' <span style="display:inline-block;margin-left:6px;font-size:12px;background:var(--bg);' +
+          'padding:3px 9px;border-radius:8px;vertical-align:middle">🎨 ' + escapeHtml(i.color) + '</span>'
+        : ' <span style="display:inline-block;margin-left:6px;font-size:12px;background:var(--bg);' +
+          'color:var(--hint);padding:3px 9px;border-radius:8px;vertical-align:middle">🎲 Avtomatik</span>';
+      return '<div>' + escapeHtml(i.name) + ' x' + i.quantity + colorLabel + stlBtn + '</div>';
     }).join("");
     var statusLabel = STATUS_LABELS[o.status] || o.status;
     var actionsHtml = "";
@@ -1163,6 +1175,84 @@
       });
   }
 
+  // ---------- Filament ranglari (30-avgust, foydalanuvchi so'rovi) ----------
+  // Mijoz "🛍 Do'kon" Mini App'ida savatga mahsulot qo'shgach, shu yerda
+  // qo'shilgan (FAOL) ranglardan birini yoki "Avtomatik" ni tanlaydi
+  // (webapp/index.html'dagi VIEW_RENDERERS.cart'ga qarang). Rang o'chirilmaydi -
+  // faqat faol/nofaol qilinadi (masalan filament vaqtincha tugab qolsa).
+  function loadColorsTab() {
+    api("/admin/api/colors").then(function (r) {
+      var content = document.getElementById("content");
+      if (!r.ok) { content.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
+      var colors = r.data.colors || [];
+      if (!colors.length) {
+        content.innerHTML = '<div class="empty">Hozircha rang qo\'shilmagan. Pastdagi ➕ orqali qo\'shing (masalan: Qizil, Ko\'k, Oq, Qora).</div>';
+        return;
+      }
+      content.innerHTML = colors.map(function (c) {
+        return (
+          '<div class="card" data-id="' + c.id + '">' +
+            '<div class="card-title">' + escapeHtml(c.name) + (c.active ? "" : " (nofaol)") + '</div>' +
+            '<div class="card-actions"><button class="card-btn' + (c.active ? " danger" : "") + '" data-action="toggle">' + (c.active ? "⭕ Nofaol qilish" : "✅ Faollashtirish") + '</button></div>' +
+          '</div>'
+        );
+      }).join("");
+      content.querySelectorAll('[data-action="toggle"]').forEach(function (btn) {
+        btn.onclick = function () {
+          var id = btn.closest(".card").getAttribute("data-id");
+          btn.disabled = true;
+          api("/admin/api/colors/" + id + "/toggle", { method: "POST" }).then(function (r2) {
+            if (r2.ok) { showToast(r2.data.active ? "Faollashtirildi" : "Nofaol qilindi"); loadColorsTab(); }
+            else { btn.disabled = false; showToast("Xatolik yuz berdi."); }
+          });
+        };
+      });
+    });
+  }
+
+  function openAddColorForm() {
+    var overlay = document.getElementById("overlay");
+    overlay.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">➕ Yangi filament rangi</div>' +
+        '<div class="form-group"><label class="form-label">Rang nomi</label>' +
+          '<input class="form-input" id="c-name" placeholder="Masalan: Qizil"></div>' +
+        '<div class="form-error hidden" id="c-error"></div>' +
+        '<button class="card-btn" id="c-submit" style="margin-top:6px">✅ Saqlash</button>' +
+        '<button class="card-btn" id="c-cancel" style="margin-top:8px;background:var(--secondary-bg);color:var(--text)">Bekor qilish</button>' +
+      '</div>';
+    overlay.classList.remove("hidden");
+    if (tg) tg.BackButton.show();
+    document.getElementById("c-cancel").onclick = closeOverlay;
+    document.getElementById("c-submit").onclick = submitNewColor;
+  }
+
+  function submitNewColor() {
+    var name = document.getElementById("c-name").value.trim();
+    var errEl = document.getElementById("c-error");
+    if (!name) {
+      errEl.textContent = "Iltimos, rang nomini kiriting.";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    errEl.classList.add("hidden");
+    var submitBtn = document.getElementById("c-submit");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "⏳ Saqlanmoqda...";
+    api("/admin/api/colors", { method: "POST", body: JSON.stringify({ name: name }) }).then(function (r) {
+      if (r.ok) {
+        showToast("Rang qo'shildi ✅");
+        closeOverlay();
+        loadColorsTab();
+      } else {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "✅ Saqlash";
+        errEl.textContent = "Xatolik yuz berdi. Qaytadan urinib ko'ring.";
+        errEl.classList.remove("hidden");
+      }
+    });
+  }
+
   // ---------- Yangiliklar/e'lonlar (28-avgust) ----------
   // Bu yerdan qo'shilgan e'lon/aksiya mijozlarning "🛍 Do'kon" Mini App'idagi
   // yangi "📰 Yangiliklar" bo'limida ko'rinadi (webapp/index.html'ga qarang).
@@ -1439,6 +1529,7 @@
   document.getElementById("fab").onclick = function () {
     if (activeTab === "announcements") openAddAnnouncementForm();
     else if (activeTab === "tasks") openAddTaskForm();
+    else if (activeTab === "colors") openAddColorForm();
     else openAddProductForm();
   };
   if (tg) tg.BackButton.onClick(closeOverlay);

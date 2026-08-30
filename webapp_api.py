@@ -86,11 +86,50 @@ async def api_cart(request: web.Request):
             "price": item["product"]["price"],
             "photo": item["product"]["photos"][0] if item["product"]["photos"] else None,
             "quantity": item["quantity"],
+            # 30-avgust (foydalanuvchi so'rovi): mijoz shu mahsulot uchun
+            # tanlagan filament rangi - null bo'lsa "Avtomatik" (do'kon o'zi
+            # tanlaydi) degani.
+            "color": item.get("color"),
         }
         for item in cart
     ]
     total = sum(i["price"] * i["quantity"] for i in items)
     return web.json_response({"items": items, "total": total})
+
+
+async def api_colors(request: web.Request):
+    """Mini App'da mijozga ko'rsatiladigan filament ranglari ro'yxati -
+    faqat admin panelda FAOL qilib qo'yilganlari (30-avgust, foydalanuvchi
+    so'rovi: "mijoz rangini belgilashi yoki avto belgilanishga qoysin")."""
+    colors = await db.get_active_filament_colors()
+    return web.json_response({"colors": colors})
+
+
+async def api_cart_set_color(request: web.Request):
+    user_id = _authed_user_id(request)
+    if user_id is None:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    try:
+        body = await request.json()
+        product_id = int(body.get("product_id"))
+    except (TypeError, ValueError, KeyError):
+        return web.json_response({"error": "bad_request"}, status=400)
+
+    color = body.get("color")
+    color = (color or "").strip() or None
+    # Bo'sh/None ("Avtomatik") har doim ruxsat etiladi. Aniq rang tanlansa -
+    # hozir FAOL bo'lgan ranglar ro'yxatida borligi tekshiriladi (mijoz
+    # brauzeridan kelgan qiymatga ko'r-ko'rona ishonmaslik uchun).
+    if color is not None:
+        active_colors = await db.get_active_filament_colors()
+        if color not in [c["name"] for c in active_colors]:
+            return web.json_response({"error": "invalid_color"}, status=400)
+
+    ok = await db.set_cart_item_color(user_id, product_id, color)
+    if not ok:
+        return web.json_response({"error": "not_found"}, status=404)
+    return web.json_response({"ok": True, "color": color})
 
 
 async def api_cart_set_qty(request: web.Request):
@@ -691,6 +730,8 @@ def register_webapp_routes(app: web.Application, webapp_index_path: str):
     app.router.add_get("/api/catalog", api_catalog)
     app.router.add_get("/api/cart", api_cart)
     app.router.add_post("/api/cart/set_qty", api_cart_set_qty)
+    app.router.add_post("/api/cart/set_color", api_cart_set_color)
+    app.router.add_get("/api/colors", api_colors)
     app.router.add_get("/api/profile", api_profile)
     app.router.add_post("/api/profile", api_profile_update)
     app.router.add_get("/api/orders", api_orders)

@@ -25,6 +25,10 @@ Bu yerda jadvallar:
                      hamyoniga to'g'ridan-to'g'ri so'm sifatida sovg'a beriladi
   task_submissions - mijozning bitta vazifa uchun yuborgan skrinshoti va
                      uning holati (kutilmoqda/tasdiqlandi/rad etildi)
+  filament_colors - admin panelda boshqariladigan mavjud filament ranglari
+                     ro'yxati (mijoz buyurtma qilayotganda shulardan birini
+                     yoki "Avtomatik" ni tanlaydi - 30-avgust, foydalanuvchi
+                     so'rovi)
 """
 import json
 from datetime import datetime, timedelta, timezone
@@ -55,7 +59,15 @@ CREATE TABLE IF NOT EXISTS cart_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     product_id INTEGER NOT NULL,
-    quantity INTEGER NOT NULL DEFAULT 1
+    quantity INTEGER NOT NULL DEFAULT 1,
+    color TEXT
+);
+
+CREATE TABLE IF NOT EXISTS filament_colors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS orders (
@@ -233,6 +245,11 @@ async def init_db():
         # to'g'ridan-to'g'ri shu havoladan STL faylni yuklab olishi uchun
         # (webapp/admin.html'dagi buyurtma kartochkasiga qarang).
         await _add_column_if_missing(conn, "products", "stl_url TEXT")
+        # 30-avgust (foydalanuvchi so'rovi): mijoz buyurtma qilayotganda
+        # savatdagi har bir mahsulot uchun filament rangini tanlashi (yoki
+        # "Avtomatik" qoldirishi) uchun. NULL/bo'sh = "Avtomatik" - do'kon
+        # o'zi mos rangni tanlaydi (webapp_api.api_cart_set_color'ga qarang).
+        await _add_column_if_missing(conn, "cart_items", "color TEXT")
 
         # Baza bo'sh bo'lsa (bot birinchi marta ishga tushganda) - namuna
         # mahsulotlar bilan to'ldiramiz, shunda katalog darhol bo'sh bo'lib
@@ -404,19 +421,23 @@ async def add_to_cart(user_id: int, product_id: int, quantity: int = 1):
 
 
 async def get_cart(user_id: int):
-    """Foydalanuvchi savatini qaytaradi: [{product: {...}, quantity: N}, ...]"""
+    """Foydalanuvchi savatini qaytaradi:
+    [{product: {...}, quantity: N, color: "Qizil"|None}, ...]
+    `color` - mijoz shu mahsulot uchun tanlagan filament rangi (30-avgust,
+    foydalanuvchi so'rovi). None = "Avtomatik" (mijoz aniq rang tanlamagan -
+    do'kon o'zi mos rangni tanlaydi)."""
     async with get_db_connection() as conn:
         cursor = await conn.execute(
-            "SELECT product_id, quantity FROM cart_items WHERE user_id = ?",
+            "SELECT product_id, quantity, color FROM cart_items WHERE user_id = ?",
             (user_id,),
         )
         rows = await cursor.fetchall()
 
     cart = []
-    for product_id, quantity in rows:
+    for product_id, quantity, color in rows:
         product = await get_product_by_id(product_id)
         if product:  # mahsulot katalogdan o'chirilgan bo'lishi ham mumkin
-            cart.append({"product": product, "quantity": quantity})
+            cart.append({"product": product, "quantity": quantity, "color": color})
     return cart
 
 
@@ -499,6 +520,72 @@ async def set_cart_item_quantity(user_id: int, product_id: int, quantity: int) -
         return quantity
 
 
+async def set_cart_item_color(user_id: int, product_id: int, color: str | None) -> bool:
+    """Savatdagi (allaqachon qo'shilgan) mahsulot uchun filament rangini
+    belgilaydi. `color` None yoki bo'sh bo'lsa - "Avtomatik" (do'kon o'zi
+    mos rangni tanlaydi) deb saqlanadi. Mahsulot savatda topilmasa False
+    qaytaradi (30-avgust, foydalanuvchi so'rovi)."""
+    color = (color or "").strip() or None
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT id FROM cart_items WHERE user_id = ? AND product_id = ?",
+            (user_id, product_id),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return False
+        await conn.execute("UPDATE cart_items SET color = ? WHERE id = ?", (color, row[0]))
+        await conn.commit()
+        return True
+
+
+# ---------- FILAMENT RANGLARI (30-avgust, foydalanuvchi so'rovi) ----------
+# Admin panelda boshqariladigan mavjud ranglar ro'yxati - mijoz buyurtma
+# qilayotganda shulardan birini yoki "Avtomatik" ni tanlaydi. Rang nomi
+# buyurtma ichida oddiy MATN sifatida saqlanadi (products.stl_url snapshot
+# mantig'iga o'xshab) - shuning uchun admin keyinroq rangni o'chirsa/
+# nofaol qilsa ham, ESKI buyurtmalardagi tanlov o'zgarmay qoladi.
+
+async def get_active_filament_colors() -> list:
+    """Mijozga (Mini App'da tanlov uchun) faqat FAOL ranglar ko'rsatiladi."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT id, name FROM filament_colors WHERE active = 1 ORDER BY id"
+        )
+        rows = await cursor.fetchall()
+        return [{"id": r[0], "name": r[1]} for r in rows]
+
+
+async def get_all_filament_colors_admin() -> list:
+    """Admin panelda ("🎨 Ranglar" bo'limi) - FAOL va NOFAOL ranglar ham
+    ko'rinadi, shunda admin vaqtincha tugagan rangni qayta yoqishi mumkin."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT id, name, active FROM filament_colors ORDER BY id"
+        )
+        rows = await cursor.fetchall()
+        return [{"id": r[0], "name": r[1], "active": bool(r[2])} for r in rows]
+
+
+async def create_filament_color(name: str) -> int:
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "INSERT INTO filament_colors (name, active, created_at) VALUES (?, 1, ?)",
+            (name, now),
+        )
+        await conn.commit()
+        return cursor.lastrowid
+
+
+async def set_filament_color_active(color_id: int, active: bool):
+    async with get_db_connection() as conn:
+        await conn.execute(
+            "UPDATE filament_colors SET active = ? WHERE id = ?", (1 if active else 0, color_id)
+        )
+        await conn.commit()
+
+
 # ---------- BUYURTMALAR (ORDERS) ----------
 
 async def create_order(
@@ -524,12 +611,17 @@ async def create_order(
     # buyurtmadagi STL havolasi O'ZGARMAY qoladi - admin haqiqiy
     # buyurtmani necha kun/hafta o'tib yig'ayotganda ham to'g'ri fayl
     # bilan ishlayveradi.
+    # MUHIM (30-avgust, foydalanuvchi so'rovi): "color" ham shu yerda
+    # suratga olinadi - mijoz savatda tanlagan filament rangi (yoki None =
+    # "Avtomatik"). Xuddi shu sababdan: admin keyinroq ranglar ro'yxatini
+    # o'zgartirsa ham, ESKI buyurtmadagi tanlov O'ZGARMAY qoladi.
     items_snapshot = [
         {
             "name": item["product"]["name"],
             "price": item["product"]["price"],
             "quantity": item["quantity"],
             "stl_url": item["product"].get("stl_url"),
+            "color": item.get("color"),
         }
         for item in cart
     ]
