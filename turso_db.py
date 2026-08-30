@@ -31,6 +31,7 @@ Ishlash tartibi:
 """
 import asyncio
 import logging
+import os
 
 import libsql
 
@@ -119,6 +120,75 @@ async def _ensure_conn():
     return _conn
 
 
+_CORRUPTION_SIGNATURES = (
+    "file is not a database",
+    "database disk image is malformed",
+    "database is corrupted",
+    "malformed database schema",
+)
+
+
+def _looks_like_corruption(exc: Exception) -> bool:
+    """Mahalliy replika fayli buzilganda libsql/sqlite chiqaradigan xato
+    matnlarini aniqlaydi (masalan `ValueError: file is not a database`)."""
+    msg = str(exc).lower()
+    return any(sig in msg for sig in _CORRUPTION_SIGNATURES)
+
+
+async def _reset_connection_after_corruption():
+    """Mahalliy replika fayli buzilganini aniqlagach chaqiriladi: eski
+    (buzilgan) ulanishni yopib, `_conn`ni `None`ga qaytaradi - shu bilan
+    KEYINGI so'rov `_ensure_conn()` orqali TOZA ulanish ochadi. Agar Turso
+    sozlangan bo'lsa (ya'ni bulutda ishonchli nusxa bor), buzilgan mahalliy
+    faylni (va uning -wal/-shm/-journal yordamchi fayllarini) o'chirib
+    tashlaymiz - shunda keyingi ulanish uni Turso bulutidan qaytadan to'liq
+    yuklab oladi (avtomatik "davolanish").
+
+    MUHIM (xavfsizlik): Turso sozlanMAGAN bo'lsa (bulutda zaxira yo'q),
+    faylni HECH QACHON o'chirmaymiz - aks holda do'konning YAGONA
+    ma'lumotlar nusxasini butunlay yo'q qilib qo'yamiz. Bu holda faqat
+    xatoni "critical" darajada logga yozamiz, qo'lda tiklash (backup'dan)
+    kerak bo'ladi."""
+    global _conn
+    old_conn = _conn
+    _conn = None
+    if old_conn is not None:
+        try:
+            await asyncio.to_thread(old_conn.close)
+        except Exception:
+            pass  # eski ulanish allaqachon buzilgan bo'lishi mumkin - muhim emas
+
+    if not (_TURSO_ENABLED and not _turso_broken):
+        logger.critical(
+            "MAHALLIY MA'LUMOTLAR BAZASI FAYLI BUZILDI ('file is not a database' "
+            "yoki shunga o'xshash xato), LEKIN Turso sozlanmagan (yoki ulanish "
+            "avval buzilgan edi) - shuning uchun faylni AVTOMATIK o'chirib "
+            "bo'lmaydi (bu YAGONA ma'lumot nusxasini yo'qotishi mumkin edi). "
+            "Bot ehtimol ishlamay qoladi - qo'lda tekshirish/tiklash (yoki "
+            "TURSO_DATABASE_URL/TURSO_AUTH_TOKEN sozlab qayta deploy qilish) kerak."
+        )
+        return
+
+    deleted_any = False
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        path = DB_PATH + suffix
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+                deleted_any = True
+        except Exception:
+            logger.exception("Buzilgan mahalliy faylni o'chirishda xatolik: %s", path)
+
+    logger.error(
+        "Mahalliy ma'lumotlar bazasi replikasi BUZILGAN edi ('file is not a "
+        "database') - buzilgan fayl(lar) o'chirildi (deleted_any=%s), keyingi "
+        "so'rovda ulanish Turso bulutidan qaytadan to'liq sinxronlanadi. "
+        "Ma'lumotlar xavfsiz (Turso'da saqlangan), faqat shu bir so'rov "
+        "muvaffaqiyatsiz tugaydi.",
+        deleted_any,
+    )
+
+
 class _CursorWrapper:
     def __init__(self, cursor):
         self._cursor = cursor
@@ -166,10 +236,32 @@ class _ConnWrapper:
 class _ConnCtx:
     async def __aenter__(self):
         await _lock.acquire()
-        conn = await _ensure_conn()
+        try:
+            conn = await _ensure_conn()
+        except Exception as exc:
+            # DIQQAT: agar `_ensure_conn()`ning O'ZI xato bersa (masalan
+            # ulanish ochilayotganda "file is not a database"), `__aexit__`
+            # HECH QACHON chaqirilmaydi (Python'ning async context manager
+            # qoidasi shunday) - shuning uchun bu yerda ham buzilishni
+            # aniqlab, tozalab, keyin `_lock`ni albatta bo'shatishimiz kerak.
+            if _looks_like_corruption(exc):
+                await _reset_connection_after_corruption()
+            _lock.release()
+            raise
         return _ConnWrapper(conn)
 
     async def __aexit__(self, exc_type, exc, tb):
+        # `async with get_db_connection() as conn:` blokining ICHIDA
+        # (execute/fetchone/fetchall/commit/sync paytida) chiqqan har qanday
+        # xato shu yerga keladi - shu jumladan replika buzilishi. Aniqlansa,
+        # keyingi so'rov toza ulanish olishi uchun tozalaymiz; asl xatoni esa
+        # baribir yuqoriga (joriy so'rovga) qaytaramiz - False qaytarish shuni
+        # bildiradi.
+        if exc is not None and _looks_like_corruption(exc):
+            try:
+                await _reset_connection_after_corruption()
+            except Exception:
+                logger.exception("Ulanishni tiklashda (corruption reset) qo'shimcha xatolik.")
         _lock.release()
         return False
 
@@ -210,5 +302,7 @@ async def start_periodic_sync(interval_seconds: int = 25):
             async with _lock:
                 conn = await _ensure_conn()
                 await asyncio.to_thread(conn.sync)
-        except Exception:
+        except Exception as exc:
             logger.exception("Davriy Turso sinxronlashda xatolik.")
+            if _looks_like_corruption(exc):
+                await _reset_connection_after_corruption()
