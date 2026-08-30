@@ -17,10 +17,13 @@ def format_cart_text(cart: list) -> str:
     total = 0
     for item in cart:
         product = item["product"]
-        subtotal = product["price"] * item["quantity"]
-        total += subtotal
+        # 30-avgust: db.cart_item_line_total orqali (matn yozdirish uchun
+        # qo'shimcha to'lov ham hisobga olinishi uchun).
+        line_total = db.cart_item_line_total(item)
+        total += line_total
+        text_note = " ✍️" if item.get("custom_text") else ""
         lines.append(
-            f"• {product['name']} x{item['quantity']} = {format_price(subtotal)} so'm"
+            f"• {product['name']} x{item['quantity']}{text_note} = {format_price(line_total)} so'm"
         )
     lines.append(f"\n💰 <b>Jami: {format_price(total)} so'm</b>")
     return "\n".join(lines)

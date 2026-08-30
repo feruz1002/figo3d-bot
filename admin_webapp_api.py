@@ -355,12 +355,21 @@ async def api_admin_settings_list(request: web.Request):
     qarang)."""
     if _authed_admin_id(request) is None:
         return _unauthorized()
-    from config import ANTHROPIC_API_KEY
+    # MUHIM (30-avgust, "Sozlamalar yuklanmayapti" xatosi tuzatildi): AVVAL
+    # bu yerda "from config import ANTHROPIC_API_KEY" ishlatilgan edi - agar
+    # admin AI (Claude) tekshiruvi qo'shilgan versiyani hali joylashtirmagan
+    # bo'lsa (masalan hozircha eski config.py'da qolgan bo'lsa), config.py'da
+    # bu nom umuman YO'Q bo'lib, ImportError bilan butun so'rov 500 xatosi
+    # bilan qulab tushardi - shuning uchun "⚙️ Sozlamalar" bo'limi HECH QACHON
+    # yuklanmasdi. Endi getattr bilan - nom yo'q bo'lsa ham xato bermaydi,
+    # shunchaki "sozlanmagan" deb hisoblanadi.
+    import config
+    api_key_configured = bool(getattr(config, "ANTHROPIC_API_KEY", None))
     result = []
     for key, meta in _KNOWN_SETTINGS.items():
         value = await db.get_setting(key, "0")
         result.append({"key": key, "label": meta["label"], "enabled": value == "1"})
-    return web.json_response({"settings": result, "ai_api_key_configured": bool(ANTHROPIC_API_KEY)})
+    return web.json_response({"settings": result, "ai_api_key_configured": api_key_configured})
 
 
 async def api_admin_settings_update(request: web.Request):
@@ -572,6 +581,31 @@ def _decode_photo(data_url: str) -> bytes:
     return base64.b64decode(data_url)
 
 
+def _parse_text_customization_fields(body: dict):
+    """30-avgust (foydalanuvchi so'rovi): "matn yozdirish" xizmati - HAMMA
+    mahsulotda emas, admin har birida alohida yoqadi. Yoqilgan bo'lsa,
+    MAJBURIY ravishda ikkalasini ham kiritishi kerak: maksimal necha belgi
+    yozish mumkinligi va yozilsa qancha qo'shimcha to'lanadi. Qaytaradi:
+    (allow, max_len, text_price, error_response|None) - xato bo'lsa
+    birinchi uchtasi mazmunsiz, chaqiruvchi to'g'ridan-to'g'ri
+    error_response'ni qaytarishi kerak."""
+    allow = bool(body.get("allow_text_customization"))
+    if not allow:
+        return False, None, None, None
+    try:
+        max_len = int(body.get("max_text_length"))
+        text_price = int(body.get("text_price"))
+    except (TypeError, ValueError):
+        return None, None, None, web.json_response(
+            {"error": "invalid_text_customization"}, status=400
+        )
+    if max_len <= 0 or text_price < 0:
+        return None, None, None, web.json_response(
+            {"error": "invalid_text_customization"}, status=400
+        )
+    return True, max_len, text_price, None
+
+
 async def api_admin_product_create(request: web.Request):
     admin_id = _authed_admin_id(request)
     if admin_id is None:
@@ -592,6 +626,10 @@ async def api_admin_product_create(request: web.Request):
     # to'g'ridan-to'g'ri STL faylni yuklab olishi uchun (buyurtma
     # kartochkasidagi "🧊 STL" tugmasiga qarang).
     stl_url = (body.get("stl_url") or "").strip() or None
+
+    allow_text, max_text_length, text_price, text_err = _parse_text_customization_fields(body)
+    if text_err is not None:
+        return text_err
 
     try:
         price = int(body.get("price"))
@@ -621,11 +659,57 @@ async def api_admin_product_create(request: web.Request):
         except Exception:
             return web.json_response({"error": "photo_upload_failed"}, status=502)
 
-    product_id = await db.create_product(category, name, description, price, subcategory=subcategory, stl_url=stl_url)
+    product_id = await db.create_product(
+        category, name, description, price, subcategory=subcategory, stl_url=stl_url,
+        allow_text_customization=allow_text, max_text_length=max_text_length, text_price=text_price,
+    )
     for position, file_id in enumerate(file_ids):
         await db.add_product_photo(product_id, file_id, position)
 
     return web.json_response({"ok": True, "product_id": product_id})
+
+
+async def api_admin_product_update(request: web.Request):
+    """30-avgust (foydalanuvchi so'rovi): mahsulot QO'SHILGANDAN SO'NG
+    tahrirlash - avval faqat o'chirish mumkin edi. DIQQAT: rasmlar bu
+    yerda o'zgartirilmaydi (alohida imkoniyat emas) - faqat matn/narx/
+    STL havolasi/matn yozdirish sozlamalari."""
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        product_id = int(request.match_info["product_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+
+    category = (body.get("category") or "").strip()
+    subcategory = (body.get("subcategory") or "").strip() or None
+    name = (body.get("name") or "").strip()
+    description = (body.get("description") or "").strip()
+    stl_url = (body.get("stl_url") or "").strip() or None
+
+    allow_text, max_text_length, text_price, text_err = _parse_text_customization_fields(body)
+    if text_err is not None:
+        return text_err
+
+    try:
+        price = int(body.get("price"))
+    except (TypeError, ValueError):
+        return web.json_response({"error": "invalid_input"}, status=400)
+    if not category or not name or price <= 0:
+        return web.json_response({"error": "invalid_input"}, status=400)
+
+    ok = await db.update_product(
+        product_id, category, name, description, price,
+        subcategory=subcategory, stl_url=stl_url,
+        allow_text_customization=allow_text, max_text_length=max_text_length, text_price=text_price,
+    )
+    if not ok:
+        return web.json_response({"error": "not_found"}, status=404)
+    return web.json_response({"ok": True})
 
 
 async def api_admin_product_delete(request: web.Request):
@@ -680,6 +764,28 @@ async def api_admin_color_toggle(request: web.Request):
     new_active = not color["active"]
     await db.set_filament_color_active(color_id, new_active)
     return web.json_response({"ok": True, "active": new_active})
+
+
+async def api_admin_color_rename(request: web.Request):
+    """30-avgust (foydalanuvchi so'rovi): rang nomida xato bo'lsa, uni
+    o'chirib qayta qo'shmasdan to'g'ridan-to'g'ri tahrirlash uchun."""
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        color_id = int(request.match_info["color_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+    name = (body.get("name") or "").strip()
+    if not name:
+        return web.json_response({"error": "invalid_input"}, status=400)
+    ok = await db.rename_filament_color(color_id, name)
+    if not ok:
+        return web.json_response({"error": "not_found"}, status=404)
+    return web.json_response({"ok": True, "name": name})
 
 
 # ---------- Yangiliklar/e'lonlar (28-avgust) ----------
@@ -806,9 +912,11 @@ def register_admin_routes(app: web.Application, admin_index_path: str):
     app.router.add_get("/admin/api/products", api_admin_products)
     app.router.add_post("/admin/api/products", api_admin_product_create)
     app.router.add_post("/admin/api/products/{product_id}/delete", api_admin_product_delete)
+    app.router.add_post("/admin/api/products/{product_id}/update", api_admin_product_update)
     app.router.add_get("/admin/api/colors", api_admin_colors)
     app.router.add_post("/admin/api/colors", api_admin_color_create)
     app.router.add_post("/admin/api/colors/{color_id}/toggle", api_admin_color_toggle)
+    app.router.add_post("/admin/api/colors/{color_id}/rename", api_admin_color_rename)
     app.router.add_get("/admin/api/stats", api_admin_stats)
     app.router.add_get("/admin/api/announcements", api_admin_announcements)
     app.router.add_post("/admin/api/announcements", api_admin_announcement_create)

@@ -113,7 +113,8 @@ def _order_summary(data: dict, cart: list, subtotal: int, discount: int, balance
     lines = ["📋 <b>Buyurtmangizni tekshiring:</b>\n"]
     for item in cart:
         product = item["product"]
-        lines.append(f"• {product['name']} x{item['quantity']}")
+        text_note = " ✍️" if item.get("custom_text") else ""
+        lines.append(f"• {product['name']} x{item['quantity']}{text_note}")
     lines.append(f"\n💰 Mahsulotlar narxi: {format_price(subtotal)} so'm")
     total = max(subtotal - discount, 0)
     if discount:
@@ -159,7 +160,10 @@ async def _show_order_summary(message: Message, state: FSMContext, discount: int
         await message.answer("Savatingiz bo'sh qolgan, buyurtma bekor qilindi.", reply_markup=main_menu_keyboard(is_admin=is_admin(message.from_user.id)))
         return
 
-    subtotal = sum(item["product"]["price"] * item["quantity"] for item in cart)
+    # 30-avgust: db.cart_subtotal orqali (matn yozdirish qo'shimcha to'lovi
+    # ham hisobga olinishi uchun) - webapp_api.py/order_service.py bilan
+    # aynan bir xil formula.
+    subtotal = db.cart_subtotal(cart)
     total = max(subtotal - discount, 0)
     balance = await db.get_balance(message.from_user.id)
     await state.set_state(OrderStates.confirming)
@@ -193,7 +197,7 @@ async def process_promo(message: Message, state: FSMContext):
         return
 
     cart = await db.get_cart(message.from_user.id)
-    subtotal = sum(item["product"]["price"] * item["quantity"] for item in cart)
+    subtotal = db.cart_subtotal(cart)
     discount = subtotal * promo["discount_percent"] // 100
     await message.answer(f"✅ Promo-kod qabul qilindi: -{promo['discount_percent']}%")
     await _show_order_summary(message, state, discount=discount, promo_code=code)
@@ -257,7 +261,7 @@ async def confirm_card(callback: CallbackQuery, state: FSMContext, bot: Bot):
         await callback.answer()
         return
 
-    subtotal = sum(item["product"]["price"] * item["quantity"] for item in cart)
+    subtotal = db.cart_subtotal(cart)
     discount = data.get("discount", 0)
     total = max(subtotal - discount, 0)
     if total <= 0:

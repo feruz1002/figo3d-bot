@@ -123,6 +123,19 @@ PAYMENT_INFO = os.getenv(
 # avvalgidek hamyon yoki naqd/karta (operator bilan) orqali to'laydi.
 PAYMENT_PROVIDER_TOKEN = os.getenv("PAYMENT_PROVIDER_TOKEN", "").strip() or None
 
+# "🎯 Vazifalar" bo'limida yuborilgan skrinshotlarni SUN'IY INTELLEKT
+# (Claude) yordamida oldindan baholash uchun (29-avgust) - MAJBURIY EMAS:
+# bo'sh qoldirilsa, hamma vazifa skrinshoti avvalgidek FAQAT admin
+# tomonidan qo'lda tekshiriladi. Kalitni console.anthropic.com'da bepul
+# ro'yxatdan o'tib, "Get API keys" bo'limidan olasiz (sk-ant-... bilan
+# boshlanadi), Render'ning Environment Variables bo'limiga
+# ANTHROPIC_API_KEY nomi bilan qo'shing. Bundan tashqari admin panelning
+# "🎯 Vazifalar" bo'limidagi "🤖 AI tekshiruvi" tugmasi orqali istalgan
+# vaqt YOQIB/O'CHIRIB turish mumkin (kalit bo'lsa ham) - shu bilan siz
+# nazoratni to'liq qo'lda saqlaysiz.
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip() or None
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001").strip()
+
 # "☎️ Aloqa" tugmasida mijozlarga ko'rsatiladigan matn (chatda).
 # Render'ning Environment Variables bo'limida CONTACT_INFO nomi bilan
 # qo'shing - masalan: "@figo3d_support yoki +998 90 123 45 67".

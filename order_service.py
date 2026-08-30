@@ -143,7 +143,13 @@ async def create_order_and_apply_payment(
     if not cart:
         return None, "empty_cart"
 
-    subtotal = sum(item["product"]["price"] * item["quantity"] for item in cart)
+    # MUHIM (30-avgust): db.cart_subtotal orqali hisoblanadi (oddiy
+    # narx*miqdor EMAS) - shunda matn yozdirish uchun qo'shimcha to'lov ham
+    # hisobga olinadi. db.create_order ICHIDA HAM aynan shu funksiya
+    # ishlatiladi - ikkalasi bir xil natija berishi SHART, aks holda
+    # hamyondan yechiladigan summa buyurtmada saqlangan summadan farq
+    # qilib qolar edi.
+    subtotal = db.cart_subtotal(cart)
     total = max(subtotal - discount_amount, 0)
 
     if payment_method == "balance":

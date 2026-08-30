@@ -240,6 +240,11 @@
     // `colors` - admin panelda FAOL qilingan ranglar ro'yxati (/api/colors'dan),
     // `cartColor` - {product_id: "Qizil"} yoki bo'sh/undefined = "Avtomatik".
     colors: [], cartColor: {},
+    // 30-avgust (foydalanuvchi so'rovi): ba'zi mahsulotlarga mijoz matn
+    // yozdirishi mumkin (qo'shimcha to'lov bilan) - HAMMASIGA emas, faqat
+    // admin panelda alohida yoqilganlariga (product.allow_text_customization).
+    // `cartText` - {product_id: "yozdirilishi kerak bo'lgan matn"}.
+    cartText: {},
     detailProduct: null,
     profile: null, orders: null, announcements: null,
     // 29-avgust: to'lov endi Mini App ICHIDA (checkout/topup ko'rinishlari) -
@@ -457,9 +462,11 @@
     return api("/api/cart").then(function (r) {
       state.cart = {};
       state.cartColor = {};
+      state.cartText = {};
       if (r.ok) ((r.data && r.data.items) || []).forEach(function (i) {
         state.cart[i.product_id] = i.quantity;
         if (i.color) state.cartColor[i.product_id] = i.color;
+        if (i.custom_text) state.cartText[i.product_id] = i.custom_text;
       });
     });
   }
@@ -597,11 +604,19 @@
   }
 
   function cartCount() { return Object.keys(state.cart).reduce(function (a, k) { return a + state.cart[k]; }, 0); }
+  // 30-avgust (foydalanuvchi so'rovi): agar mahsulotga matn yozdirish
+  // tanlangan bo'lsa, narxga qo'shimcha to'lov ham (miqdorga ko'paytirilib)
+  // qo'shiladi - serverdagi db.cart_item_line_total bilan AYNAN bir xil
+  // formula, aks holda ko'rsatilgan summa va haqiqiy to'lanadigan summa
+  // farq qilib qolishi mumkin edi.
   function cartSubtotal() {
     var total = 0;
     Object.keys(state.cart).forEach(function (pid) {
       var p = state.products.filter(function (x) { return x.id === Number(pid); })[0];
-      if (p) total += p.price * state.cart[pid];
+      if (!p) return;
+      var unit = p.price;
+      if (state.cartText[pid]) unit += (p.text_price || 0);
+      total += unit * state.cart[pid];
     });
     return total;
   }
@@ -714,6 +729,23 @@
         state.colors.map(function (c) {
           return '<option value="' + escapeHtml(c.name) + '"' + (c.name === currentColor ? " selected" : "") + '>🎨 ' + escapeHtml(c.name) + '</option>';
         }).join("");
+      // 30-avgust (foydalanuvchi so'rovi): HAMMA mahsulotda emas, faqat
+      // admin panelda "✍️ Matn yozdirish" yoqilgan mahsulotlarda mijoz
+      // matn yozdirishi mumkin - qo'shimcha to'lov bilan.
+      var textBlock = "";
+      if (p.allow_text_customization) {
+        var currentText = state.cartText[pid] || "";
+        var maxLen = p.max_text_length || 100;
+        textBlock =
+          '<div class="cart-row-text" style="margin-top:8px">' +
+            '<label class="form-label" style="margin-bottom:4px;display:block">✍️ Matn yozdirish (+' + fmtPrice(p.text_price || 0) + " so'm)</label>" +
+            '<textarea class="form-textarea cart-row-text-input" data-pid="' + p.id + '" maxlength="' + maxLen + '" placeholder="Yozdirmoqchi bo\'lgan matningiz (bo\'sh qoldirsangiz yozilmaydi)" style="min-height:46px;font-size:13px">' + escapeHtml(currentText) + '</textarea>' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;gap:8px">' +
+              '<span class="cart-row-text-count" data-pid="' + p.id + '" style="font-size:12px;color:var(--hint)">' + currentText.length + '/' + maxLen + '</span>' +
+              '<button class="card-btn cart-row-text-save" data-pid="' + p.id + '" style="width:auto;margin:0;padding:4px 14px;font-size:13px">💾 Saqlash</button>' +
+            '</div>' +
+          '</div>';
+      }
       return (
         '<div class="cart-row" data-pid="' + p.id + '">' +
           '<div class="cart-row-img">' + img + '</div>' +
@@ -721,6 +753,7 @@
             '<div class="cart-row-name">' + escapeHtml(p.name) + '</div>' +
             '<div class="cart-row-price">' + fmtPrice(p.price) + " so'm</div>" +
             '<select class="form-input cart-row-color" data-pid="' + p.id + '" style="margin-top:6px;height:34px;font-size:13px;padding:2px 8px">' + colorOptions + '</select>' +
+            textBlock +
           '</div>' +
           '<div class="stepper"><button class="dec">−</button><span>' + qty + '</span><button class="inc">+</button></div>' +
         '</div>'
@@ -757,6 +790,41 @@
           } else {
             showToast("Rangni saqlab bo'lmadi. Qaytadan urinib ko'ring.");
             render();
+          }
+        });
+      };
+    });
+    // 30-avgust (foydalanuvchi so'rovi): matn yozish maydoni - harf sonini
+    // JOYIDA (server so'ramasdan) ko'rsatadi, "💾 Saqlash" bosilgandagina
+    // serverga yuboriladi (narxni ham qayta hisoblab, butun ekranni
+    // yangilaydi - chunki matn qo'shimcha to'lovga ta'sir qiladi).
+    el.querySelectorAll(".cart-row-text-input").forEach(function (ta) {
+      ta.oninput = function () {
+        var pid = ta.getAttribute("data-pid");
+        var countEl = el.querySelector('.cart-row-text-count[data-pid="' + pid + '"]');
+        if (countEl) countEl.textContent = ta.value.length + "/" + ta.getAttribute("maxlength");
+      };
+    });
+    el.querySelectorAll(".cart-row-text-save").forEach(function (btn) {
+      btn.onclick = function () {
+        var pid = Number(btn.getAttribute("data-pid"));
+        var ta = el.querySelector('.cart-row-text-input[data-pid="' + pid + '"]');
+        var text = ta.value.trim() || null;
+        btn.disabled = true;
+        btn.textContent = "⏳";
+        api("/api/cart/set_text", { method: "POST", body: JSON.stringify({ product_id: pid, text: text }) }).then(function (r) {
+          if (r.ok) {
+            if (text) state.cartText[pid] = text; else delete state.cartText[pid];
+            showToast(text ? "✍️ Matn saqlandi" : "Matn olib tashlandi");
+            render();
+          } else {
+            btn.disabled = false;
+            btn.textContent = "💾 Saqlash";
+            if (r.data && r.data.error === "text_too_long") {
+              showToast("Matn juda uzun (maks. " + r.data.max_length + " belgi).");
+            } else {
+              showToast("Matnni saqlab bo'lmadi. Qaytadan urinib ko'ring.");
+            }
           }
         });
       };
@@ -814,7 +882,12 @@
       var p = state.products.filter(function (x) { return x.id === Number(pid); })[0];
       if (!p) return "";
       var colorLabel = state.cartColor[pid] ? (" (🎨 " + escapeHtml(state.cartColor[pid]) + ")") : " (🎲 Avtomatik)";
-      return '<div class="card-line">' + state.cart[pid] + ' x ' + escapeHtml(p.name) + colorLabel + ' — ' + fmtPrice(p.price * state.cart[pid]) + " so'm</div>";
+      var textLabel = state.cartText[pid] ? (' <span style="display:block;font-size:12.5px;color:var(--hint)">✍️ Matn: "' + escapeHtml(state.cartText[pid]) + '"</span>') : "";
+      // 30-avgust: matn yozdirish uchun qo'shimcha to'lov bo'lsa, shu
+      // banddagi narxga ham qo'shiladi (cartSubtotal() bilan bir xil formula).
+      var unit = p.price + (state.cartText[pid] ? (p.text_price || 0) : 0);
+      var lineTotal = unit * state.cart[pid];
+      return '<div class="card-line">' + state.cart[pid] + ' x ' + escapeHtml(p.name) + colorLabel + ' — ' + fmtPrice(lineTotal) + " so'm" + textLabel + '</div>';
     }).join("");
     var subtotal = cartSubtotal();
     var promo = state.promo;

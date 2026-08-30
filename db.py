@@ -60,7 +60,8 @@ CREATE TABLE IF NOT EXISTS cart_items (
     user_id INTEGER NOT NULL,
     product_id INTEGER NOT NULL,
     quantity INTEGER NOT NULL DEFAULT 1,
-    color TEXT
+    color TEXT,
+    custom_text TEXT
 );
 
 CREATE TABLE IF NOT EXISTS filament_colors (
@@ -250,6 +251,19 @@ async def init_db():
         # "Avtomatik" qoldirishi) uchun. NULL/bo'sh = "Avtomatik" - do'kon
         # o'zi mos rangni tanlaydi (webapp_api.api_cart_set_color'ga qarang).
         await _add_column_if_missing(conn, "cart_items", "color TEXT")
+        # 30-avgust (foydalanuvchi so'rovi): ba'zi 3D modellarga mijoz
+        # xohlagan matnni (masalan ism) yozdirish, buning uchun qo'shimcha
+        # to'lov olish imkoniyati. HAMMA mahsulotda bu mumkin emas - shuning
+        # uchun admin har bir mahsulotni qo'shayotganda/tahrirlayotganda
+        # alohida yoqadi va shu ikki qoidani belgilaydi: maksimal necha
+        # belgi yozish mumkin (`max_text_length`) va yozilsa qancha qo'shimcha
+        # to'lanadi (`text_price`, so'mda).
+        await _add_column_if_missing(conn, "products", "allow_text_customization INTEGER NOT NULL DEFAULT 0")
+        await _add_column_if_missing(conn, "products", "max_text_length INTEGER")
+        await _add_column_if_missing(conn, "products", "text_price INTEGER")
+        # Mijoz savatdagi shu mahsulot uchun yozdirmoqchi bo'lgan matni
+        # (bo'sh/NULL = matn yozdirmayapti - qo'shimcha to'lov olinmaydi).
+        await _add_column_if_missing(conn, "cart_items", "custom_text TEXT")
 
         # Baza bo'sh bo'lsa (bot birinchi marta ishga tushganda) - namuna
         # mahsulotlar bilan to'ldiramiz, shunda katalog darhol bo'sh bo'lib
@@ -288,6 +302,11 @@ async def _row_to_product(conn, row) -> dict:
         "photos": [r[0] for r in photo_rows],
         "video": row["video_file_id"],
         "stl_url": row["stl_url"] if "stl_url" in row.keys() else None,
+        # 30-avgust (foydalanuvchi so'rovi): "matn yozdirish" xizmati -
+        # HAMMA mahsulotda emas, faqat admin yoqqanlarida mavjud.
+        "allow_text_customization": bool(row["allow_text_customization"]) if "allow_text_customization" in row.keys() else False,
+        "max_text_length": row["max_text_length"] if "max_text_length" in row.keys() else None,
+        "text_price": row["text_price"] if "text_price" in row.keys() else None,
     }
 
 
@@ -361,16 +380,61 @@ async def list_active_products() -> list:
 async def create_product(
     category: str, name: str, description: str, price: int,
     subcategory: str | None = None, stl_url: str | None = None,
+    allow_text_customization: bool = False, max_text_length: int | None = None,
+    text_price: int | None = None,
 ) -> int:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     async with get_db_connection() as conn:
         cursor = await conn.execute(
-            """INSERT INTO products (category, subcategory, name, description, price, stl_url, active, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, 1, ?)""",
-            (category, subcategory or None, name, description, price, stl_url or None, now),
+            """INSERT INTO products
+               (category, subcategory, name, description, price, stl_url,
+                allow_text_customization, max_text_length, text_price, active, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+            (
+                category, subcategory or None, name, description, price, stl_url or None,
+                1 if allow_text_customization else 0,
+                max_text_length if allow_text_customization else None,
+                text_price if allow_text_customization else None,
+                now,
+            ),
         )
         await conn.commit()
         return cursor.lastrowid
+
+
+async def update_product(
+    product_id: int, category: str, name: str, description: str, price: int,
+    subcategory: str | None = None, stl_url: str | None = None,
+    allow_text_customization: bool = False, max_text_length: int | None = None,
+    text_price: int | None = None,
+) -> bool:
+    """Mahsulotni QO'SHILGANDAN SO'NG tahrirlash uchun (30-avgust,
+    foydalanuvchi so'rovi) - avval faqat o'chirish mumkin edi, xato
+    kiritilgan bo'lsa uni tuzatishning yagona yo'li o'chirib qayta
+    qo'shish edi. DIQQAT: rasmlar bu yerda o'zgartirilmaydi (ular alohida
+    add_product_photo orqali boshqariladi) - faqat matn/narx maydonlari.
+    Mahsulot topilmasa False qaytaradi.
+    MUHIM: turso_db.py'dagi kursor .rowcount'ni QO'LLAMAYDI - shuning uchun
+    UPDATE'dan OLDIN mahsulot mavjudligini alohida SELECT bilan tekshiramiz."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute("SELECT id FROM products WHERE id = ?", (product_id,))
+        row = await cursor.fetchone()
+        if not row:
+            return False
+        await conn.execute(
+            """UPDATE products SET category = ?, subcategory = ?, name = ?, description = ?,
+               price = ?, stl_url = ?, allow_text_customization = ?, max_text_length = ?,
+               text_price = ? WHERE id = ?""",
+            (
+                category, subcategory or None, name, description, price, stl_url or None,
+                1 if allow_text_customization else 0,
+                max_text_length if allow_text_customization else None,
+                text_price if allow_text_customization else None,
+                product_id,
+            ),
+        )
+        await conn.commit()
+        return True
 
 
 async def add_product_photo(product_id: int, file_id: str, position: int = 0):
@@ -422,28 +486,51 @@ async def add_to_cart(user_id: int, product_id: int, quantity: int = 1):
 
 async def get_cart(user_id: int):
     """Foydalanuvchi savatini qaytaradi:
-    [{product: {...}, quantity: N, color: "Qizil"|None}, ...]
+    [{product: {...}, quantity: N, color: "Qizil"|None, custom_text: "..."|None}, ...]
     `color` - mijoz shu mahsulot uchun tanlagan filament rangi (30-avgust,
     foydalanuvchi so'rovi). None = "Avtomatik" (mijoz aniq rang tanlamagan -
-    do'kon o'zi mos rangni tanlaydi)."""
+    do'kon o'zi mos rangni tanlaydi).
+    `custom_text` - mijoz shu mahsulotga yozdirmoqchi bo'lgan matn (faqat
+    product.allow_text_customization=true bo'lgan mahsulotlarda mumkin) -
+    None/bo'sh = matn yozdirmayapti."""
     async with get_db_connection() as conn:
         cursor = await conn.execute(
-            "SELECT product_id, quantity, color FROM cart_items WHERE user_id = ?",
+            "SELECT product_id, quantity, color, custom_text FROM cart_items WHERE user_id = ?",
             (user_id,),
         )
         rows = await cursor.fetchall()
 
     cart = []
-    for product_id, quantity, color in rows:
+    for product_id, quantity, color, custom_text in rows:
         product = await get_product_by_id(product_id)
         if product:  # mahsulot katalogdan o'chirilgan bo'lishi ham mumkin
-            cart.append({"product": product, "quantity": quantity, "color": color})
+            cart.append({"product": product, "quantity": quantity, "color": color, "custom_text": custom_text})
     return cart
+
+
+def cart_item_line_total(item: dict) -> int:
+    """Savatdagi (yoki buyurtma snapshot'idagi) BITTA band uchun yakuniy
+    summa: narx * miqdor, ustiga - agar shu band uchun matn yozdirish
+    tanlangan bo'lsa - matn narxi ham (miqdorga ko'paytirilib) qo'shiladi
+    (30-avgust, foydalanuvchi so'rovi: "text yozishda qo'shiladigan summi
+    ham kiritishim kerak"). MUHIM: savat/buyurtma summasi hisoblanadigan
+    HAR BIR joyda (bu yerda, buyurtma yaratishda, chat orqali buyurtma
+    berishda, moliyaviy hisobotda) FAQAT shu funksiya orqali hisoblanishi
+    kerak - aks holda ko'rsatilgan summa va haqiqiy yechiladigan/saqlanadigan
+    summa bir-biridan farq qilib qolishi mumkin."""
+    unit_price = item["product"]["price"]
+    if item.get("custom_text"):
+        unit_price += item["product"].get("text_price") or 0
+    return unit_price * item["quantity"]
+
+
+def cart_subtotal(cart: list) -> int:
+    return sum(cart_item_line_total(item) for item in cart)
 
 
 async def get_cart_total(user_id: int) -> int:
     cart = await get_cart(user_id)
-    return sum(item["product"]["price"] * item["quantity"] for item in cart)
+    return cart_subtotal(cart)
 
 
 async def clear_cart(user_id: int):
@@ -539,6 +626,28 @@ async def set_cart_item_color(user_id: int, product_id: int, color: str | None) 
         return True
 
 
+async def set_cart_item_text(user_id: int, product_id: int, text: str | None) -> bool:
+    """Savatdagi mahsulot uchun mijoz yozdirmoqchi bo'lgan matnni belgilaydi
+    (30-avgust, foydalanuvchi so'rovi). `text` None yoki bo'sh bo'lsa - matn
+    yozdirilmaydi (qo'shimcha to'lov olinmaydi) deb saqlanadi. Ruxsat
+    (product.allow_text_customization) va uzunlik chegarasi bu yerda EMAS,
+    chaqiruvchida (webapp_api.api_cart_set_text - mijoz brauzeridan kelgan
+    qiymatga ko'r-ko'rona ishonmaslik uchun, xuddi rang tanlovidagi kabi)
+    tekshiriladi. Mahsulot savatda topilmasa False qaytaradi."""
+    text = (text or "").strip() or None
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT id FROM cart_items WHERE user_id = ? AND product_id = ?",
+            (user_id, product_id),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return False
+        await conn.execute("UPDATE cart_items SET custom_text = ? WHERE id = ?", (text, row[0]))
+        await conn.commit()
+        return True
+
+
 # ---------- FILAMENT RANGLARI (30-avgust, foydalanuvchi so'rovi) ----------
 # Admin panelda boshqariladigan mavjud ranglar ro'yxati - mijoz buyurtma
 # qilayotganda shulardan birini yoki "Avtomatik" ni tanlaydi. Rang nomi
@@ -586,6 +695,22 @@ async def set_filament_color_active(color_id: int, active: bool):
         await conn.commit()
 
 
+async def rename_filament_color(color_id: int, name: str) -> bool:
+    """30-avgust (foydalanuvchi so'rovi): rang nomida xato bo'lsa, uni
+    o'chirib qayta qo'shmasdan to'g'ridan-to'g'ri tahrirlash uchun.
+    DIQQAT: eski buyurtmalardagi rang nomi (items_json'ga "suratga
+    olingan") shu bilan O'ZGARMAYDI - faqat BUNDAN KEYINGI tanlovlarda
+    yangi nom ko'rinadi."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute("SELECT id FROM filament_colors WHERE id = ?", (color_id,))
+        row = await cursor.fetchone()
+        if not row:
+            return False
+        await conn.execute("UPDATE filament_colors SET name = ? WHERE id = ?", (name, color_id))
+        await conn.commit()
+        return True
+
+
 # ---------- BUYURTMALAR (ORDERS) ----------
 
 async def create_order(
@@ -603,7 +728,14 @@ async def create_order(
     uchun saqlanadi - status keyinchalik o'zgarsa ham bu maydon
     o'zgarmaydi)."""
     cart = await get_cart(user_id)
-    subtotal = sum(item["product"]["price"] * item["quantity"] for item in cart)
+    # MUHIM: subtotal HAR DOIM cart_item_line_total/cart_subtotal orqali
+    # hisoblanadi (oddiy narx*miqdor EMAS) - shunda matn yozdirish uchun
+    # qo'shimcha to'lov ham to'g'ri qo'shiladi. Xuddi shu funksiya
+    # order_service.create_order_and_apply_payment'da ham (haqiqiy hamyondan
+    # yechiladigan summani hisoblashda) ishlatiladi - ikkalasi HAR DOIM bir
+    # xil natija berishi SHART, aks holda buyurtmada saqlangan summa va
+    # hamyondan yechilgan summa bir-biridan farq qilib qolar edi.
+    subtotal = cart_subtotal(cart)
     total_price = max(subtotal - discount_amount, 0)
     # MUHIM (29-avgust, foydalanuvchi so'rovi): "stl_url" ham shu yerda
     # "suratga olinadi" (snapshot) - xuddi nom/narx kabi. Bu ataylab shunday:
@@ -615,6 +747,11 @@ async def create_order(
     # suratga olinadi - mijoz savatda tanlagan filament rangi (yoki None =
     # "Avtomatik"). Xuddi shu sababdan: admin keyinroq ranglar ro'yxatini
     # o'zgartirsa ham, ESKI buyurtmadagi tanlov O'ZGARMAY qoladi.
+    # MUHIM (30-avgust, foydalanuvchi so'rovi): "custom_text" (mijoz
+    # yozdirmoqchi bo'lgan matn) va "text_price_charged" (o'sha payt
+    # haqiqatan qo'shilgan qo'shimcha to'lov, bitta dona uchun) ham shu
+    # yerda suratga olinadi - admin keyinroq mahsulotning matn narxini
+    # o'zgartirsa ham, ESKI buyurtmada qancha to'langani aniq ko'rinib turadi.
     items_snapshot = [
         {
             "name": item["product"]["name"],
@@ -622,6 +759,8 @@ async def create_order(
             "quantity": item["quantity"],
             "stl_url": item["product"].get("stl_url"),
             "color": item.get("color"),
+            "custom_text": item.get("custom_text"),
+            "text_price_charged": (item["product"].get("text_price") or 0) if item.get("custom_text") else 0,
         }
         for item in cart
     ]

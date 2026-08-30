@@ -90,10 +90,19 @@ async def api_cart(request: web.Request):
             # tanlagan filament rangi - null bo'lsa "Avtomatik" (do'kon o'zi
             # tanlaydi) degani.
             "color": item.get("color"),
+            # 30-avgust (foydalanuvchi so'rovi): mijoz yozdirmoqchi bo'lgan
+            # matn (faqat mahsulot buni ruxsat bergan bo'lsa mumkin) va shu
+            # mahsulotning matn narxi/maksimal uzunligi - Mini App bularni
+            # savat ekranida ko'rsatib, qo'shimcha to'lovni hisoblaydi.
+            "custom_text": item.get("custom_text"),
+            "allow_text_customization": item["product"].get("allow_text_customization", False),
+            "max_text_length": item["product"].get("max_text_length"),
+            "text_price": item["product"].get("text_price"),
+            "line_total": db.cart_item_line_total(item),
         }
         for item in cart
     ]
-    total = sum(i["price"] * i["quantity"] for i in items)
+    total = db.cart_subtotal(cart)
     return web.json_response({"items": items, "total": total})
 
 
@@ -130,6 +139,41 @@ async def api_cart_set_color(request: web.Request):
     if not ok:
         return web.json_response({"error": "not_found"}, status=404)
     return web.json_response({"ok": True, "color": color})
+
+
+async def api_cart_set_text(request: web.Request):
+    """30-avgust (foydalanuvchi so'rovi): "matn yozdirish" - HAMMA
+    mahsulotda emas, faqat admin panelda `allow_text_customization`
+    yoqilgan mahsulotlarda mumkin, va matn `max_text_length`dan uzun
+    bo'lmasligi kerak - ikkalasi ham mijoz brauzeridan kelgan qiymatga
+    ko'r-ko'rona ishonmasdan, serverning o'zida qayta tekshiriladi."""
+    user_id = _authed_user_id(request)
+    if user_id is None:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    try:
+        body = await request.json()
+        product_id = int(body.get("product_id"))
+    except (TypeError, ValueError, KeyError):
+        return web.json_response({"error": "bad_request"}, status=400)
+
+    text = body.get("text")
+    text = (text or "").strip() or None
+
+    if text is not None:
+        product = await db.get_product_by_id(product_id)
+        if not product:
+            return web.json_response({"error": "not_found"}, status=404)
+        if not product.get("allow_text_customization"):
+            return web.json_response({"error": "text_not_allowed"}, status=400)
+        max_len = product.get("max_text_length")
+        if max_len and len(text) > max_len:
+            return web.json_response({"error": "text_too_long", "max_length": max_len}, status=400)
+
+    ok = await db.set_cart_item_text(user_id, product_id, text)
+    if not ok:
+        return web.json_response({"error": "not_found"}, status=404)
+    return web.json_response({"ok": True, "text": text})
 
 
 async def api_cart_set_qty(request: web.Request):
@@ -505,7 +549,7 @@ async def api_promo_check(request: web.Request):
         return web.json_response({"valid": False, "reason": "limit_reached"})
 
     cart = await db.get_cart(user_id)
-    subtotal = sum(item["product"]["price"] * item["quantity"] for item in cart)
+    subtotal = db.cart_subtotal(cart)
     discount_amount = subtotal * promo["discount_percent"] // 100
     return web.json_response({
         "valid": True,
@@ -553,7 +597,7 @@ async def api_checkout(request: web.Request):
     cart = await db.get_cart(user_id)
     if not cart:
         return web.json_response({"error": "empty_cart"}, status=400)
-    subtotal = sum(item["product"]["price"] * item["quantity"] for item in cart)
+    subtotal = db.cart_subtotal(cart)
 
     # Chegirmani hech qachon mijoz brauzeridan kelgan raqamga ishonib emas,
     # har doim serverning o'zi promo-kod asosida qayta hisoblab tasdiqlaydi.
@@ -611,7 +655,7 @@ async def api_request_checkout(request: web.Request):
     from handlers.catalog import format_price
     from keyboards import cart_keyboard
 
-    subtotal = sum(item["product"]["price"] * item["quantity"] for item in cart)
+    subtotal = db.cart_subtotal(cart)
     lines = ["🛒 <b>Savatingiz:</b>\n"]
     for item in cart:
         lines.append(f"• {item['product']['name']} x{item['quantity']}")
@@ -731,6 +775,7 @@ def register_webapp_routes(app: web.Application, webapp_index_path: str):
     app.router.add_get("/api/cart", api_cart)
     app.router.add_post("/api/cart/set_qty", api_cart_set_qty)
     app.router.add_post("/api/cart/set_color", api_cart_set_color)
+    app.router.add_post("/api/cart/set_text", api_cart_set_text)
     app.router.add_get("/api/colors", api_colors)
     app.router.add_get("/api/profile", api_profile)
     app.router.add_post("/api/profile", api_profile_update)

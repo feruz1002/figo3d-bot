@@ -385,7 +385,16 @@
           'padding:3px 9px;border-radius:8px;vertical-align:middle">🎨 ' + escapeHtml(i.color) + '</span>'
         : ' <span style="display:inline-block;margin-left:6px;font-size:12px;background:var(--bg);' +
           'color:var(--hint);padding:3px 9px;border-radius:8px;vertical-align:middle">🎲 Avtomatik</span>';
-      return '<div>' + escapeHtml(i.name) + ' x' + i.quantity + colorLabel + stlBtn + '</div>';
+      // 30-avgust (foydalanuvchi so'rovi): mijoz yozdirmoqchi bo'lgan matn
+      // (bo'lsa) alohida qatorda, aniq ko'rinadigan qilib chiqadi - admin
+      // buyurtmani chop etayotganda matnni qidirib o'tirmaydi.
+      var textLine = i.custom_text
+        ? '<div style="margin-top:4px;font-size:13px;background:var(--bg);border-radius:8px;padding:5px 9px">' +
+          '✍️ Matn: <b>' + escapeHtml(i.custom_text) + '</b>' +
+          (i.text_price_charged ? ' (+' + fmtPrice(i.text_price_charged) + " so'm)" : '') +
+          '</div>'
+        : '';
+      return '<div>' + escapeHtml(i.name) + ' x' + i.quantity + colorLabel + stlBtn + textLine + '</div>';
     }).join("");
     var statusLabel = STATUS_LABELS[o.status] || o.status;
     var actionsHtml = "";
@@ -1142,6 +1151,10 @@
   // MUHIM: state.categories endi {name, subcategories: [...]} obyektlar
   // ro'yxati (webapp_api.py'dagi /api/catalog javobi 27-avgustda shunga
   // o'zgartirilgan - "katalog ichida katalog" so'roviga javoban).
+  // 30-avgust (foydalanuvchi so'rovi): mahsulotni tahrirlash formasi shu
+  // ro'yxatdagi to'liq ma'lumotdan (qayta so'rov yubormasdan) to'ldiriladi.
+  var _loadedProducts = [];
+
   function loadProducts() {
     Promise.all([api("/admin/api/products"), state.categories.length ? Promise.resolve() : api("/api/catalog").then(function (r) { state.categories = (r.data && r.data.categories) || []; })])
       .then(function (results) {
@@ -1149,16 +1162,24 @@
         var content = document.getElementById("content");
         if (!r.ok) { content.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
         var products = r.data.products || [];
+        _loadedProducts = products;
         if (!products.length) { content.innerHTML = '<div class="empty">Hozircha mahsulot yo\'q. Pastdagi ➕ orqali qo\'shing.</div>'; return; }
         content.innerHTML = products.map(function (p) {
           var img = (p.photos && p.photos[0]) ? '<img src="' + photoUrl(p.photos[0]) + '" style="width:56px;height:56px;border-radius:10px;object-fit:cover;float:left;margin-right:10px">' : "";
           var catLine = escapeHtml(p.category) + (p.subcategory ? " / " + escapeHtml(p.subcategory) : "") + ' · ' + fmtPrice(p.price) + " so'm";
+          var textLine = p.allow_text_customization
+            ? '<div class="card-line">✍️ Matn yozdirish: +' + fmtPrice(p.text_price || 0) + " so'm (maks. " + (p.max_text_length || 0) + " belgi)</div>"
+            : "";
           return (
             '<div class="card" data-id="' + p.id + '" style="overflow:auto">' +
               img +
               '<div class="card-title">' + escapeHtml(p.name) + '</div>' +
               '<div class="card-line">' + catLine + '</div>' +
-              '<div class="card-actions"><button class="card-btn danger" data-action="delete">🗑 O\'chirish</button></div>' +
+              textLine +
+              '<div class="card-actions">' +
+                '<button class="card-btn" data-action="edit">✏️ Tahrirlash</button>' +
+                '<button class="card-btn danger" data-action="delete">🗑 O\'chirish</button>' +
+              '</div>' +
             '</div>'
           );
         }).join("");
@@ -1170,6 +1191,13 @@
               if (r.ok) { showToast("O'chirildi"); loadProducts(); }
               else { btn.disabled = false; showToast("Xatolik yuz berdi."); }
             });
+          };
+        });
+        content.querySelectorAll('[data-action="edit"]').forEach(function (btn) {
+          btn.onclick = function () {
+            var id = Number(btn.closest(".card").getAttribute("data-id"));
+            var product = _loadedProducts.filter(function (x) { return x.id === id; })[0];
+            if (product) openEditProductForm(product);
           };
         });
       });
@@ -1193,7 +1221,10 @@
         return (
           '<div class="card" data-id="' + c.id + '">' +
             '<div class="card-title">' + escapeHtml(c.name) + (c.active ? "" : " (nofaol)") + '</div>' +
-            '<div class="card-actions"><button class="card-btn' + (c.active ? " danger" : "") + '" data-action="toggle">' + (c.active ? "⭕ Nofaol qilish" : "✅ Faollashtirish") + '</button></div>' +
+            '<div class="card-actions">' +
+              '<button class="card-btn" data-action="rename">✏️ Nomini o\'zgartirish</button>' +
+              '<button class="card-btn' + (c.active ? " danger" : "") + '" data-action="toggle">' + (c.active ? "⭕ Nofaol qilish" : "✅ Faollashtirish") + '</button>' +
+            '</div>' +
           '</div>'
         );
       }).join("");
@@ -1207,6 +1238,61 @@
           });
         };
       });
+      content.querySelectorAll('[data-action="rename"]').forEach(function (btn) {
+        btn.onclick = function () {
+          var id = Number(btn.closest(".card").getAttribute("data-id"));
+          var color = colors.filter(function (x) { return x.id === id; })[0];
+          if (color) openRenameColorForm(color);
+        };
+      });
+    });
+  }
+
+  // 30-avgust (foydalanuvchi so'rovi): rangda xato bo'lsa, o'chirib qayta
+  // qo'shmasdan to'g'ridan-to'g'ri nomini tahrirlash uchun. DIQQAT: eski
+  // buyurtmalardagi tanlov (items_json'ga "suratga olingan") bilan
+  // O'ZGARMAYDI - faqat bundan keyingi tanlovlarda yangi nom ko'rinadi.
+  function openRenameColorForm(color) {
+    var overlay = document.getElementById("overlay");
+    overlay.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">✏️ Rang nomini o\'zgartirish</div>' +
+        '<div class="form-group"><label class="form-label">Rang nomi</label>' +
+          '<input class="form-input" id="c-name" value="' + escapeHtml(color.name) + '"></div>' +
+        '<div class="form-hint">Eski buyurtmalarda saqlangan tanlov o\'zgarmaydi - faqat bundan keyingi tanlovlarda yangi nom ko\'rinadi.</div>' +
+        '<div class="form-error hidden" id="c-error"></div>' +
+        '<button class="card-btn" id="c-submit" style="margin-top:6px">✅ Saqlash</button>' +
+        '<button class="card-btn" id="c-cancel" style="margin-top:8px;background:var(--secondary-bg);color:var(--text)">Bekor qilish</button>' +
+      '</div>';
+    overlay.classList.remove("hidden");
+    if (tg) tg.BackButton.show();
+    document.getElementById("c-cancel").onclick = closeOverlay;
+    document.getElementById("c-submit").onclick = function () { submitRenameColor(color.id); };
+  }
+
+  function submitRenameColor(colorId) {
+    var name = document.getElementById("c-name").value.trim();
+    var errEl = document.getElementById("c-error");
+    if (!name) {
+      errEl.textContent = "Iltimos, rang nomini kiriting.";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    errEl.classList.add("hidden");
+    var submitBtn = document.getElementById("c-submit");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "⏳ Saqlanmoqda...";
+    api("/admin/api/colors/" + colorId + "/rename", { method: "POST", body: JSON.stringify({ name: name }) }).then(function (r) {
+      if (r.ok) {
+        showToast("Saqlandi ✅");
+        closeOverlay();
+        loadColorsTab();
+      } else {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "✅ Saqlash";
+        errEl.textContent = "Xatolik yuz berdi. Qaytadan urinib ko'ring.";
+        errEl.classList.remove("hidden");
+      }
     });
   }
 
@@ -1417,12 +1503,48 @@
     });
   }
 
-  // ---------- Yangi mahsulot qo'shish (overlay) ----------
-  var pickedPhotos = []; // base64 data URL'lar ro'yxati
+  // ---------- Yangi mahsulot qo'shish / tahrirlash (overlay) ----------
+  var pickedPhotos = []; // base64 data URL'lar ro'yxati (faqat QO'SHISHDA)
 
-  function openAddProductForm() {
-    pickedPhotos = [];
-    var overlay = document.getElementById("overlay");
+  // 30-avgust (foydalanuvchi so'rovi): "✍️ Matn yozdirish" bo'limi - HAMMA
+  // mahsulotda emas, admin har birida alohida yoqadi. Yoqilsa, maksimal
+  // belgilar soni va qo'shimcha narxni MAJBURIY kiritish kerak. Bir xil
+  // markup ham qo'shish, ham tahrirlash formasida ishlatiladi.
+  function _textCustomizationFieldsHtml(p) {
+    var allow = p ? !!p.allow_text_customization : false;
+    return (
+      '<div class="form-group"><label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">' +
+        '<input type="checkbox" id="p-text-allow" style="width:auto"' + (allow ? " checked" : "") + '> ' +
+        '✍️ Matn yozdirish imkoniyati (qo\'shimcha to\'lov bilan)' +
+      '</label></div>' +
+      '<div id="p-text-fields" style="display:' + (allow ? "block" : "none") + '">' +
+        '<div class="form-group"><label class="form-label">Maksimal belgilar soni</label>' +
+          '<input class="form-input" id="p-text-maxlen" type="number" placeholder="Masalan: 20" value="' + (p && p.max_text_length ? p.max_text_length : "") + '"></div>' +
+        '<div class="form-group"><label class="form-label">Matn uchun qo\'shimcha narx (so\'m)</label>' +
+          '<input class="form-input" id="p-text-price" type="number" placeholder="Masalan: 10000" value="' + (p && p.text_price != null ? p.text_price : "") + '"></div>' +
+      '</div>'
+    );
+  }
+
+  function _wireTextCustomizationToggle() {
+    document.getElementById("p-text-allow").onchange = function () {
+      document.getElementById("p-text-fields").style.display = this.checked ? "block" : "none";
+    };
+  }
+
+  // `problems` massiviga xato bo'lsa matn qo'shadi. Qaytaradi:
+  // {allow_text_customization, max_text_length, text_price}.
+  function _readTextCustomizationFields(problems) {
+    var allow = document.getElementById("p-text-allow").checked;
+    if (!allow) return { allow_text_customization: false, max_text_length: null, text_price: null };
+    var maxLen = parseInt(document.getElementById("p-text-maxlen").value.trim(), 10);
+    var textPrice = parseInt(document.getElementById("p-text-price").value.trim(), 10);
+    if (!maxLen || maxLen <= 0) problems.push("matn uchun maksimal belgilar sonini to'g'ri kiriting");
+    if (isNaN(textPrice) || textPrice < 0) problems.push("matn uchun qo'shimcha narxni to'g'ri kiriting");
+    return { allow_text_customization: true, max_text_length: maxLen, text_price: textPrice };
+  }
+
+  function _categoryDatalistsHtml() {
     var catOptions = state.categories.map(function (c) { return '<option value="' + escapeHtml(c.name) + '">' + escapeHtml(c.name) + '</option>'; }).join("");
     // Mavjud barcha kichik bo'limlar (qaysi bo'limga tegishli bo'lishidan
     // qat'i nazar) - qulaylik uchun bitta umumiy ro'yxat sifatida taklif
@@ -1432,20 +1554,28 @@
       (c.subcategories || []).forEach(function (s) { if (allSubcats.indexOf(s) === -1) allSubcats.push(s); });
     });
     var subcatOptions = allSubcats.map(function (s) { return '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>'; }).join("");
+    return { catOptions: catOptions, subcatOptions: subcatOptions };
+  }
+
+  function openAddProductForm() {
+    pickedPhotos = [];
+    var overlay = document.getElementById("overlay");
+    var lists = _categoryDatalistsHtml();
     overlay.innerHTML =
       '<div class="screen">' +
         '<div class="screen-title">➕ Yangi mahsulot</div>' +
         '<div class="form-group"><label class="form-label">Bo\'lim</label>' +
           '<input class="form-input" id="p-category" list="cat-list" placeholder="Bo\'lim nomi (mavjud yoki yangi)">' +
-          '<datalist id="cat-list">' + catOptions + '</datalist></div>' +
+          '<datalist id="cat-list">' + lists.catOptions + '</datalist></div>' +
         '<div class="form-group"><label class="form-label">Kichik bo\'lim (ixtiyoriy)</label>' +
           '<input class="form-input" id="p-subcategory" list="subcat-list" placeholder="Masalan: Hayvonlar (bo\'sh qoldirish mumkin)">' +
-          '<datalist id="subcat-list">' + subcatOptions + '</datalist></div>' +
+          '<datalist id="subcat-list">' + lists.subcatOptions + '</datalist></div>' +
         '<div class="form-group"><label class="form-label">Nomi</label><input class="form-input" id="p-name"></div>' +
         '<div class="form-group"><label class="form-label">Tavsifi</label><textarea class="form-textarea" id="p-desc"></textarea></div>' +
         '<div class="form-group"><label class="form-label">Narxi (so\'m)</label><input class="form-input" id="p-price" type="number"></div>' +
         '<div class="form-group"><label class="form-label">🧊 3D model (STL) havolasi (ixtiyoriy)</label>' +
           '<input class="form-input" id="p-stl-url" type="url" placeholder="https://... (STL faylni yuklab olish havolasi)"></div>' +
+        _textCustomizationFieldsHtml(null) +
         '<div class="form-group"><label class="form-label">Rasmlar (kamida 1 ta)</label>' +
           '<div class="photo-row" id="photo-row"><button class="photo-pick-btn" id="photo-pick">+</button></div>' +
           '<input type="file" id="photo-input" accept="image/*" multiple style="display:none"></div>' +
@@ -1466,8 +1596,45 @@
         reader.readAsDataURL(file);
       });
     };
+    _wireTextCustomizationToggle();
     document.getElementById("p-cancel").onclick = closeOverlay;
     document.getElementById("p-submit").onclick = submitNewProduct;
+  }
+
+  // 30-avgust (foydalanuvchi so'rovi): mahsulot QO'SHILGANDAN SO'NG ham
+  // tahrirlash mumkin bo'lishi kerak - avval faqat o'chirish mumkin edi,
+  // xato kiritilgan bo'lsa yagona yo'l o'chirib qayta qo'shish edi.
+  // DIQQAT: rasmlar bu yerda o'zgartirilmaydi (alohida, murakkabroq
+  // imkoniyat bo'lar edi) - shu haqda formada ham eslatma bor.
+  function openEditProductForm(p) {
+    var overlay = document.getElementById("overlay");
+    var lists = _categoryDatalistsHtml();
+    overlay.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">✏️ Mahsulotni tahrirlash</div>' +
+        '<div class="form-group"><label class="form-label">Bo\'lim</label>' +
+          '<input class="form-input" id="p-category" list="cat-list" value="' + escapeHtml(p.category) + '">' +
+          '<datalist id="cat-list">' + lists.catOptions + '</datalist></div>' +
+        '<div class="form-group"><label class="form-label">Kichik bo\'lim (ixtiyoriy)</label>' +
+          '<input class="form-input" id="p-subcategory" list="subcat-list" value="' + escapeHtml(p.subcategory || "") + '">' +
+          '<datalist id="subcat-list">' + lists.subcatOptions + '</datalist></div>' +
+        '<div class="form-group"><label class="form-label">Nomi</label><input class="form-input" id="p-name" value="' + escapeHtml(p.name) + '"></div>' +
+        '<div class="form-group"><label class="form-label">Tavsifi</label><textarea class="form-textarea" id="p-desc">' + escapeHtml(p.description || "") + '</textarea></div>' +
+        '<div class="form-group"><label class="form-label">Narxi (so\'m)</label><input class="form-input" id="p-price" type="number" value="' + p.price + '"></div>' +
+        '<div class="form-group"><label class="form-label">🧊 3D model (STL) havolasi (ixtiyoriy)</label>' +
+          '<input class="form-input" id="p-stl-url" type="url" value="' + escapeHtml(p.stl_url || "") + '"></div>' +
+        _textCustomizationFieldsHtml(p) +
+        '<div class="form-hint">Rasmlarni bu yerdan o\'zgartirib bo\'lmaydi - agar rasmni almashtirish kerak bo\'lsa, mahsulotni o\'chirib, yangi rasm bilan qayta qo\'shing.</div>' +
+        '<div class="form-error hidden" id="p-error"></div>' +
+        '<button class="card-btn" id="p-submit" style="margin-top:6px">✅ Saqlash</button>' +
+        '<button class="card-btn" id="p-cancel" style="margin-top:8px;background:var(--secondary-bg);color:var(--text)">Bekor qilish</button>' +
+      '</div>';
+    overlay.classList.remove("hidden");
+    if (tg) tg.BackButton.show();
+
+    _wireTextCustomizationToggle();
+    document.getElementById("p-cancel").onclick = closeOverlay;
+    document.getElementById("p-submit").onclick = function () { submitEditProduct(p.id); };
   }
 
   function renderPhotoRow() {
@@ -1499,6 +1666,7 @@
     var price = parseInt(priceStr, 10);
     if (!price || price <= 0) problems.push("narxini to'g'ri kiriting");
     if (!pickedPhotos.length) problems.push("kamida 1 ta rasm tanlang");
+    var textFields = _readTextCustomizationFields(problems);
     if (problems.length) {
       errEl.textContent = "Iltimos: " + problems.join(", ") + ".";
       errEl.classList.remove("hidden");
@@ -1510,10 +1678,57 @@
     submitBtn.textContent = "⏳ Saqlanmoqda...";
     api("/admin/api/products", {
       method: "POST",
-      body: JSON.stringify({ category: category, subcategory: subcategory, name: name, description: description, price: price, stl_url: stlUrl || null, photos: pickedPhotos }),
+      body: JSON.stringify(Object.assign({
+        category: category, subcategory: subcategory, name: name, description: description,
+        price: price, stl_url: stlUrl || null, photos: pickedPhotos,
+      }, textFields)),
     }).then(function (r) {
       if (r.ok) {
         showToast("Mahsulot qo'shildi ✅");
+        closeOverlay();
+        state.categories = [];
+        loadProducts();
+      } else {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "✅ Saqlash";
+        errEl.textContent = "Xatolik yuz berdi. Qaytadan urinib ko'ring.";
+        errEl.classList.remove("hidden");
+      }
+    });
+  }
+
+  function submitEditProduct(productId) {
+    var category = document.getElementById("p-category").value.trim();
+    var subcategory = document.getElementById("p-subcategory").value.trim();
+    var name = document.getElementById("p-name").value.trim();
+    var description = document.getElementById("p-desc").value.trim();
+    var priceStr = document.getElementById("p-price").value.trim();
+    var stlUrl = document.getElementById("p-stl-url").value.trim();
+    var errEl = document.getElementById("p-error");
+    var problems = [];
+    if (!category) problems.push("bo'limni kiriting");
+    if (!name) problems.push("nomini kiriting");
+    var price = parseInt(priceStr, 10);
+    if (!price || price <= 0) problems.push("narxini to'g'ri kiriting");
+    var textFields = _readTextCustomizationFields(problems);
+    if (problems.length) {
+      errEl.textContent = "Iltimos: " + problems.join(", ") + ".";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    errEl.classList.add("hidden");
+    var submitBtn = document.getElementById("p-submit");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "⏳ Saqlanmoqda...";
+    api("/admin/api/products/" + productId + "/update", {
+      method: "POST",
+      body: JSON.stringify(Object.assign({
+        category: category, subcategory: subcategory, name: name, description: description,
+        price: price, stl_url: stlUrl || null,
+      }, textFields)),
+    }).then(function (r) {
+      if (r.ok) {
+        showToast("Saqlandi ✅");
         closeOverlay();
         state.categories = [];
         loadProducts();
