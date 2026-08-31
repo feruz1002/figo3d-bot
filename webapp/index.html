@@ -261,7 +261,10 @@
     // /api/delivery/options'dan (pochtalar/hududlar/narxlar jadvali),
     // `delivery` - mijozning joriy tanlovi.
     deliveryOptions: null,
-    delivery: { region: null, courier: null, type: null },
+    // 31-avgust, 2-kunlik tuzatish (foydalanuvchi so'rovi: "viloyatni
+    // tanlagandan so'ng pastdan tuman ham chiqishi kerak") - `district`
+    // narxga ta'sir qilmaydi, faqat kuryerga aniqroq manzil beradi.
+    delivery: { region: null, district: null, courier: null, type: null },
   };
   var navStack = []; // bo'sh = katalog (grid) ko'rinishi
 
@@ -512,9 +515,13 @@
     var byTier = deliveryPricesForCourierType(courierCode, type);
     return byTier[String(region.tier)] || 0;
   }
+  function deliveryDistrictsFor(regionCode) {
+    var districts = (state.deliveryOptions && state.deliveryOptions.districts) || {};
+    return districts[regionCode] || [];
+  }
   function deliverySelected() {
     var d = state.delivery;
-    return !!(d.region && d.courier && d.type);
+    return !!(d.region && d.district && d.courier && d.type);
   }
   function currentDeliveryPrice() {
     if (!deliverySelected()) return 0;
@@ -832,6 +839,19 @@
           if (r.ok) {
             if (color) state.cartColor[pid] = color; else delete state.cartColor[pid];
             showToast(color ? ("🎨 Rang tanlandi: " + color) : "🎲 Avtomatik rang tanlandi");
+            // MUHIM (31-avgust, "birinchi mahsulot avtoga qaytib qolyapti"
+            // xatosiga javoban): AVVAL bu yerda render() chaqirilmasdi -
+            // savol (masalan miqdor tugmasi) shu so'rov "havoda" turgan
+            // paytda BOSHQA sababdan render() chaqirilib qolsa (masalan
+            // +/- tugmasi), butun savat state.cartColor asosida QAYTA
+            // chizilar edi (bu payt hali eskirmagan/yangilanmagan), lekin
+            // muvaffaqiyatli bo'lgach ekran boshqa QAYTA chizilmagani
+            // uchun natija HECH QACHON to'g'irlanmasdi (mijozga "Avtomatik"
+            // ko'rsatilib qolaverardi, garchi bazada to'g'ri rang saqlangan
+            // bo'lsa ham). Endi muvaffaqiyatdan KEYIN ham HAR DOIM qayta
+            // chiziladi - shu bilan ekran har doim state.cartColor'ning
+            // (haqiqiy saqlangan qiymatning) O'ZIGA mos bo'ladi.
+            render();
           } else {
             showToast("Rangni saqlab bo'lmadi. Qaytadan urinib ko'ring.");
             render();
@@ -931,8 +951,20 @@
         return '<option value="' + r.code + '"' + (r.code === d.region ? " selected" : "") + '>' + escapeHtml(r.name) + '</option>';
       }).join("");
 
-    var courierButtons = "";
+    // 31-avgust, 2-kunlik tuzatish (foydalanuvchi so'rovi): hudud
+    // tanlangandan so'ng pastda tuman tanlovi ham chiqadi.
+    var districtBlock = "";
     if (d.region) {
+      var districtOptions = '<option value="">-- Tumanni tanlang --</option>' +
+        deliveryDistrictsFor(d.region).map(function (name) {
+          return '<option value="' + escapeHtml(name) + '"' + (name === d.district ? " selected" : "") + '>' + escapeHtml(name) + '</option>';
+        }).join("");
+      districtBlock =
+        '<div class="form-group" style="margin:10px 0 0"><select class="form-input" id="dv-district">' + districtOptions + '</select></div>';
+    }
+
+    var courierButtons = "";
+    if (d.region && d.district) {
       courierButtons =
         '<div class="form-group" style="margin:10px 0 0"><label class="form-label">Pochta xizmati</label>' +
           '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
@@ -947,7 +979,7 @@
     }
 
     var typeBlock = "";
-    if (d.region && d.courier) {
+    if (d.region && d.district && d.courier) {
       var courier = deliveryCourierInfo(d.courier);
       if (courier && courier.home_delivery) {
         var officePrice = deliveryPriceFor(d.courier, "office", d.region);
@@ -973,6 +1005,7 @@
       '<div class="info-card">' +
         '<div class="card-line" style="margin-bottom:6px"><b>🚚 Yetkazib berish</b></div>' +
         '<div class="form-group" style="margin-bottom:0"><select class="form-input" id="dv-region">' + regionOptions + '</select></div>' +
+        districtBlock +
         courierButtons +
         typeBlock +
       '</div>'
@@ -983,8 +1016,14 @@
     var regionSel = document.getElementById("dv-region");
     if (regionSel) regionSel.onchange = function () {
       state.delivery.region = regionSel.value || null;
+      state.delivery.district = null;
       state.delivery.courier = null;
       state.delivery.type = null;
+      render();
+    };
+    var districtSel = document.getElementById("dv-district");
+    if (districtSel) districtSel.onchange = function () {
+      state.delivery.district = districtSel.value || null;
       render();
     };
     el.querySelectorAll(".dv-courier-btn").forEach(function (btn) {
@@ -1056,7 +1095,7 @@
           '<div class="card-line">💰 Hamyoningizda: ' + fmtPrice(balance) + " so'm</div>" +
         '</div>' +
         (!readyToPay
-          ? '<div class="form-hint" style="margin-bottom:10px">⚠️ Davom etish uchun avval yetkazib berish usulini (hudud, pochta xizmati, turi) tanlang.</div>'
+          ? '<div class="form-hint" style="margin-bottom:10px">⚠️ Davom etish uchun avval yetkazib berish usulini (hudud, tuman, pochta xizmati, turi) tanlang.</div>'
           : (enough
               ? '<button class="page-cta" id="ck-pay-btn">✅ Hamyondan to\'lash (' + fmtPrice(total) + " so'm)</button>"
               : (
@@ -1120,13 +1159,14 @@
         delivery_courier: state.delivery.courier,
         delivery_type: state.delivery.type,
         delivery_region: state.delivery.region,
+        delivery_district: state.delivery.district,
       }),
     }).then(function (r) {
       submittingCheckout = false;
       if (r.ok) {
         state.checkoutForm = null;
         state.promo = null;
-        state.delivery = { region: null, courier: null, type: null };
+        state.delivery = { region: null, district: null, courier: null, type: null };
         navStack = [];
         render();
         showToast("✅ Buyurtmangiz qabul qilindi!");
@@ -1140,7 +1180,7 @@
         } else if (r.data && r.data.error === "empty_cart") {
           showToast("Savatingiz bo'sh.");
           popView();
-        } else if (r.data && r.data.error === "invalid_delivery") {
+        } else if (r.data && r.data.error === "invalid_delivery" || r.data && r.data.error === "invalid_district") {
           showToast("Yetkazib berish tanlovi noto'g'ri. Qaytadan tanlang.");
           render();
         } else {

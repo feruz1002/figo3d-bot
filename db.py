@@ -35,7 +35,7 @@ from datetime import datetime, timedelta, timezone
 
 import delivery
 from products import SEED_PRODUCTS
-from turso_db import get_db_connection
+from turso_db import get_db_connection, set_schema_ensure_hook
 
 CREATE_TABLES_SQL = """
 CREATE TABLE IF NOT EXISTS products (
@@ -201,125 +201,158 @@ async def _add_column_if_missing(conn, table: str, column_def: str):
     _ = column_name  # faqat o'qish uchun, xato xabarida foydali bo'lsin deb saqlandi
 
 
-async def init_db():
-    """Bot birinchi marta ishga tushganda jadvallarni yaratadi (agar hali yo'q bo'lsa)."""
-    async with get_db_connection() as conn:
-        await conn.executescript(CREATE_TABLES_SQL)
-        await conn.commit()
-        # Eski (promo qo'shilishidan oldin yaratilgan) orders jadvali bo'lsa ham ishlashi uchun:
-        await _add_column_if_missing(conn, "orders", "promo_code TEXT")
-        await _add_column_if_missing(conn, "orders", "discount_amount INTEGER NOT NULL DEFAULT 0")
-        # 27-avgust: "Muammo" bosqichida admin yozadigan sabab (izoh) uchun.
-        await _add_column_if_missing(conn, "orders", "problem_reason TEXT")
-        # 28-avgust: moliyaviy hisobotda to'lov usuli bo'yicha taqsimot
-        # ko'rsatish uchun - AVVAL to'lov usuli faqat "status" ichida
-        # (masalan "to'landi (karta)") vaqtinchalik saqlanardi va buyurtma
-        # bosqichdan o'tgach (masalan "qabul qilindi"ga o'tgach) bu
-        # ma'lumot BUTUNLAY yo'qolib qolardi. Endi alohida ustunda doimiy
-        # saqlanadi.
-        await _add_column_if_missing(conn, "orders", "payment_method TEXT")
-        # 27-avgust: "katalog ichida katalog" (kichik bo'lim) uchun - ixtiyoriy,
-        # bo'sh (NULL) bo'lsa mahsulot to'g'ridan-to'g'ri bo'lim ichida turadi.
-        await _add_column_if_missing(conn, "products", "subcategory TEXT")
-        # 27-avgust: statistika uchun - foydalanuvchi /start bosgan zahoti
-        # (hali profil to'ldirmagan bo'lsa ham) "botni ko'rgan odam" sifatida
-        # qayd etiladi (touch_user_seen'ga qarang).
-        await _add_column_if_missing(conn, "users", "first_seen_at TEXT")
-        # 28-avgust: admin panelidagi "tg://user?id=..." havolasi Mini App
-        # veb-sahifasi ICHIDA Telegram tomonidan BLOKLANGANI aniqlandi
-        # ("This content is blocked" xatosi chiqqan) - shuning uchun endi
-        # mijozning @username'i (bor bo'lsa) saqlanadi va o'rniga
-        # https://t.me/<username> havolasi ishlatiladi (remember_username'ga
-        # qarang) - bu haqiqiy https havola bo'lgani uchun bloklanmaydi.
-        await _add_column_if_missing(conn, "users", "username TEXT")
-        # 29-avgust: hisob to'ldirish so'rovini tasdiqlashda admin so'ralgan
-        # summani emas, HAQIQIY (tranzaksiyada ko'rinib turgan) summani
-        # qo'lda kiritishi mumkin bo'lishi uchun - shu asl (approved)
-        # summani alohida saqlaymiz, `amount` esa mijoz SO'RAGAN summa
-        # bo'lib qolaveradi (admin_service.approve_topup'ga qarang).
-        await _add_column_if_missing(conn, "topup_requests", "approved_amount INTEGER")
-        # 29-avgust: admin panelidagi "👥 Mijozlar" bo'limida mijozni
-        # bloklash/blokdan chiqarish uchun - bloklangan mijoz endi buyurtma
-        # bera olmaydi, hamyonini to'ldira olmaydi va operatorga murojaat
-        # yubora olmaydi (webapp_api.py'dagi _check_not_blocked'ga qarang).
-        await _add_column_if_missing(conn, "users", "blocked INTEGER NOT NULL DEFAULT 0")
-        # 29-avgust: "🎯 Vazifalar" skrinshotlarini sun'iy intellekt (AI)
-        # yordamida oldindan baholash uchun - admin_service.approve_task_submission
-        # va ai_verify.py'ga qarang. `approved_by` - "admin" (qo'lda) yoki
-        # "ai" (avtomatik, yuqori ishonch bilan) - audit/tarix uchun.
-        await _add_column_if_missing(conn, "task_submissions", "ai_verdict TEXT")
-        await _add_column_if_missing(conn, "task_submissions", "ai_confidence TEXT")
-        await _add_column_if_missing(conn, "task_submissions", "ai_reasoning TEXT")
-        await _add_column_if_missing(conn, "task_submissions", "approved_by TEXT")
-        # 29-avgust: mahsulotga 3D model (STL) fayli havolasini biriktirish
-        # uchun (foydalanuvchi so'rovi) - admin buyurtmani yig'ayotganda
-        # to'g'ridan-to'g'ri shu havoladan STL faylni yuklab olishi uchun
-        # (webapp/admin.html'dagi buyurtma kartochkasiga qarang).
-        await _add_column_if_missing(conn, "products", "stl_url TEXT")
-        # 30-avgust (foydalanuvchi so'rovi): mijoz buyurtma qilayotganda
-        # savatdagi har bir mahsulot uchun filament rangini tanlashi (yoki
-        # "Avtomatik" qoldirishi) uchun. NULL/bo'sh = "Avtomatik" - do'kon
-        # o'zi mos rangni tanlaydi (webapp_api.api_cart_set_color'ga qarang).
-        await _add_column_if_missing(conn, "cart_items", "color TEXT")
-        # 30-avgust (foydalanuvchi so'rovi): ba'zi 3D modellarga mijoz
-        # xohlagan matnni (masalan ism) yozdirish, buning uchun qo'shimcha
-        # to'lov olish imkoniyati. HAMMA mahsulotda bu mumkin emas - shuning
-        # uchun admin har bir mahsulotni qo'shayotganda/tahrirlayotganda
-        # alohida yoqadi va shu ikki qoidani belgilaydi: maksimal necha
-        # belgi yozish mumkin (`max_text_length`) va yozilsa qancha qo'shimcha
-        # to'lanadi (`text_price`, so'mda).
-        await _add_column_if_missing(conn, "products", "allow_text_customization INTEGER NOT NULL DEFAULT 0")
-        await _add_column_if_missing(conn, "products", "max_text_length INTEGER")
-        await _add_column_if_missing(conn, "products", "text_price INTEGER")
-        # Mijoz savatdagi shu mahsulot uchun yozdirmoqchi bo'lgan matni
-        # (bo'sh/NULL = matn yozdirmayapti - qo'shimcha to'lov olinmaydi).
-        await _add_column_if_missing(conn, "cart_items", "custom_text TEXT")
-        # 31-avgust (foydalanuvchi so'rovi): "mijoz mahsulot narxi ichida
-        # yetkazib berishi deb o'ylamasligi kerak" - endi buyurtmaga
-        # tanlangan pochta xizmati (BTS/EMU/UzPost), turi (ofis/uy), hudud
-        # va HISOBLANGAN narx ALOHIDA saqlanadi (mahsulot narxiga
-        # qo'shilmaydi, alohida ko'rsatiladi). `delivery_label` - mijoz/admin
-        # uchun tayyor o'qiladigan matn (masalan "🚀 BTS — 🏠 Uyga yetkazish —
-        # Toshkent viloyati") - buyurtma vaqtida "suratga olinadi" (boshqa
-        # snapshot maydonlar kabi), shunda kelajakda kuryer/hudud nomlari
-        # o'zgarsa ham ESKI buyurtmadagi yozuv o'zgarmay qoladi.
-        await _add_column_if_missing(conn, "orders", "delivery_courier TEXT")
-        await _add_column_if_missing(conn, "orders", "delivery_type TEXT")
-        await _add_column_if_missing(conn, "orders", "delivery_region TEXT")
-        await _add_column_if_missing(conn, "orders", "delivery_price INTEGER NOT NULL DEFAULT 0")
-        await _add_column_if_missing(conn, "orders", "delivery_label TEXT")
+async def _ensure_schema(conn):
+    """Jadvallar (va ularga qo'shilgan barcha ustunlar) albatta mavjud
+    ekanligini ta'minlaydi. MUHIM (31-avgust, real production hodisasiga
+    javoban): bu funksiya endi FAQAT botning birinchi ishga tushishida
+    emas, balki Turso replika fayli buzilib, avtomatik tiklangan HAR
+    SAFAR ham qayta chaqiriladi (turso_db.py'dagi
+    `set_schema_ensure_hook`ga qarang) - sababi, bulutdan (Turso'dan)
+    qaytadan tortib olingan nusxa ba'zan ba'zi jadvallarni "ko'rmagan"
+    bo'lishi mumkin edi (masalan mahalliy fayl bulutga TO'LIQ push
+    qilinmasdan turib buzilgan bo'lsa) - shu sabab production'da
+    "no such table: task_submissions" kabi xatolar chiqqan edi. Endi HAR
+    safar yangi/tiklangan ulanish o'rnatilganda sxema shu yerning o'zida
+    qayta tekshiriladi/to'ldiriladi, process qayta ishga tushishini
+    kutib o'tirmasdan.
 
-        # Yetkazib berish narxlari jadvali: 3 pochta x 3 masofa bosqichi x
-        # (Ofis/Uy, UzPost'da faqat Ofis) = 15 ta katak. Bo'sh bo'lsa,
-        # HAMMASINI 0 so'm bilan oldindan to'ldiramiz - shunda admin panelda
-        # "🚚 Yetkazib berish" jadvali darhol to'liq (bo'sh joylarsiz)
-        # ko'rinadi, admin faqat haqiqiy narxlarni kiritishi kifoya.
-        cursor = await conn.execute("SELECT COUNT(*) FROM delivery_prices")
-        (dp_count,) = await cursor.fetchone()
-        if dp_count == 0:
-            for _courier_code, _dtype in delivery.VALID_TYPE_COMBOS:
-                for _tier in delivery.DISTANCE_TIERS:
-                    await conn.execute(
-                        "INSERT INTO delivery_prices (courier, delivery_type, distance_tier, price) "
-                        "VALUES (?, ?, ?, 0)",
-                        (_courier_code, _dtype, _tier),
-                    )
-            await conn.commit()
+    DIQQAT: bu funksiya `get_db_connection()`ni O'ZI chaqirmaydi (allaqachon
+    OCHIQ `conn` beriladi) - aks holda turso_db.py ichida `_lock` ustida
+    o'z-o'zini bloklab qo'yish (deadlock) xavfi bo'lar edi."""
+    await conn.executescript(CREATE_TABLES_SQL)
+    await conn.commit()
+    # Eski (promo qo'shilishidan oldin yaratilgan) orders jadvali bo'lsa ham ishlashi uchun:
+    await _add_column_if_missing(conn, "orders", "promo_code TEXT")
+    await _add_column_if_missing(conn, "orders", "discount_amount INTEGER NOT NULL DEFAULT 0")
+    # 27-avgust: "Muammo" bosqichida admin yozadigan sabab (izoh) uchun.
+    await _add_column_if_missing(conn, "orders", "problem_reason TEXT")
+    # 28-avgust: moliyaviy hisobotda to'lov usuli bo'yicha taqsimot
+    # ko'rsatish uchun - AVVAL to'lov usuli faqat "status" ichida
+    # (masalan "to'landi (karta)") vaqtinchalik saqlanardi va buyurtma
+    # bosqichdan o'tgach (masalan "qabul qilindi"ga o'tgach) bu
+    # ma'lumot BUTUNLAY yo'qolib qolardi. Endi alohida ustunda doimiy
+    # saqlanadi.
+    await _add_column_if_missing(conn, "orders", "payment_method TEXT")
+    # 27-avgust: "katalog ichida katalog" (kichik bo'lim) uchun - ixtiyoriy,
+    # bo'sh (NULL) bo'lsa mahsulot to'g'ridan-to'g'ri bo'lim ichida turadi.
+    await _add_column_if_missing(conn, "products", "subcategory TEXT")
+    # 27-avgust: statistika uchun - foydalanuvchi /start bosgan zahoti
+    # (hali profil to'ldirmagan bo'lsa ham) "botni ko'rgan odam" sifatida
+    # qayd etiladi (touch_user_seen'ga qarang).
+    await _add_column_if_missing(conn, "users", "first_seen_at TEXT")
+    # 28-avgust: admin panelidagi "tg://user?id=..." havolasi Mini App
+    # veb-sahifasi ICHIDA Telegram tomonidan BLOKLANGANI aniqlandi
+    # ("This content is blocked" xatosi chiqqan) - shuning uchun endi
+    # mijozning @username'i (bor bo'lsa) saqlanadi va o'rniga
+    # https://t.me/<username> havolasi ishlatiladi (remember_username'ga
+    # qarang) - bu haqiqiy https havola bo'lgani uchun bloklanmaydi.
+    await _add_column_if_missing(conn, "users", "username TEXT")
+    # 29-avgust: hisob to'ldirish so'rovini tasdiqlashda admin so'ralgan
+    # summani emas, HAQIQIY (tranzaksiyada ko'rinib turgan) summani
+    # qo'lda kiritishi mumkin bo'lishi uchun - shu asl (approved)
+    # summani alohida saqlaymiz, `amount` esa mijoz SO'RAGAN summa
+    # bo'lib qolaveradi (admin_service.approve_topup'ga qarang).
+    await _add_column_if_missing(conn, "topup_requests", "approved_amount INTEGER")
+    # 29-avgust: admin panelidagi "👥 Mijozlar" bo'limida mijozni
+    # bloklash/blokdan chiqarish uchun - bloklangan mijoz endi buyurtma
+    # bera olmaydi, hamyonini to'ldira olmaydi va operatorga murojaat
+    # yubora olmaydi (webapp_api.py'dagi _check_not_blocked'ga qarang).
+    await _add_column_if_missing(conn, "users", "blocked INTEGER NOT NULL DEFAULT 0")
+    # 29-avgust: "🎯 Vazifalar" skrinshotlarini sun'iy intellekt (AI)
+    # yordamida oldindan baholash uchun - admin_service.approve_task_submission
+    # va ai_verify.py'ga qarang. `approved_by` - "admin" (qo'lda) yoki
+    # "ai" (avtomatik, yuqori ishonch bilan) - audit/tarix uchun.
+    await _add_column_if_missing(conn, "task_submissions", "ai_verdict TEXT")
+    await _add_column_if_missing(conn, "task_submissions", "ai_confidence TEXT")
+    await _add_column_if_missing(conn, "task_submissions", "ai_reasoning TEXT")
+    await _add_column_if_missing(conn, "task_submissions", "approved_by TEXT")
+    # 29-avgust: mahsulotga 3D model (STL) fayli havolasini biriktirish
+    # uchun (foydalanuvchi so'rovi) - admin buyurtmani yig'ayotganda
+    # to'g'ridan-to'g'ri shu havoladan STL faylni yuklab olishi uchun
+    # (webapp/admin.html'dagi buyurtma kartochkasiga qarang).
+    await _add_column_if_missing(conn, "products", "stl_url TEXT")
+    # 30-avgust (foydalanuvchi so'rovi): mijoz buyurtma qilayotganda
+    # savatdagi har bir mahsulot uchun filament rangini tanlashi (yoki
+    # "Avtomatik" qoldirishi) uchun. NULL/bo'sh = "Avtomatik" - do'kon
+    # o'zi mos rangni tanlaydi (webapp_api.api_cart_set_color'ga qarang).
+    await _add_column_if_missing(conn, "cart_items", "color TEXT")
+    # 30-avgust (foydalanuvchi so'rovi): ba'zi 3D modellarga mijoz
+    # xohlagan matnni (masalan ism) yozdirish, buning uchun qo'shimcha
+    # to'lov olish imkoniyati. HAMMA mahsulotda bu mumkin emas - shuning
+    # uchun admin har bir mahsulotni qo'shayotganda/tahrirlayotganda
+    # alohida yoqadi va shu ikki qoidani belgilaydi: maksimal necha
+    # belgi yozish mumkin (`max_text_length`) va yozilsa qancha qo'shimcha
+    # to'lanadi (`text_price`, so'mda).
+    await _add_column_if_missing(conn, "products", "allow_text_customization INTEGER NOT NULL DEFAULT 0")
+    await _add_column_if_missing(conn, "products", "max_text_length INTEGER")
+    await _add_column_if_missing(conn, "products", "text_price INTEGER")
+    # Mijoz savatdagi shu mahsulot uchun yozdirmoqchi bo'lgan matni
+    # (bo'sh/NULL = matn yozdirmayapti - qo'shimcha to'lov olinmaydi).
+    await _add_column_if_missing(conn, "cart_items", "custom_text TEXT")
+    # 31-avgust (foydalanuvchi so'rovi): "mijoz mahsulot narxi ichida
+    # yetkazib berishi deb o'ylamasligi kerak" - endi buyurtmaga
+    # tanlangan pochta xizmati (BTS/EMU/UzPost), turi (ofis/uy), hudud
+    # va HISOBLANGAN narx ALOHIDA saqlanadi (mahsulot narxiga
+    # qo'shilmaydi, alohida ko'rsatiladi). `delivery_label` - mijoz/admin
+    # uchun tayyor o'qiladigan matn (masalan "🚀 BTS — 🏠 Uyga yetkazish —
+    # Toshkent viloyati") - buyurtma vaqtida "suratga olinadi" (boshqa
+    # snapshot maydonlar kabi), shunda kelajakda kuryer/hudud nomlari
+    # o'zgarsa ham ESKI buyurtmadagi yozuv o'zgarmay qoladi.
+    await _add_column_if_missing(conn, "orders", "delivery_courier TEXT")
+    await _add_column_if_missing(conn, "orders", "delivery_type TEXT")
+    await _add_column_if_missing(conn, "orders", "delivery_region TEXT")
+    await _add_column_if_missing(conn, "orders", "delivery_price INTEGER NOT NULL DEFAULT 0")
+    await _add_column_if_missing(conn, "orders", "delivery_label TEXT")
+    # 31-avgust (foydalanuvchi so'rovi, 2-kunlik tuzatish): "viloyatni
+    # tanlagandan so'ng pastdan tuman ham chiqishi kerak" - narxga
+    # ta'sir qilmaydi (narx hamon hudud bosqichiga qarab hisoblanadi),
+    # faqat kuryer/admin uchun ANIQROQ manzil ma'lumoti.
+    await _add_column_if_missing(conn, "orders", "delivery_district TEXT")
 
-        # Baza bo'sh bo'lsa (bot birinchi marta ishga tushganda) - namuna
-        # mahsulotlar bilan to'ldiramiz, shunda katalog darhol bo'sh bo'lib
-        # qolmaydi. Bundan keyingi barcha mahsulotlar /admin orqali qo'shiladi.
-        cursor = await conn.execute("SELECT COUNT(*) FROM products")
-        (count,) = await cursor.fetchone()
-        if count == 0:
-            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            for p in SEED_PRODUCTS:
+    # Yetkazib berish narxlari jadvali: 3 pochta x 3 masofa bosqichi x
+    # (Ofis/Uy, UzPost'da faqat Ofis) = 15 ta katak. Bo'sh bo'lsa,
+    # HAMMASINI 0 so'm bilan oldindan to'ldiramiz - shunda admin panelda
+    # "🚚 Yetkazib berish" jadvali darhol to'liq (bo'sh joylarsiz)
+    # ko'rinadi, admin faqat haqiqiy narxlarni kiritishi kifoya.
+    cursor = await conn.execute("SELECT COUNT(*) FROM delivery_prices")
+    (dp_count,) = await cursor.fetchone()
+    if dp_count == 0:
+        for _courier_code, _dtype in delivery.VALID_TYPE_COMBOS:
+            for _tier in delivery.DISTANCE_TIERS:
                 await conn.execute(
-                    """INSERT INTO products (category, name, description, price, active, created_at)
-                       VALUES (?, ?, ?, ?, 1, ?)""",
-                    (p["category"], p["name"], p["description"], p["price"], now),
+                    "INSERT INTO delivery_prices (courier, delivery_type, distance_tier, price) "
+                    "VALUES (?, ?, ?, 0)",
+                    (_courier_code, _dtype, _tier),
                 )
-            await conn.commit()
+        await conn.commit()
+
+    # Baza bo'sh bo'lsa (bot birinchi marta ishga tushganda) - namuna
+    # mahsulotlar bilan to'ldiramiz, shunda katalog darhol bo'sh bo'lib
+    # qolmaydi. Bundan keyingi barcha mahsulotlar /admin orqali qo'shiladi.
+    cursor = await conn.execute("SELECT COUNT(*) FROM products")
+    (count,) = await cursor.fetchone()
+    if count == 0:
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        for p in SEED_PRODUCTS:
+            await conn.execute(
+                """INSERT INTO products (category, name, description, price, active, created_at)
+                   VALUES (?, ?, ?, ?, 1, ?)""",
+                (p["category"], p["name"], p["description"], p["price"], now),
+            )
+        await conn.commit()
+
+
+async def init_db():
+    """Bot birinchi marta ishga tushganda jadvallarni yaratadi (agar hali
+    yo'q bo'lsa) - `on_startup`da (bot.py) chaqiriladi."""
+    async with get_db_connection() as conn:
+        await _ensure_schema(conn)
+
+
+# Turso replika fayli buzilib avtomatik tiklanganda (turso_db.py) ham
+# sxema HAR SAFAR qayta ta'minlanishi uchun - qarang: `_ensure_schema`
+# funksiyasidagi izoh.
+set_schema_ensure_hook(_ensure_schema)
 
 
 # ---------- MAHSULOTLAR (PRODUCTS) ----------
@@ -826,6 +859,7 @@ async def create_order(
     delivery_type: str | None = None,
     delivery_region: str | None = None,
     delivery_price: int = 0,
+    delivery_district: str | None = None,
 ) -> int:
     """Savatdagi mahsulotlar asosida buyurtma yaratadi va savatni tozalaydi.
     Yaratilgan buyurtma ID raqamini qaytaradi. `payment_method` - "balance" |
@@ -851,7 +885,7 @@ async def create_order(
     subtotal = cart_subtotal(cart)
     total_price = order_total(subtotal, discount_amount, delivery_price)
     delivery_label_text = (
-        delivery.delivery_label(delivery_courier, delivery_type, delivery_region)
+        delivery.delivery_label(delivery_courier, delivery_type, delivery_region, delivery_district)
         if delivery_courier else None
     )
     # MUHIM (29-avgust, foydalanuvchi so'rovi): "stl_url" ham shu yerda
@@ -887,8 +921,9 @@ async def create_order(
             """INSERT INTO orders
                (user_id, full_name, phone, address, items_json, total_price, status,
                 created_at, promo_code, discount_amount, payment_method,
-                delivery_courier, delivery_type, delivery_region, delivery_price, delivery_label)
-               VALUES (?, ?, ?, ?, ?, ?, 'yangi', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                delivery_courier, delivery_type, delivery_region, delivery_price, delivery_label,
+                delivery_district)
+               VALUES (?, ?, ?, ?, ?, ?, 'yangi', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 user_id,
                 full_name,
@@ -905,6 +940,7 @@ async def create_order(
                 delivery_region,
                 delivery_price or 0,
                 delivery_label_text,
+                delivery_district,
             ),
         )
         await conn.commit()

@@ -44,6 +44,25 @@ _turso_broken = False  # dastlabki ulanish muvaffaqiyatsiz tugasa True bo'ladi
 
 _conn = None
 _lock = asyncio.Lock()
+_ever_connected = False  # birinchi ulanish allaqachon o'rnatilganmi (reconnectni aniqlash uchun)
+_schema_ensure_hook = None  # db.py ro'yxatdan o'tkazadi (set_schema_ensure_hook)
+
+
+def set_schema_ensure_hook(hook):
+    """db.py o'zining `_ensure_schema(conn)` funksiyasini shu yerga (import
+    vaqtida, module darajasida) ro'yxatdan o'tkazadi. Nima uchun kerak:
+    agar mahalliy Turso replika fayli ISH VAQTIDA (process qayta ishga
+    tushmasdan) buzilib, avtomatik tiklansa (pastdagi
+    `_reset_connection_after_corruption`), YANGI ulanish Turso bulutidan
+    to'liq qaytadan sinxronlanadi - lekin bulutdagi nusxa ayrim jadvallarni
+    "ko'rmagan" bo'lishi mumkin (masalan mahalliy fayl bulutga TO'LIQ push
+    qilinmasdan turib buzilgan bo'lsa) - production'da aynan shu sabab bilan
+    "no such table: task_submissions" kabi xatolar chiqqan. Shuning uchun
+    HAR bir QAYTA ulanishda (birinchi ulanishda EMAS - buni `db.init_db()`
+    alohida, startup'da ta'minlaydi) sxema shu yerning o'zida qayta
+    tekshiriladi/to'ldiriladi - process qayta ishga tushishini kutmasdan."""
+    global _schema_ensure_hook
+    _schema_ensure_hook = hook
 
 
 class Row(tuple):
@@ -105,9 +124,17 @@ def _open_sync_conn():
 
 
 async def _ensure_conn():
-    global _conn
+    global _conn, _ever_connected
+    # MUHIM: `_conn is None` ikki xil holatda bo'ladi - (1) BOTNING ENG
+    # BIRINCHI ulanishi (process hozirgina ishga tushdi), yoki (2) QAYTA
+    # ulanish (oldingi ulanish buzilgan fayl sababli o'chirilgan va
+    # tiklanmoqda). Ikkinchisini aniqlash uchun `_ever_connected` bayrog'i
+    # ishlatiladi - faqat SHU holatda sxema pastda avtomatik qayta
+    # ta'minlanadi (birinchisida buni `db.init_db()` alohida qiladi).
+    is_reconnect = _ever_connected and _conn is None
     if _conn is None:
         _conn = await asyncio.to_thread(_open_sync_conn)
+        _ever_connected = True
         if _TURSO_ENABLED and not _turso_broken:
             try:
                 await asyncio.to_thread(_conn.sync)
@@ -116,6 +143,14 @@ async def _ensure_conn():
                 logger.exception(
                     "Turso bilan dastlabki sinxronizatsiya muvaffaqiyatsiz tugadi - "
                     "mahalliy nusxa bilan davom etiladi (keyingi urinishlarda tuzalishi mumkin)."
+                )
+        if is_reconnect and _schema_ensure_hook is not None:
+            try:
+                await _schema_ensure_hook(_ConnWrapper(_conn))
+                logger.info("Qayta ulanishdan keyin sxema qayta ta'minlandi (ensure_schema).")
+            except Exception:
+                logger.exception(
+                    "Qayta ulanishdan keyin sxemani ta'minlashda (ensure_schema) xatolik."
                 )
     return _conn
 

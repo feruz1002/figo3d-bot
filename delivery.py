@@ -50,6 +50,82 @@ REGIONS = [
     {"code": "qoraqalpogiston", "name": "Qoraqalpog'iston Respublikasi", "tier": 3},
 ]
 
+# 31-avgust (foydalanuvchi so'rovi, 2-kunlik tuzatish: "viloyatni
+# tanlagandan so'ng pastdan tuman ham chiqishi kerak"): hudud tanlangach,
+# mijoz shu hudud ICHIDAGI tumanni/shahar tumanini ham tanlaydi - bu
+# narxga TA'SIR QILMAYDI (narx hamon faqat hudud bosqichiga qarab
+# hisoblanadi), faqat kuryer/admin uchun ANIQROQ manzil ma'lumoti beradi.
+# RO'YXAT davlat ma'muriy bo'linishi bo'yicha (2025-2026) - agar biror
+# tuman nomi noto'g'ri/eskirgan bo'lsa, tuzatish oson (faqat shu ro'yxat).
+DISTRICTS_BY_REGION = {
+    "tashkent_city": [
+        "Bektemir", "Chilonzor", "Mirobod", "Mirzo Ulug'bek", "Olmazor",
+        "Sergeli", "Shayxontohur", "Uchtepa", "Yakkasaroy", "Yangihayot",
+        "Yashnobod", "Yunusobod",
+    ],
+    "tashkent_region": [
+        "Оqqo'rg'on", "Ohangaron", "Bekobod", "Bo'stonliq", "Bo'ka",
+        "Zangiota", "Qibray", "Quyichirchiq", "Parkent", "Piskent",
+        "Toshkent tumani", "O'rtachirchiq", "Chinoz", "Yuqorichirchiq", "Yangiyo'l",
+    ],
+    "sirdaryo": [
+        "Oqoltin", "Boyovut", "Guliston", "Mirzaobod", "Sayxunobod",
+        "Sardoba", "Sirdaryo", "Xovos",
+    ],
+    "jizzax": [
+        "Forish", "Sharof Rashidov", "Yangiobod", "Arnasoy", "Baxmal",
+        "G'allaorol", "Do'stlik", "Zomin", "Zarbdor", "Zafarobod",
+        "Mirzacho'l", "Paxtakor",
+    ],
+    "samarqand": [
+        "Samarqand", "Oqdaryo", "Bulung'ur", "Jomboy", "Ishtixon",
+        "Kattaqo'rg'on", "Qo'shrabot", "Narpay", "Nurobod", "Payariq",
+        "Pastdarg'om", "Paxtachi", "Toyloq", "Urgut",
+    ],
+    "qashqadaryo": [
+        "G'uzor", "Dehqonobod", "Qamashi", "Qarshi", "Qasbi", "Kitob",
+        "Koson", "Mirishkor", "Muborak", "Nishon", "Chiroqchi",
+        "Shahrisabz", "Yakkabog'",
+    ],
+    "surxondaryo": [
+        "Bandixon", "Oltinsoy", "Angor", "Boysun", "Denov", "Jarqo'rg'on",
+        "Qumqo'rg'on", "Qiziriq", "Muzrabot", "Sariosiyo", "Termiz",
+        "Uzun", "Sherobod", "Sho'rchi",
+    ],
+    "navoiy": [
+        "Nurota", "Tomdi", "Xatirchi", "Uchquduq", "Konimex", "Karmana",
+        "Qiziltepa", "Navbahor",
+    ],
+    "buxoro": [
+        "Alat", "Buxoro", "Vobkent", "G'ijduvon", "Jondor", "Kogon",
+        "Qorako'l", "Qorovulbozor", "Peshku", "Romitan", "Shofirkon",
+    ],
+    "fargona": [
+        "Bag'dod", "Beshariq", "Buvayda", "Dang'ara", "Qo'shtepa", "Quva",
+        "Oltiariq", "Rishton", "So'x", "Toshloq", "Uchko'prik", "Farg'ona",
+        "Furqat", "O'zbekiston tumani", "Yozyovon",
+    ],
+    "andijon": [
+        "Bo'ston", "Ulug'nor", "Jalaquduq", "Oltinko'l", "Andijon", "Asaka",
+        "Baliqchi", "Buloqboshi", "Izboskan", "Qo'rg'ontepa", "Marhamat",
+        "Paxtaobod", "Xo'jaobod", "Shahrixon",
+    ],
+    "namangan": [
+        "Kosonsoy", "Mingbuloq", "Namangan", "Norin", "Pop", "To'raqo'rg'on",
+        "Uychi", "Uchqo'rg'on", "Chortoq", "Chust", "Yangiqo'rg'on",
+    ],
+    "xorazm": [
+        "Urganch", "Qo'shko'pir", "Tuproqqal'a", "Bog'ot", "Gurlan",
+        "Hazorasp", "Xonqa", "Xiva", "Shovot", "Yangiariq", "Yangibozor",
+    ],
+    "qoraqalpogiston": [
+        "Bo'zatov", "Amudaryo", "Beruniy", "Qanliko'l", "Qorao'zak",
+        "Kegeyli", "Qo'ng'irot", "Mo'ynoq", "Nukus", "To'rtko'l",
+        "Taxtako'pir", "Taxiatosh", "Xo'jayli", "Chimboy", "Shumanay",
+        "Ellikqal'a",
+    ],
+}
+
 _COURIER_BY_CODE = {c["code"]: c for c in COURIERS}
 _REGION_BY_CODE = {r["code"]: r for r in REGIONS}
 
@@ -81,13 +157,23 @@ def is_valid_delivery_type(courier_code: str, delivery_type: str) -> bool:
     return True
 
 
-def delivery_label(courier_code: str, delivery_type: str, region_code: str) -> str:
+def get_districts(region_code: str) -> list:
+    return DISTRICTS_BY_REGION.get(region_code, [])
+
+
+def is_valid_district(region_code: str, district: str) -> bool:
+    return district in DISTRICTS_BY_REGION.get(region_code, [])
+
+
+def delivery_label(courier_code: str, delivery_type: str, region_code: str, district: str | None = None) -> str:
     """Buyurtmaga "suratga olib" saqlanadigan, mijoz/admin uchun tayyor
     o'qiladigan bitta qatorlik matn - masalan:
-    "🚀 BTS — 🏠 Uyga yetkazish — Toshkent viloyati"."""
+    "🚀 BTS — 🏠 Uyga yetkazish — Toshkent viloyati, Bo'ka tumani"."""
     courier = get_courier(courier_code)
     region = get_region(region_code)
     type_label = DELIVERY_TYPE_LABELS.get(delivery_type, delivery_type or "")
     courier_label = (courier["emoji"] + " " + courier["name"]) if courier else (courier_code or "?")
     region_label = region["name"] if region else (region_code or "?")
+    if district:
+        region_label = f"{region_label}, {district} tumani"
     return f"{courier_label} — {type_label} — {region_label}"

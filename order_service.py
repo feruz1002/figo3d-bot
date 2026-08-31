@@ -135,6 +135,7 @@ async def create_order_and_apply_payment(
     delivery_type: str | None = None,
     delivery_region: str | None = None,
     delivery_price: int = 0,
+    delivery_district: str | None = None,
 ):
     """payment_method: "balance" | "cash" | "card".
     Qaytaradi: (order_id, "ok") muvaffaqiyatda, yoki (None, sabab) — sabab
@@ -175,6 +176,7 @@ async def create_order_and_apply_payment(
         payment_method=payment_method,
         delivery_courier=delivery_courier, delivery_type=delivery_type,
         delivery_region=delivery_region, delivery_price=delivery_price,
+        delivery_district=delivery_district,
     )
 
     if payment_method == "balance":

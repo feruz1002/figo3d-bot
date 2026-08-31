@@ -132,29 +132,37 @@ async def api_delivery_options(request: web.Request):
         "couriers": delivery.COURIERS,
         "regions": delivery.REGIONS,
         "distance_tiers": delivery.DISTANCE_TIERS,
+        "districts": delivery.DISTRICTS_BY_REGION,
         "prices": price_map,
     })
 
 
 async def _resolve_delivery_selection(body: dict):
-    """Mijoz yuborgan pochta/turi/hudud tanlovini SERVER TOMONDA tasdiqlaydi
-    va haqiqiy narxni admin narx jadvalidan hisoblaydi - mijoz brauzeridan
-    kelgan narxga HECH QACHON ishonmaymiz (xuddi promo-kod/rang/matn narxi
-    kabi). Uchtasi ham (courier/type/region) MAJBURIY - yetkazib berish
-    tanlanmagan bo'lsa buyurtma qabul qilinmaydi (31-avgust, foydalanuvchi
-    so'rovi: mijoz yetkazib berishni albatta tanlashi kerak).
+    """Mijoz yuborgan pochta/turi/hudud/tuman tanlovini SERVER TOMONDA
+    tasdiqlaydi va haqiqiy narxni admin narx jadvalidan hisoblaydi - mijoz
+    brauzeridan kelgan narxga HECH QACHON ishonmaymiz (xuddi promo-kod/
+    rang/matn narxi kabi). To'rttasi ham (courier/type/region/district)
+    MAJBURIY - yetkazib berish tanlanmagan bo'lsa buyurtma qabul
+    qilinmaydi (31-avgust, foydalanuvchi so'rovi: mijoz yetkazib berishni
+    albatta tanlashi kerak). MUHIM: tuman narxga TA'SIR QILMAYDI (narx
+    hamon faqat hudud bosqichiga qarab hisoblanadi) - faqat aniqroq manzil
+    ma'lumoti sifatida saqlanadi (2-kunlik tuzatish, foydalanuvchi so'rovi:
+    "viloyatni tanlagandan so'ng pastdan tuman ham chiqishi kerak").
 
-    Qaytaradi: (courier_code, delivery_type, region_code, price, xato|None).
+    Qaytaradi: (courier_code, delivery_type, region_code, district, price, xato|None).
     Xato bo'lsa, qolgan qiymatlarga e'tibor bermang - chaqiruvchi xatoni
     to'g'ridan-to'g'ri qaytarishi kerak."""
     courier_code = body.get("delivery_courier")
     delivery_type = body.get("delivery_type")
     region_code = body.get("delivery_region")
+    district = (body.get("delivery_district") or "").strip() or None
 
     courier = delivery.get_courier(courier_code)
     region = delivery.get_region(region_code)
     if not courier or not region or not delivery.is_valid_delivery_type(courier_code, delivery_type):
-        return None, None, None, 0, web.json_response({"error": "invalid_delivery"}, status=400)
+        return None, None, None, None, 0, web.json_response({"error": "invalid_delivery"}, status=400)
+    if not district or not delivery.is_valid_district(region_code, district):
+        return None, None, None, None, 0, web.json_response({"error": "invalid_district"}, status=400)
 
     price = await db.get_delivery_price(courier_code, delivery_type, region["tier"])
     if price is None:
@@ -162,7 +170,7 @@ async def _resolve_delivery_selection(body: dict):
         # kombinatsiyalarni 0 so'm bilan oldindan to'ldiradi), lekin baza
         # eski/qo'lda o'zgartirilgan bo'lsa ham xavfsiz tomonda qolish uchun.
         price = 0
-    return courier_code, delivery_type, region_code, price, None
+    return courier_code, delivery_type, region_code, district, price, None
 
 
 async def api_cart_set_color(request: web.Request):
@@ -649,7 +657,7 @@ async def api_checkout(request: web.Request):
     # qabul qilinmaydi. Narx HECH QACHON mijoz yuborgan raqamga ishonib
     # emas, har doim shu yerda (serverda) admin narx jadvalidan qayta
     # hisoblanadi.
-    delivery_courier, delivery_type, delivery_region, delivery_price, delivery_err = (
+    delivery_courier, delivery_type, delivery_region, delivery_district, delivery_price, delivery_err = (
         await _resolve_delivery_selection(body)
     )
     if delivery_err is not None:
@@ -682,6 +690,7 @@ async def api_checkout(request: web.Request):
         user_id, full_name, phone, address, promo_code, discount_amount, payment_method,
         delivery_courier=delivery_courier, delivery_type=delivery_type,
         delivery_region=delivery_region, delivery_price=delivery_price,
+        delivery_district=delivery_district,
     )
     if order_id is None:
         status = 409 if reason == "insufficient_balance" else 400
