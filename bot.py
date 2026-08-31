@@ -28,7 +28,7 @@ import db
 from admin_webapp_api import register_admin_routes
 from config import BOT_TOKEN, RENDER_EXTERNAL_URL, PORT, WEBAPP_URL
 from handlers import all_routers
-from turso_db import start_periodic_sync
+from turso_db import is_corruption_error, start_periodic_sync
 from webapp_api import register_webapp_routes
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -44,7 +44,28 @@ MAX_REQUEST_SIZE = 20 * 1024 * 1024
 
 
 async def on_startup(bot: Bot):
-    await db.init_db()
+    # MUHIM (31-avgust, real production hodisasiga javoban): agar mahalliy
+    # Turso replika fayli BUZILGAN bo'lsa (masalan server to'satdan
+    # o'chirilgan/qayta ishga tushirilgan bo'lsa), `init_db()` BIRINCHI
+    # urinishda "file is not a database" turidagi xato bilan yiqilishi
+    # mumkin - lekin aynan SHU payt `turso_db.py`ning o'zi allaqachon
+    # buzilgan faylni o'chirib, ulanishni "toza" holatga qaytargan bo'ladi
+    # (turso_db._reset_connection_after_corruption). Avval bu xato butun
+    # jarayonni yiqitib, Render uni qayta ishga tushirguncha (~30-60
+    # soniya, botning umuman ishlamay turishi) kutishga majbur qilardi -
+    # endi shu SAME jarayonning o'zida DARHOL (bir marta) qayta urinamiz,
+    # shunda deploy hech qanday uzilishsiz muvaffaqiyatli tugaydi.
+    try:
+        await db.init_db()
+    except Exception as exc:
+        if not is_corruption_error(exc):
+            raise
+        logger.warning(
+            "init_db() birinchi urinishda mahalliy fayl buzilgani sababli "
+            "muvaffaqiyatsiz tugadi - endi TOZA (Turso'dan qaytadan "
+            "sinxronlangan) ulanish bilan darhol qayta urinilmoqda."
+        )
+        await db.init_db()
     # Turso sozlangan bo'lsa, fonda davriy sinxronlashni boshlab qo'yamiz -
     # bu har yozuvdan keyingi darhol sinxronlashga qo'shimcha xavfsizlik
     # chorasi (Turso sozlanmagan bo'lsa hech narsa qilmaydi, darhol qaytadi).

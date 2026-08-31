@@ -135,6 +135,14 @@ def _looks_like_corruption(exc: Exception) -> bool:
     return any(sig in msg for sig in _CORRUPTION_SIGNATURES)
 
 
+# 31-avgust (real production hodisasi asosida): bot.py'ning on_startup
+# funksiyasi `db.init_db()` chaqirganda AYNAN shu turdagi xatoni (masalan
+# server oldin to'satdan o'chirilgani sabab fayl buzilgan bo'lsa) tutib,
+# darhol (Render jarayonni qayta ishga tushirishini kutmasdan) qayta
+# urinishi uchun ochiq (public) nom bilan ham chiqaramiz.
+is_corruption_error = _looks_like_corruption
+
+
 async def _reset_connection_after_corruption():
     """Mahalliy replika fayli buzilganini aniqlagach chaqiriladi: eski
     (buzilgan) ulanishni yopib, `_conn`ni `None`ga qaytaradi - shu bilan
