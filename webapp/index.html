@@ -254,6 +254,14 @@
     checkoutForm: null, // {full_name, phone, address} - savat -> to'lov oralig'ida saqlanadi
     promo: null, // {code, discount_percent} - to'lov ekranida qo'llangan promo-kod
     topupPrefill: null, // to'lovda hamyon yetmagan summa - hamyon to'ldirish summasini oldindan to'ldirish uchun
+    // 31-avgust (foydalanuvchi so'rovi): "mijoz mahsulot narxi ichida
+    // yetkazib berishi deb o'ylamasligi kerak" - yetkazib berish endi
+    // to'lov ekranida ALOHIDA tanlanadi (hudud -> pochta xizmati -> turi)
+    // va narxi mahsulotlar summasi ustiga qo'shiladi. `deliveryOptions` -
+    // /api/delivery/options'dan (pochtalar/hududlar/narxlar jadvali),
+    // `delivery` - mijozning joriy tanlovi.
+    deliveryOptions: null,
+    delivery: { region: null, courier: null, type: null },
   };
   var navStack = []; // bo'sh = katalog (grid) ko'rinishi
 
@@ -474,6 +482,43 @@
     return api("/api/colors").then(function (r) {
       state.colors = (r.ok && r.data && r.data.colors) || [];
     });
+  }
+  // 31-avgust (foydalanuvchi so'rovi): pochta xizmatlari (BTS/EMU/UzPost),
+  // hududlar ro'yxati va joriy narxlar jadvali - to'lov ekranidagi
+  // "🚚 Yetkazib berish" bo'limini chizish uchun.
+  function loadDeliveryOptions() {
+    return api("/api/delivery/options").then(function (r) {
+      state.deliveryOptions = (r.ok && r.data) || { couriers: [], regions: [], prices: {} };
+    });
+  }
+
+  // ---------- Yetkazib berish narxini hisoblash yordamchilari ----------
+  function deliveryRegionInfo(regionCode) {
+    var regions = (state.deliveryOptions && state.deliveryOptions.regions) || [];
+    return regions.filter(function (r) { return r.code === regionCode; })[0] || null;
+  }
+  function deliveryCourierInfo(courierCode) {
+    var couriers = (state.deliveryOptions && state.deliveryOptions.couriers) || [];
+    return couriers.filter(function (c) { return c.code === courierCode; })[0] || null;
+  }
+  // Berilgan kuryer+tur uchun BARCHA 3 bosqich narxini {tier: price} ko'rinishida qaytaradi.
+  function deliveryPricesForCourierType(courierCode, type) {
+    var prices = (state.deliveryOptions && state.deliveryOptions.prices) || {};
+    return (prices[courierCode] && prices[courierCode][type]) || {};
+  }
+  function deliveryPriceFor(courierCode, type, regionCode) {
+    var region = deliveryRegionInfo(regionCode);
+    if (!region) return 0;
+    var byTier = deliveryPricesForCourierType(courierCode, type);
+    return byTier[String(region.tier)] || 0;
+  }
+  function deliverySelected() {
+    var d = state.delivery;
+    return !!(d.region && d.courier && d.type);
+  }
+  function currentDeliveryPrice() {
+    if (!deliverySelected()) return 0;
+    return deliveryPriceFor(state.delivery.courier, state.delivery.type, state.delivery.region);
   }
   function loadConfig() {
     // 29-avgust: hamyon to'ldirish ekranida bank rekvizitlarini ko'rsatish
@@ -871,6 +916,96 @@
   // chiqib qolmaydi. Yakuniy summa va balans HAR DOIM server tomonda
   // (/api/checkout) qayta tekshiriladi - bu yerdagi hisob faqat ko'rsatish
   // uchun.
+  // 31-avgust (foydalanuvchi so'rovi): "mijoz mahsulot narxi ichida
+  // yetkazib berishi deb o'ylamasligi kerak" - to'lov ekranida hudud ->
+  // pochta xizmati (BTS/EMU/UzPost, icon bilan) -> yetkazish turi
+  // (ofisdan/uyga) ketma-ket tanlanadi, narx har bosqichda ko'rinadi.
+  // UzPost faqat "ofisdan olib ketish"ni qo'llab-quvvatlaydi - shuning
+  // uchun uni tanlagach turi avtomatik "office" bo'ladi, alohida tugma
+  // ko'rsatilmaydi.
+  function renderDeliverySection() {
+    var opts = state.deliveryOptions || { couriers: [], regions: [] };
+    var d = state.delivery;
+    var regionOptions = '<option value="">-- Hududni tanlang --</option>' +
+      (opts.regions || []).map(function (r) {
+        return '<option value="' + r.code + '"' + (r.code === d.region ? " selected" : "") + '>' + escapeHtml(r.name) + '</option>';
+      }).join("");
+
+    var courierButtons = "";
+    if (d.region) {
+      courierButtons =
+        '<div class="form-group" style="margin:10px 0 0"><label class="form-label">Pochta xizmati</label>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+            (opts.couriers || []).map(function (c) {
+              var active = c.code === d.courier;
+              return '<button type="button" class="card-btn dv-courier-btn" data-courier="' + c.code + '" ' +
+                'style="width:auto;margin:0;padding:8px 14px;' +
+                (active ? "background:var(--button);color:var(--button-text)" : "background:var(--bg);color:var(--text)") + '">' +
+                c.emoji + ' ' + escapeHtml(c.name) + '</button>';
+            }).join("") +
+          '</div></div>';
+    }
+
+    var typeBlock = "";
+    if (d.region && d.courier) {
+      var courier = deliveryCourierInfo(d.courier);
+      if (courier && courier.home_delivery) {
+        var officePrice = deliveryPriceFor(d.courier, "office", d.region);
+        var homePrice = deliveryPriceFor(d.courier, "home", d.region);
+        typeBlock =
+          '<div class="form-group" style="margin:10px 0 0"><label class="form-label">Yetkazish turi</label>' +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+              '<button type="button" class="card-btn dv-type-btn" data-type="office" style="width:auto;margin:0;padding:8px 14px;' +
+                (d.type === "office" ? "background:var(--button);color:var(--button-text)" : "background:var(--bg);color:var(--text)") +
+                '">🏢 Ofisdan olish — ' + fmtPrice(officePrice) + " so'm</button>" +
+              '<button type="button" class="card-btn dv-type-btn" data-type="home" style="width:auto;margin:0;padding:8px 14px;' +
+                (d.type === "home" ? "background:var(--button);color:var(--button-text)" : "background:var(--bg);color:var(--text)") +
+                '">🏠 Uygacha — ' + fmtPrice(homePrice) + " so'm</button>" +
+            '</div></div>';
+      } else if (courier) {
+        var uzPrice = deliveryPriceFor(d.courier, "office", d.region);
+        typeBlock = '<div class="form-hint" style="margin:8px 0 0">📯 ' + escapeHtml(courier.name) +
+          ' faqat ofisdan olib ketishni qo\'llab-quvvatlaydi — ' + fmtPrice(uzPrice) + " so'm</div>";
+      }
+    }
+
+    return (
+      '<div class="info-card">' +
+        '<div class="card-line" style="margin-bottom:6px"><b>🚚 Yetkazib berish</b></div>' +
+        '<div class="form-group" style="margin-bottom:0"><select class="form-input" id="dv-region">' + regionOptions + '</select></div>' +
+        courierButtons +
+        typeBlock +
+      '</div>'
+    );
+  }
+
+  function wireDeliverySection(el) {
+    var regionSel = document.getElementById("dv-region");
+    if (regionSel) regionSel.onchange = function () {
+      state.delivery.region = regionSel.value || null;
+      state.delivery.courier = null;
+      state.delivery.type = null;
+      render();
+    };
+    el.querySelectorAll(".dv-courier-btn").forEach(function (btn) {
+      btn.onclick = function () {
+        var code = btn.getAttribute("data-courier");
+        state.delivery.courier = code;
+        var info = deliveryCourierInfo(code);
+        // UzPost kabi faqat ofisga ega bo'lgan pochta - turi avtomatik
+        // "office" bo'ladi, mijoz alohida tanlashi shart emas.
+        state.delivery.type = (info && info.home_delivery) ? null : "office";
+        render();
+      };
+    });
+    el.querySelectorAll(".dv-type-btn").forEach(function (btn) {
+      btn.onclick = function () {
+        state.delivery.type = btn.getAttribute("data-type");
+        render();
+      };
+    });
+  }
+
   var submittingCheckout = false;
   VIEW_RENDERERS.checkout = function (el) {
     var pids = Object.keys(state.cart).filter(function (pid) { return state.cart[pid] > 0; });
@@ -892,14 +1027,20 @@
     var subtotal = cartSubtotal();
     var promo = state.promo;
     var discount = promo ? Math.floor(subtotal * promo.discount_percent / 100) : 0;
-    var total = Math.max(subtotal - discount, 0);
+    // MUHIM (31-avgust, foydalanuvchi so'rovi): chegirma FAQAT mahsulotlar
+    // summasiga qo'llanadi - yetkazib berish narxi ustiga ALOHIDA qo'shiladi
+    // (serverdagi db.order_total bilan bir xil formula).
+    var deliveryFee = currentDeliveryPrice();
+    var total = Math.max(subtotal - discount, 0) + deliveryFee;
     var balance = (state.profile && state.profile.balance) || 0;
     var enough = balance >= total;
+    var readyToPay = deliverySelected();
 
     el.innerHTML =
       '<div class="screen">' +
         '<div class="screen-title">💳 To\'lov</div>' +
         '<div class="info-card"><div class="card-line"><b>Buyurtmangiz:</b></div>' + itemsHtml + '</div>' +
+        renderDeliverySection() +
         '<div class="form-group"><label class="form-label">Promo-kod (bo\'lsa)</label>' +
           '<div style="display:flex;gap:8px;align-items:flex-start">' +
             '<input class="form-input" id="ck-promo" placeholder="Masalan: FIGO10" value="' + escapeHtml(promo ? promo.code : "") + '" style="flex:1">' +
@@ -910,18 +1051,23 @@
         '<div class="info-card">' +
           '<div class="card-line">Mahsulotlar: ' + fmtPrice(subtotal) + " so'm</div>" +
           (discount ? '<div class="card-line">Chegirma (−' + promo.discount_percent + '%): −' + fmtPrice(discount) + " so'm</div>" : "") +
+          (readyToPay ? '<div class="card-line">🚚 Yetkazib berish: ' + fmtPrice(deliveryFee) + " so'm</div>" : "") +
           '<div class="card-line"><b>Jami: ' + fmtPrice(total) + " so'm</b></div>" +
           '<div class="card-line">💰 Hamyoningizda: ' + fmtPrice(balance) + " so'm</div>" +
         '</div>' +
-        (enough
-          ? '<button class="page-cta" id="ck-pay-btn">✅ Hamyondan to\'lash (' + fmtPrice(total) + " so'm)</button>"
-          : (
-              '<div class="form-error" style="margin-bottom:10px">Hamyoningizda ' + fmtPrice(total - balance) + " so'm yetishmayapti." + '</div>' +
-              '<button class="page-cta" id="ck-topup-btn">💰 Hamyonni to\'ldirish</button>'
+        (!readyToPay
+          ? '<div class="form-hint" style="margin-bottom:10px">⚠️ Davom etish uchun avval yetkazib berish usulini (hudud, pochta xizmati, turi) tanlang.</div>'
+          : (enough
+              ? '<button class="page-cta" id="ck-pay-btn">✅ Hamyondan to\'lash (' + fmtPrice(total) + " so'm)</button>"
+              : (
+                  '<div class="form-error" style="margin-bottom:10px">Hamyoningizda ' + fmtPrice(total - balance) + " so'm yetishmayapti." + '</div>' +
+                  '<button class="page-cta" id="ck-topup-btn">💰 Hamyonni to\'ldirish</button>'
+                )
             )
         ) +
       '</div>';
 
+    wireDeliverySection(el);
     document.getElementById("ck-promo-apply").onclick = applyPromo;
     var payBtn = document.getElementById("ck-pay-btn");
     if (payBtn) payBtn.onclick = submitCheckout;
@@ -968,12 +1114,19 @@
         full_name: form.full_name, phone: form.phone, address: form.address,
         payment_method: "balance",
         promo_code: state.promo ? state.promo.code : null,
+        // 31-avgust (foydalanuvchi so'rovi): tanlangan yetkazib berish -
+        // haqiqiy narx HAR DOIM serverda (admin narx jadvalidan) qayta
+        // hisoblanadi, bu yerdagi narx faqat ko'rsatish uchun edi.
+        delivery_courier: state.delivery.courier,
+        delivery_type: state.delivery.type,
+        delivery_region: state.delivery.region,
       }),
     }).then(function (r) {
       submittingCheckout = false;
       if (r.ok) {
         state.checkoutForm = null;
         state.promo = null;
+        state.delivery = { region: null, courier: null, type: null };
         navStack = [];
         render();
         showToast("✅ Buyurtmangiz qabul qilindi!");
@@ -987,6 +1140,9 @@
         } else if (r.data && r.data.error === "empty_cart") {
           showToast("Savatingiz bo'sh.");
           popView();
+        } else if (r.data && r.data.error === "invalid_delivery") {
+          showToast("Yetkazib berish tanlovi noto'g'ri. Qaytadan tanlang.");
+          render();
         } else {
           showToast("Buyurtma berib bo'lmadi. Qaytadan urinib ko'ring.");
         }
@@ -1447,6 +1603,7 @@
     })
     .then(function () { renderGrid(); updateMainButton(); return loadConfig(); })
     .then(function () { return loadColors(); })
+    .then(function () { return loadDeliveryOptions(); })
     .catch(function () {
       document.getElementById("grid").innerHTML = '<div class="empty">Yuklashda xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.</div>';
     });

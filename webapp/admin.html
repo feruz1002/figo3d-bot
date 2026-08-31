@@ -239,6 +239,7 @@
     { key: "customers", label: "👥 Mijozlar" },
     { key: "products", label: "🗂 Mahsulotlar" },
     { key: "colors", label: "🌈 Ranglar" },
+    { key: "delivery", label: "🚚 Yetkazib berish" },
     { key: "announcements", label: "📰 Yangiliklar" },
     { key: "stats", label: "📊 Statistika" },
     { key: "settings", label: "⚙️ Sozlamalar" },
@@ -314,6 +315,7 @@
     else if (activeTab === "customers") loadCustomers();
     else if (activeTab === "products") loadProducts();
     else if (activeTab === "colors") loadColorsTab();
+    else if (activeTab === "delivery") loadDeliveryTab();
     else if (activeTab === "announcements") loadAnnouncements();
     else if (activeTab === "stats") loadStats();
     else if (activeTab === "settings") loadSettingsTab();
@@ -423,12 +425,19 @@
       reasonLine = '<div class="card-line">📝 Sabab: ' +
         (o.problem_reason ? escapeHtml(o.problem_reason) : "(ko'rsatilmagan)") + '</div>';
     }
+    // 31-avgust (foydalanuvchi so'rovi): mijoz tanlagan pochta xizmati/turi/
+    // hudud va shu uchun to'langan narx - mahsulot narxidan ALOHIDA aniq
+    // ko'rinishi uchun (delivery_label buyurtma vaqtida "suratga olingan").
+    var deliveryLine = o.delivery_label
+      ? '<div class="card-line">🚚 ' + escapeHtml(o.delivery_label) + ' — ' + fmtPrice(o.delivery_price || 0) + " so'm</div>"
+      : '';
     return (
       '<div class="card" data-id="' + o.id + '">' +
         '<div class="card-title">#' + o.id + ' — ' + fmtPrice(o.total_price) + " so'm</div>" +
         '<div class="card-line">' + itemsHtml + '</div>' +
         '<div class="card-line">👤 ' + escapeHtml(o.full_name || "") + ' · 📱 ' + escapeHtml(o.phone || "") + '</div>' +
         '<div class="card-line">📍 ' + escapeHtml(o.address || "") + '</div>' +
+        deliveryLine +
         '<div class="card-line">Holat: ' + statusLabel + '</div>' +
         reasonLine +
         actionsHtml +
@@ -1293,6 +1302,85 @@
         errEl.textContent = "Xatolik yuz berdi. Qaytadan urinib ko'ring.";
         errEl.classList.remove("hidden");
       }
+    });
+  }
+
+  // ---------- Yetkazib berish narxlari (31-avgust, foydalanuvchi so'rovi) ----------
+  // 3 pochta (BTS/EMU/UzPost) x 3 masofa bosqichi x (Ofis/Uy, UzPost'da
+  // faqat Ofis) = 15 ta katakli jadval - admin har birini to'g'ridan-
+  // to'g'ri shu yerda tahrirlaydi, "💾 Hammasini saqlash" BIR marta
+  // bosilganda hammasi birga yuboriladi (har katak uchun alohida so'rov emas).
+  function loadDeliveryTab() {
+    api("/admin/api/delivery_prices").then(function (r) {
+      var content = document.getElementById("content");
+      if (!r.ok) { content.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
+      var couriers = r.data.couriers || [];
+      var tiers = r.data.distance_tiers || {};
+      var prices = r.data.prices || [];
+
+      var priceMap = {};
+      prices.forEach(function (p) {
+        priceMap[p.courier] = priceMap[p.courier] || {};
+        priceMap[p.courier][p.delivery_type] = priceMap[p.courier][p.delivery_type] || {};
+        priceMap[p.courier][p.delivery_type][p.distance_tier] = p.price;
+      });
+
+      // Ustunlar: har kuryer uchun "Ofis" (va agar uyga ham yetkazsa - "Uy").
+      var columns = [];
+      couriers.forEach(function (c) {
+        columns.push({ courier: c.code, type: "office", label: c.emoji + " " + c.name + " — Ofis" });
+        if (c.home_delivery) columns.push({ courier: c.code, type: "home", label: c.emoji + " " + c.name + " — Uy" });
+      });
+      var tierKeys = Object.keys(tiers).sort(function (a, b) { return Number(a) - Number(b); });
+
+      var headHtml = '<th style="text-align:left;padding:8px 10px;white-space:nowrap;font-size:12.5px">Masofa</th>' +
+        columns.map(function (col) {
+          return '<th style="padding:8px 10px;white-space:nowrap;font-size:12.5px">' + escapeHtml(col.label) + '</th>';
+        }).join("");
+      var rowsHtml = tierKeys.map(function (tierKey) {
+        var cellsHtml = columns.map(function (col) {
+          var byType = (priceMap[col.courier] || {})[col.type] || {};
+          var val = byType[tierKey] !== undefined ? byType[tierKey] : 0;
+          return '<td style="padding:6px 8px">' +
+            '<input type="number" inputmode="numeric" class="form-input dp-input" ' +
+            'data-courier="' + col.courier + '" data-type="' + col.type + '" data-tier="' + tierKey + '" ' +
+            'value="' + val + '" style="width:100px;padding:8px 10px;font-size:14px;margin:0"></td>';
+        }).join("");
+        return '<tr><td style="padding:8px 10px;font-size:13px;max-width:170px;vertical-align:top">' +
+          escapeHtml(tiers[tierKey]) + '</td>' + cellsHtml + '</tr>';
+      }).join("");
+
+      content.innerHTML =
+        '<div class="form-hint" style="margin-bottom:10px">Har katakka so\'mda narx kiriting (0 = shu yo\'nalish tekin). ' +
+        'UzPost faqat ofisdan olib ketishni qo\'llab-quvvatlaydi, shuning uchun "Uy" ustuni yo\'q.</div>' +
+        '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">' +
+          '<table style="border-collapse:collapse;width:100%;background:var(--secondary-bg);border-radius:14px">' +
+            '<thead><tr>' + headHtml + '</tr></thead>' +
+            '<tbody>' + rowsHtml + '</tbody>' +
+          '</table>' +
+        '</div>' +
+        '<button class="card-btn" id="dp-save" style="margin-top:14px">💾 Hammasini saqlash</button>';
+
+      document.getElementById("dp-save").onclick = function () {
+        var btn = document.getElementById("dp-save");
+        var payload = [];
+        content.querySelectorAll(".dp-input").forEach(function (inp) {
+          payload.push({
+            courier: inp.getAttribute("data-courier"),
+            delivery_type: inp.getAttribute("data-type"),
+            distance_tier: Number(inp.getAttribute("data-tier")),
+            price: Number(inp.value) || 0,
+          });
+        });
+        btn.disabled = true;
+        btn.textContent = "⏳ Saqlanmoqda...";
+        api("/admin/api/delivery_prices", { method: "POST", body: JSON.stringify({ prices: payload }) }).then(function (r2) {
+          btn.disabled = false;
+          btn.textContent = "💾 Hammasini saqlash";
+          if (r2.ok) showToast("Narxlar saqlandi ✅");
+          else showToast("Saqlab bo'lmadi. Qaytadan urinib ko'ring.");
+        });
+      };
     });
   }
 

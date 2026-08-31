@@ -33,6 +33,7 @@ Bu yerda jadvallar:
 import json
 from datetime import datetime, timedelta, timezone
 
+import delivery
 from products import SEED_PRODUCTS
 from turso_db import get_db_connection
 
@@ -175,6 +176,15 @@ CREATE TABLE IF NOT EXISTS app_settings (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS delivery_prices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    courier TEXT NOT NULL,
+    delivery_type TEXT NOT NULL,
+    distance_tier INTEGER NOT NULL,
+    price INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(courier, delivery_type, distance_tier)
+);
 """
 
 
@@ -264,6 +274,37 @@ async def init_db():
         # Mijoz savatdagi shu mahsulot uchun yozdirmoqchi bo'lgan matni
         # (bo'sh/NULL = matn yozdirmayapti - qo'shimcha to'lov olinmaydi).
         await _add_column_if_missing(conn, "cart_items", "custom_text TEXT")
+        # 31-avgust (foydalanuvchi so'rovi): "mijoz mahsulot narxi ichida
+        # yetkazib berishi deb o'ylamasligi kerak" - endi buyurtmaga
+        # tanlangan pochta xizmati (BTS/EMU/UzPost), turi (ofis/uy), hudud
+        # va HISOBLANGAN narx ALOHIDA saqlanadi (mahsulot narxiga
+        # qo'shilmaydi, alohida ko'rsatiladi). `delivery_label` - mijoz/admin
+        # uchun tayyor o'qiladigan matn (masalan "🚀 BTS — 🏠 Uyga yetkazish —
+        # Toshkent viloyati") - buyurtma vaqtida "suratga olinadi" (boshqa
+        # snapshot maydonlar kabi), shunda kelajakda kuryer/hudud nomlari
+        # o'zgarsa ham ESKI buyurtmadagi yozuv o'zgarmay qoladi.
+        await _add_column_if_missing(conn, "orders", "delivery_courier TEXT")
+        await _add_column_if_missing(conn, "orders", "delivery_type TEXT")
+        await _add_column_if_missing(conn, "orders", "delivery_region TEXT")
+        await _add_column_if_missing(conn, "orders", "delivery_price INTEGER NOT NULL DEFAULT 0")
+        await _add_column_if_missing(conn, "orders", "delivery_label TEXT")
+
+        # Yetkazib berish narxlari jadvali: 3 pochta x 3 masofa bosqichi x
+        # (Ofis/Uy, UzPost'da faqat Ofis) = 15 ta katak. Bo'sh bo'lsa,
+        # HAMMASINI 0 so'm bilan oldindan to'ldiramiz - shunda admin panelda
+        # "🚚 Yetkazib berish" jadvali darhol to'liq (bo'sh joylarsiz)
+        # ko'rinadi, admin faqat haqiqiy narxlarni kiritishi kifoya.
+        cursor = await conn.execute("SELECT COUNT(*) FROM delivery_prices")
+        (dp_count,) = await cursor.fetchone()
+        if dp_count == 0:
+            for _courier_code, _dtype in delivery.VALID_TYPE_COMBOS:
+                for _tier in delivery.DISTANCE_TIERS:
+                    await conn.execute(
+                        "INSERT INTO delivery_prices (courier, delivery_type, distance_tier, price) "
+                        "VALUES (?, ?, ?, 0)",
+                        (_courier_code, _dtype, _tier),
+                    )
+            await conn.commit()
 
         # Baza bo'sh bo'lsa (bot birinchi marta ishga tushganda) - namuna
         # mahsulotlar bilan to'ldiramiz, shunda katalog darhol bo'sh bo'lib
@@ -533,6 +574,66 @@ async def get_cart_total(user_id: int) -> int:
     return cart_subtotal(cart)
 
 
+def order_total(subtotal: int, discount_amount: int, delivery_price: int = 0) -> int:
+    """Buyurtmaning YAKUNIY summasi: mahsulotlar (chegirma bilan) + yetkazib
+    berish narxi. MUHIM: chegirma FAQAT mahsulotlar summasiga qo'llanadi,
+    yetkazib berish narxiga TEGMAYDI (31-avgust, foydalanuvchi so'rovi -
+    yetkazib berish alohida ko'rsatiladi). Bu funksiya HAR DOIM
+    `db.create_order` va `order_service.create_order_and_apply_payment`ning
+    ikkalasida ham ishlatilishi SHART - aks holda buyurtmada saqlangan summa
+    va hamyondan yechiladigan summa bir-biridan farq qilib qolar edi (xuddi
+    `cart_subtotal` kabi)."""
+    return max(subtotal - discount_amount, 0) + max(delivery_price or 0, 0)
+
+
+# ---------- YETKAZIB BERISH NARXLARI (31-avgust, foydalanuvchi so'rovi) ----------
+# Admin panelda ("🚚 Yetkazib berish" bo'limi) jadval ko'rinishida
+# tahrirlanadigan narxlar: 3 pochta (BTS/EMU/UzPost) x 3 masofa bosqichi x
+# (Ofis/Uy) = 15 ta katak (UzPost'da faqat Ofis - jami 5 ta ustun).
+
+async def get_delivery_prices() -> list:
+    """Hammasi (15 ta katak) - admin panelning jadvali uchun."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT courier, delivery_type, distance_tier, price FROM delivery_prices "
+            "ORDER BY distance_tier, courier, delivery_type"
+        )
+        rows = await cursor.fetchall()
+        return [
+            {"courier": r[0], "delivery_type": r[1], "distance_tier": r[2], "price": r[3]}
+            for r in rows
+        ]
+
+
+async def get_delivery_price(courier: str, delivery_type: str, distance_tier: int):
+    """Bitta katakning narxini qaytaradi (topilmasa None - bu holatda
+    chaqiruvchi 0 deb hisoblashi yoki xato qaytarishi mumkin)."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT price FROM delivery_prices WHERE courier = ? AND delivery_type = ? AND distance_tier = ?",
+            (courier, delivery_type, distance_tier),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+
+async def set_delivery_price(courier: str, delivery_type: str, distance_tier: int, price: int) -> bool:
+    """Bitta katakni yangilaydi. Faqat OLDINDAN mavjud (init_db'da 0 bilan
+    to'ldirilgan) kombinatsiyalar uchun ishlaydi - noto'g'ri (masalan
+    UzPost+Uy) kombinatsiya bo'lsa, qator topilmaydi va False qaytadi."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT id FROM delivery_prices WHERE courier = ? AND delivery_type = ? AND distance_tier = ?",
+            (courier, delivery_type, distance_tier),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return False
+        await conn.execute("UPDATE delivery_prices SET price = ? WHERE id = ?", (price, row[0]))
+        await conn.commit()
+        return True
+
+
 async def clear_cart(user_id: int):
     async with get_db_connection() as conn:
         await conn.execute("DELETE FROM cart_items WHERE user_id = ?", (user_id,))
@@ -721,12 +822,23 @@ async def create_order(
     promo_code: str | None = None,
     discount_amount: int = 0,
     payment_method: str | None = None,
+    delivery_courier: str | None = None,
+    delivery_type: str | None = None,
+    delivery_region: str | None = None,
+    delivery_price: int = 0,
 ) -> int:
     """Savatdagi mahsulotlar asosida buyurtma yaratadi va savatni tozalaydi.
     Yaratilgan buyurtma ID raqamini qaytaradi. `payment_method` - "balance" |
     "cash" | "card" (moliyaviy hisobotda to'lov usuli bo'yicha taqsimot
     uchun saqlanadi - status keyinchalik o'zgarsa ham bu maydon
-    o'zgarmaydi)."""
+    o'zgarmaydi).
+
+    31-avgust (foydalanuvchi so'rovi): `delivery_*` - mijoz tanlagan pochta
+    xizmati/turi/hudud va SERVER TOMONDA (hech qachon mijoz brauzeridan
+    kelgan raqamga ishonib emas) hisoblangan narx. Bularning barchasi ham
+    boshqa "suratga olinadigan" maydonlar kabi (stl_url, color, custom_text)
+    o'zgarmas holda saqlanadi - admin keyinroq narxlarni o'zgartirsa ham,
+    ESKI buyurtmada qancha to'langani aniq ko'rinib turadi."""
     cart = await get_cart(user_id)
     # MUHIM: subtotal HAR DOIM cart_item_line_total/cart_subtotal orqali
     # hisoblanadi (oddiy narx*miqdor EMAS) - shunda matn yozdirish uchun
@@ -734,9 +846,14 @@ async def create_order(
     # order_service.create_order_and_apply_payment'da ham (haqiqiy hamyondan
     # yechiladigan summani hisoblashda) ishlatiladi - ikkalasi HAR DOIM bir
     # xil natija berishi SHART, aks holda buyurtmada saqlangan summa va
-    # hamyondan yechilgan summa bir-biridan farq qilib qolar edi.
+    # hamyondan yechilgan summa bir-biridan farq qilib qolar edi. Xuddi shu
+    # tamoyil endi `order_total()` orqali yetkazib berish narxiga ham tegishli.
     subtotal = cart_subtotal(cart)
-    total_price = max(subtotal - discount_amount, 0)
+    total_price = order_total(subtotal, discount_amount, delivery_price)
+    delivery_label_text = (
+        delivery.delivery_label(delivery_courier, delivery_type, delivery_region)
+        if delivery_courier else None
+    )
     # MUHIM (29-avgust, foydalanuvchi so'rovi): "stl_url" ham shu yerda
     # "suratga olinadi" (snapshot) - xuddi nom/narx kabi. Bu ataylab shunday:
     # agar admin keyinroq mahsulotni tahrirlasa/o'chirsa ham, ESKI
@@ -769,8 +886,9 @@ async def create_order(
         cursor = await conn.execute(
             """INSERT INTO orders
                (user_id, full_name, phone, address, items_json, total_price, status,
-                created_at, promo_code, discount_amount, payment_method)
-               VALUES (?, ?, ?, ?, ?, ?, 'yangi', ?, ?, ?, ?)""",
+                created_at, promo_code, discount_amount, payment_method,
+                delivery_courier, delivery_type, delivery_region, delivery_price, delivery_label)
+               VALUES (?, ?, ?, ?, ?, ?, 'yangi', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 user_id,
                 full_name,
@@ -782,6 +900,11 @@ async def create_order(
                 promo_code,
                 discount_amount,
                 payment_method,
+                delivery_courier,
+                delivery_type,
+                delivery_region,
+                delivery_price or 0,
+                delivery_label_text,
             ),
         )
         await conn.commit()

@@ -12,6 +12,7 @@ from aiogram.types import BufferedInputFile
 from aiohttp import web
 
 import db
+import delivery
 import order_service
 from admin_notify import notify_admins
 from config import BOT_TOKEN, CONTACT_INFO, PAYMENT_INFO, PAYMENT_PROVIDER_TOKEN
@@ -112,6 +113,56 @@ async def api_colors(request: web.Request):
     so'rovi: "mijoz rangini belgilashi yoki avto belgilanishga qoysin")."""
     colors = await db.get_active_filament_colors()
     return web.json_response({"colors": colors})
+
+
+async def api_delivery_options(request: web.Request):
+    """Mini App'ning to'lov (checkout) ekranida yetkazib berish bo'limini
+    chizish uchun kerak bo'lgan HAMMA narsa: pochta xizmatlari ro'yxati
+    (nomi/emoji/uyga yetkazadimi), hududlar ro'yxati (har biri qaysi masofa
+    bosqichiga tegishli) va JORIY narxlar jadvali (31-avgust, foydalanuvchi
+    so'rovi: "mijoz mahsulot narxi ichida yetkazib berishi deb
+    o'ylamasligi kerak"). Narx frontendda faqat KO'RSATISH uchun -
+    haqiqiy hisoblash har doim serverda (/api/checkout ichida) qayta
+    tekshiriladi."""
+    prices = await db.get_delivery_prices()
+    price_map = {}
+    for p in prices:
+        price_map.setdefault(p["courier"], {}).setdefault(p["delivery_type"], {})[str(p["distance_tier"])] = p["price"]
+    return web.json_response({
+        "couriers": delivery.COURIERS,
+        "regions": delivery.REGIONS,
+        "distance_tiers": delivery.DISTANCE_TIERS,
+        "prices": price_map,
+    })
+
+
+async def _resolve_delivery_selection(body: dict):
+    """Mijoz yuborgan pochta/turi/hudud tanlovini SERVER TOMONDA tasdiqlaydi
+    va haqiqiy narxni admin narx jadvalidan hisoblaydi - mijoz brauzeridan
+    kelgan narxga HECH QACHON ishonmaymiz (xuddi promo-kod/rang/matn narxi
+    kabi). Uchtasi ham (courier/type/region) MAJBURIY - yetkazib berish
+    tanlanmagan bo'lsa buyurtma qabul qilinmaydi (31-avgust, foydalanuvchi
+    so'rovi: mijoz yetkazib berishni albatta tanlashi kerak).
+
+    Qaytaradi: (courier_code, delivery_type, region_code, price, xato|None).
+    Xato bo'lsa, qolgan qiymatlarga e'tibor bermang - chaqiruvchi xatoni
+    to'g'ridan-to'g'ri qaytarishi kerak."""
+    courier_code = body.get("delivery_courier")
+    delivery_type = body.get("delivery_type")
+    region_code = body.get("delivery_region")
+
+    courier = delivery.get_courier(courier_code)
+    region = delivery.get_region(region_code)
+    if not courier or not region or not delivery.is_valid_delivery_type(courier_code, delivery_type):
+        return None, None, None, 0, web.json_response({"error": "invalid_delivery"}, status=400)
+
+    price = await db.get_delivery_price(courier_code, delivery_type, region["tier"])
+    if price is None:
+        # Nazariy jihatdan bo'lmasligi kerak (init_db barcha to'g'ri
+        # kombinatsiyalarni 0 so'm bilan oldindan to'ldiradi), lekin baza
+        # eski/qo'lda o'zgartirilgan bo'lsa ham xavfsiz tomonda qolish uchun.
+        price = 0
+    return courier_code, delivery_type, region_code, price, None
 
 
 async def api_cart_set_color(request: web.Request):
@@ -592,6 +643,18 @@ async def api_checkout(request: web.Request):
     if payment_method == "card" and not PAYMENT_PROVIDER_TOKEN:
         return web.json_response({"error": "card_unavailable"}, status=400)
 
+    # 31-avgust (foydalanuvchi so'rovi): yetkazib berish MAJBURIY - mijoz
+    # mahsulot narxi ichida yetkazib berish ham bor deb o'ylamasligi kerak,
+    # shuning uchun pochta xizmati/turi/hudud aniq tanlanmasa buyurtma
+    # qabul qilinmaydi. Narx HECH QACHON mijoz yuborgan raqamga ishonib
+    # emas, har doim shu yerda (serverda) admin narx jadvalidan qayta
+    # hisoblanadi.
+    delivery_courier, delivery_type, delivery_region, delivery_price, delivery_err = (
+        await _resolve_delivery_selection(body)
+    )
+    if delivery_err is not None:
+        return delivery_err
+
     await db.remember_username(user_id, _authed_username(request))
 
     cart = await db.get_cart(user_id)
@@ -609,10 +672,16 @@ async def api_checkout(request: web.Request):
         else:
             promo_code = None  # yaroqsiz kod - jimgina e'tiborsiz qoldiramiz
 
-    total = max(subtotal - discount_amount, 0)
+    # MUHIM (31-avgust): db.order_total orqali hisoblanadi (chegirma FAQAT
+    # mahsulotlarga, yetkazib berish narxi ustiga ALOHIDA qo'shiladi) -
+    # order_service.create_order_and_apply_payment ICHIDA HAM aynan shu
+    # funksiya ishlatiladi, ikkalasi bir xil natija berishi SHART.
+    total = db.order_total(subtotal, discount_amount, delivery_price)
 
     order_id, reason = await order_service.create_order_and_apply_payment(
         user_id, full_name, phone, address, promo_code, discount_amount, payment_method,
+        delivery_courier=delivery_courier, delivery_type=delivery_type,
+        delivery_region=delivery_region, delivery_price=delivery_price,
     )
     if order_id is None:
         status = 409 if reason == "insufficient_balance" else 400
@@ -777,6 +846,7 @@ def register_webapp_routes(app: web.Application, webapp_index_path: str):
     app.router.add_post("/api/cart/set_color", api_cart_set_color)
     app.router.add_post("/api/cart/set_text", api_cart_set_text)
     app.router.add_get("/api/colors", api_colors)
+    app.router.add_get("/api/delivery/options", api_delivery_options)
     app.router.add_get("/api/profile", api_profile)
     app.router.add_post("/api/profile", api_profile_update)
     app.router.add_get("/api/orders", api_orders)

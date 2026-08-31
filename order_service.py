@@ -131,6 +131,10 @@ async def create_order_and_apply_payment(
     promo_code: str | None,
     discount_amount: int,
     payment_method: str,
+    delivery_courier: str | None = None,
+    delivery_type: str | None = None,
+    delivery_region: str | None = None,
+    delivery_price: int = 0,
 ):
     """payment_method: "balance" | "cash" | "card".
     Qaytaradi: (order_id, "ok") muvaffaqiyatda, yoki (None, sabab) — sabab
@@ -138,19 +142,27 @@ async def create_order_and_apply_payment(
 
     "card" uchun: buyurtma "to'lov kutilmoqda" holatida yaratiladi (savat
     shu zahoti tozalanadi) - to'lov muvaffaqiyatli bo'lganda uni chaqiruvchi
-    keyinroq "to'landi" holatiga o'tkazadi (pastdagi mark_card_order_paid)."""
+    keyinroq "to'landi" holatiga o'tkazadi (pastdagi mark_card_order_paid).
+
+    31-avgust (foydalanuvchi so'rovi): `delivery_*` - mijoz tanlagan pochta
+    xizmati/turi/hudud va shu tanlov uchun SERVER TOMONDA (chaqiruvchi -
+    webapp_api.api_checkout - tomonidan admin narx jadvalidan) hisoblangan
+    narx. Bu yerda ham `db.order_total()` orqali hisoblanadi - db.create_order
+    ICHIDA aynan shu funksiya ishlatiladi, ikkalasi bir xil natija berishi
+    SHART (aks holda hamyondan yechiladigan summa buyurtmada saqlangan
+    summadan farq qilib qolar edi)."""
     cart = await db.get_cart(user_id)
     if not cart:
         return None, "empty_cart"
 
-    # MUHIM (30-avgust): db.cart_subtotal orqali hisoblanadi (oddiy
-    # narx*miqdor EMAS) - shunda matn yozdirish uchun qo'shimcha to'lov ham
-    # hisobga olinadi. db.create_order ICHIDA HAM aynan shu funksiya
-    # ishlatiladi - ikkalasi bir xil natija berishi SHART, aks holda
-    # hamyondan yechiladigan summa buyurtmada saqlangan summadan farq
-    # qilib qolar edi.
+    # MUHIM (30-avgust, 31-avgust): db.cart_subtotal/db.order_total orqali
+    # hisoblanadi (oddiy narx*miqdor EMAS) - shunda matn yozdirish uchun
+    # qo'shimcha to'lov HAM, yetkazib berish narxi HAM hisobga olinadi.
+    # db.create_order ICHIDA HAM aynan shu funksiyalar ishlatiladi -
+    # ikkalasi bir xil natija berishi SHART, aks holda hamyondan
+    # yechiladigan summa buyurtmada saqlangan summadan farq qilib qolar edi.
     subtotal = db.cart_subtotal(cart)
-    total = max(subtotal - discount_amount, 0)
+    total = db.order_total(subtotal, discount_amount, delivery_price)
 
     if payment_method == "balance":
         balance = await db.get_balance(user_id)
@@ -161,6 +173,8 @@ async def create_order_and_apply_payment(
         user_id, full_name, phone, address,
         promo_code=promo_code, discount_amount=discount_amount,
         payment_method=payment_method,
+        delivery_courier=delivery_courier, delivery_type=delivery_type,
+        delivery_region=delivery_region, delivery_price=delivery_price,
     )
 
     if payment_method == "balance":
@@ -201,10 +215,18 @@ async def notify_customer_order_placed(bot: Bot, order_id: int):
     order = await db.get_order(order_id)
     if not order:
         return
+    # 31-avgust (foydalanuvchi so'rovi): mijoz yetkazib berish narxi mahsulot
+    # narxi ICHIDA emasligini aniq ko'rishi uchun - alohida qatorda ko'rsatiladi.
+    delivery_line = ""
+    if order.get("delivery_label"):
+        delivery_line = (
+            f"🚚 {order['delivery_label']} — {format_price(order.get('delivery_price') or 0)} so'm\n\n"
+        )
     try:
         await bot.send_message(
             order["user_id"],
             f"✅ Buyurtmangiz qabul qilindi! Buyurtma raqami: #{order_id}\n\n"
+            f"{delivery_line}"
             f"💰 Jami: {format_price(order['total_price'])} so'm\n\n"
             "Tez orada operator siz bilan bog'lanadi. Holatini \"📦 "
             "Buyurtmalarim\" bo'limidan kuzatib borishingiz mumkin.",
@@ -230,11 +252,20 @@ async def notify_admin_new_order(bot: Bot, order_id: int, payment_method: str):
     discount_line = ""
     if order.get("promo_code"):
         discount_line = f"🏷 Promo: {order['promo_code']} (-{format_price(order['discount_amount'])} so'm)\n"
+    # 31-avgust (foydalanuvchi so'rovi): admin buyurtmani yig'ayotganda qaysi
+    # pochta xizmati/turi/hudud tanlanganini va yetkazib berish narxini
+    # darhol ko'rishi uchun (mahsulot narxidan ALOHIDA ko'rsatiladi).
+    delivery_line = ""
+    if order.get("delivery_label"):
+        delivery_line = (
+            f"🚚 {order['delivery_label']} — {format_price(order.get('delivery_price') or 0)} so'm\n"
+        )
     _, payment_line = PAYMENT_LABELS.get(payment_method, ("", ""))
     admin_text = (
         f"🆕 <b>Yangi buyurtma #{order_id}</b>\n\n"
         f"{items_text}\n\n"
         f"{discount_line}"
+        f"{delivery_line}"
         f"{payment_line}"
         f"💰 Jami: {format_price(order['total_price'])} so'm\n\n"
         f"👤 {order['full_name']}\n"

@@ -14,6 +14,7 @@ from aiohttp import web
 
 import admin_service
 import db
+import delivery
 import order_service
 from admin_notify import notify_all_customers
 from config import BOT_TOKEN, is_admin
@@ -788,6 +789,66 @@ async def api_admin_color_rename(request: web.Request):
     return web.json_response({"ok": True, "name": name})
 
 
+# ---------- Yetkazib berish narxlari (31-avgust, foydalanuvchi so'rovi) ----------
+# Admin panelning "🚚 Yetkazib berish" bo'limi: 3 pochta (BTS/EMU/UzPost) x
+# 3 masofa bosqichi x (Ofis/Uy, UzPost'da faqat Ofis) = 15 ta katakli
+# jadval - admin narxlarni to'g'ridan-to'g'ri shu yerda tahrirlaydi.
+
+async def api_admin_delivery_prices_list(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    prices = await db.get_delivery_prices()
+    return web.json_response({
+        "couriers": delivery.COURIERS,
+        "distance_tiers": delivery.DISTANCE_TIERS,
+        "prices": prices,
+    })
+
+
+async def api_admin_delivery_prices_update(request: web.Request):
+    """Butun jadvalni BIR SO'ROVDA saqlaydi (har katak uchun alohida
+    so'rov emas - admin "💾 Saqlash"ni bosganda hammasi birga yuboriladi).
+    Body: {"prices": [{"courier": "bts", "delivery_type": "office",
+    "distance_tier": 1, "price": 15000}, ...]}."""
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+
+    items = body.get("prices")
+    if not isinstance(items, list) or not items:
+        return web.json_response({"error": "invalid_input"}, status=400)
+
+    # Avval HAMMASINI tekshiramiz (bittasi noto'g'ri bo'lsa, hech narsani
+    # yarim-yorti saqlamasdan butunlay rad etamiz - shunda admin panelda
+    # "qisman saqlandi" degan chalkash holat bo'lmaydi).
+    parsed = []
+    for item in items:
+        if not isinstance(item, dict):
+            return web.json_response({"error": "invalid_input"}, status=400)
+        courier = item.get("courier")
+        dtype = item.get("delivery_type")
+        try:
+            tier = int(item.get("distance_tier"))
+            price = int(item.get("price"))
+        except (TypeError, ValueError):
+            return web.json_response({"error": "invalid_input"}, status=400)
+        if not delivery.is_valid_delivery_type(courier, dtype):
+            return web.json_response({"error": "invalid_delivery_type", "courier": courier, "delivery_type": dtype}, status=400)
+        if tier not in delivery.DISTANCE_TIERS:
+            return web.json_response({"error": "invalid_distance_tier", "distance_tier": tier}, status=400)
+        if price < 0:
+            return web.json_response({"error": "negative_price"}, status=400)
+        parsed.append((courier, dtype, tier, price))
+
+    for courier, dtype, tier, price in parsed:
+        await db.set_delivery_price(courier, dtype, tier, price)
+
+    return web.json_response({"ok": True})
+
+
 # ---------- Yangiliklar/e'lonlar (28-avgust) ----------
 
 _UZ_MONTHS = [
@@ -917,6 +978,8 @@ def register_admin_routes(app: web.Application, admin_index_path: str):
     app.router.add_post("/admin/api/colors", api_admin_color_create)
     app.router.add_post("/admin/api/colors/{color_id}/toggle", api_admin_color_toggle)
     app.router.add_post("/admin/api/colors/{color_id}/rename", api_admin_color_rename)
+    app.router.add_get("/admin/api/delivery_prices", api_admin_delivery_prices_list)
+    app.router.add_post("/admin/api/delivery_prices", api_admin_delivery_prices_update)
     app.router.add_get("/admin/api/stats", api_admin_stats)
     app.router.add_get("/admin/api/announcements", api_admin_announcements)
     app.router.add_post("/admin/api/announcements", api_admin_announcement_create)
