@@ -849,6 +849,63 @@ async def api_admin_delivery_prices_update(request: web.Request):
     return web.json_response({"ok": True})
 
 
+# ---------- Kategoriyalar (bo'limlar) - joyi/rangi/tavsifi (1-sentyabr) ----------
+# Foydalanuvchi so'rovi: "mijozga ko'rinadigan kattaloglarni joyini
+# rangini va qisqa desprition qo'shish imkoniyati bo'lishi kerak".
+# Bo'lim NOMLARI hamon "🗂 Mahsulotlar" bo'limida mahsulot qo'shish/
+# tahrirlashda erkin matn sifatida kiritiladi - bu yerda faqat MAVJUD
+# bo'lim nomlarining TARTIBI/RANGI/TAVSIFI boshqariladi.
+
+async def api_admin_categories_list(request: web.Request):
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    return web.json_response({"categories": await db.get_categories_meta()})
+
+
+def _is_valid_hex_color(value) -> bool:
+    if not isinstance(value, str):
+        return False
+    v = value.strip()
+    if len(v) != 7 or not v.startswith("#"):
+        return False
+    hex_part = v[1:]
+    return all(c in "0123456789abcdefABCDEF" for c in hex_part)
+
+
+async def api_admin_categories_update(request: web.Request):
+    """Butun ro'yxatni BIR SO'ROVDA saqlaydi (🚚 Yetkazib berish
+    jadvalidagi "💾 Hammasini saqlash" bilan bir xil naqsh - har qator
+    uchun alohida so'rov emas). Body: {"categories": [{"name": "...",
+    "color": "#2ea6ff" yoki null, "description": "..." yoki null}, ...]}
+    - RO'YXATDAGI TARTIB = mijozga ko'rinadigan yangi TARTIB (ekrandagi
+    joyi)."""
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+
+    items = body.get("categories")
+    if not isinstance(items, list) or not items:
+        return web.json_response({"error": "invalid_input"}, status=400)
+
+    # Avval HAMMASINI tekshiramiz - bittasi noto'g'ri bo'lsa hech narsani
+    # yarim-yorti saqlamasdan butunlay rad etamiz.
+    for item in items:
+        if not isinstance(item, dict) or not (item.get("name") or "").strip():
+            return web.json_response({"error": "invalid_input"}, status=400)
+        color = item.get("color")
+        if color and not _is_valid_hex_color(color):
+            return web.json_response({"error": "invalid_color", "name": item.get("name")}, status=400)
+        description = item.get("description")
+        if description is not None and len(str(description)) > 300:
+            return web.json_response({"error": "description_too_long", "name": item.get("name")}, status=400)
+
+    await db.update_categories_order_and_meta(items)
+    return web.json_response({"ok": True})
+
+
 # ---------- Yangiliklar/e'lonlar (28-avgust) ----------
 
 _UZ_MONTHS = [
@@ -980,6 +1037,8 @@ def register_admin_routes(app: web.Application, admin_index_path: str):
     app.router.add_post("/admin/api/colors/{color_id}/rename", api_admin_color_rename)
     app.router.add_get("/admin/api/delivery_prices", api_admin_delivery_prices_list)
     app.router.add_post("/admin/api/delivery_prices", api_admin_delivery_prices_update)
+    app.router.add_get("/admin/api/categories", api_admin_categories_list)
+    app.router.add_post("/admin/api/categories", api_admin_categories_update)
     app.router.add_get("/admin/api/stats", api_admin_stats)
     app.router.add_get("/admin/api/announcements", api_admin_announcements)
     app.router.add_post("/admin/api/announcements", api_admin_announcement_create)

@@ -238,6 +238,7 @@
     { key: "contacts", label: "💬 Murojaatlar" },
     { key: "customers", label: "👥 Mijozlar" },
     { key: "products", label: "🗂 Mahsulotlar" },
+    { key: "categories", label: "🏷 Kategoriyalar" },
     { key: "colors", label: "🌈 Ranglar" },
     { key: "delivery", label: "🚚 Yetkazib berish" },
     { key: "announcements", label: "📰 Yangiliklar" },
@@ -314,6 +315,7 @@
     else if (activeTab === "contacts") loadContactMessages();
     else if (activeTab === "customers") loadCustomers();
     else if (activeTab === "products") loadProducts();
+    else if (activeTab === "categories") loadCategoriesTab();
     else if (activeTab === "colors") loadColorsTab();
     else if (activeTab === "delivery") loadDeliveryTab();
     else if (activeTab === "announcements") loadAnnouncements();
@@ -1382,6 +1384,128 @@
         });
       };
     });
+  }
+
+  // ---------- Kategoriyalar (bo'limlar) - joyi/rangi/tavsifi (1-sentyabr,
+  // foydalanuvchi so'rovi: "mijozga ko'rinadigan kattaloglarni joyini
+  // rangini va qisqa desprition qo'shish imkoniyati") ----------
+  // Bo'lim nomlari o'zgarmaydi (ular "🗂 Mahsulotlar" bo'limida mahsulot
+  // qo'shish/tahrirlashda kiritiladi) - bu yerda faqat ro'yxatdagi
+  // TARTIB (↑/↓ tugmalari bilan), RANG (native rang tanlagich) va QISQA
+  // TAVSIF tahrirlanadi, keyin YAGONA "💾 Hammasini saqlash" tugmasi
+  // bilan bir so'rovda saqlanadi (🚚 Yetkazib berish jadvalidagi bilan
+  // bir xil naqsh).
+  var catState = [];
+
+  function _syncCategoryFormToState() {
+    document.querySelectorAll(".cat-card").forEach(function (card) {
+      var idx = Number(card.getAttribute("data-idx"));
+      if (!catState[idx]) return;
+      var colorInput = card.querySelector(".cat-color-input");
+      var descInput = card.querySelector(".cat-desc-input");
+      catState[idx].color = card.getAttribute("data-color-cleared") === "1" ? null : (colorInput ? colorInput.value : catState[idx].color);
+      catState[idx].description = descInput ? descInput.value : catState[idx].description;
+    });
+  }
+
+  function loadCategoriesTab() {
+    api("/admin/api/categories").then(function (r) {
+      var content = document.getElementById("content");
+      if (!r.ok) { content.innerHTML = '<div class="empty">Yuklab bo\'lmadi.</div>'; return; }
+      catState = (r.data.categories || []).map(function (c) {
+        return { name: c.name, color: c.color, description: c.description, product_count: c.product_count };
+      });
+      renderCategoriesTab();
+    });
+  }
+
+  function renderCategoriesTab() {
+    var content = document.getElementById("content");
+    if (!catState.length) {
+      content.innerHTML = '<div class="empty">Hozircha bo\'lim yo\'q. Avval "🗂 Mahsulotlar" bo\'limida mahsulot qo\'shing - bo\'lim nomi shu yerda avtomatik paydo bo\'ladi.</div>';
+      return;
+    }
+    var cardsHtml = catState.map(function (c, idx) {
+      var colorVal = c.color || "#2ea6ff";
+      return (
+        '<div class="card cat-card" data-idx="' + idx + '" data-color-cleared="' + (c.color ? "0" : "1") + '">' +
+          '<div class="card-title">' + escapeHtml(c.name) + ' <span style="color:var(--hint);font-weight:400;font-size:12.5px">(' + (c.product_count || 0) + ' ta mahsulot)</span></div>' +
+          '<div class="form-group" style="margin-top:8px">' +
+            '<label class="form-label">Rang (mijoz katalogida bo\'lim nishonasi/urg\'usi sifatida ko\'rinadi)</label>' +
+            '<div style="display:flex;align-items:center;gap:8px">' +
+              '<input type="color" class="cat-color-input" value="' + colorVal + '" style="width:44px;height:36px;padding:2px;border:1.5px solid var(--secondary-bg);border-radius:8px;background:none">' +
+              '<button class="card-btn" data-action="clear-color" style="margin:0;padding:8px 12px;font-size:12.5px">' + (c.color ? "❌ Rangni olib tashlash" : "Rang tanlanmagan") + '</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="form-group">' +
+            '<label class="form-label">Qisqa tavsif (ixtiyoriy, mijozga bo\'lim ostida ko\'rinadi)</label>' +
+            '<textarea class="form-input cat-desc-input" rows="2" maxlength="300" placeholder="Masalan: Sovg\'a uchun mos, kichik va yengil buyumlar">' + escapeHtml(c.description || "") + '</textarea>' +
+          '</div>' +
+          '<div class="card-actions">' +
+            '<button class="card-btn" data-action="up"' + (idx === 0 ? " disabled" : "") + '>⬆️ Yuqoriga</button>' +
+            '<button class="card-btn" data-action="down"' + (idx === catState.length - 1 ? " disabled" : "") + '>⬇️ Pastga</button>' +
+          '</div>' +
+        '</div>'
+      );
+    }).join("");
+    content.innerHTML =
+      '<div class="form-hint" style="margin-bottom:10px">Tartib mijoz ko\'radigan katalogdagi bo\'lim tugmalari tartibiga to\'g\'ridan-to\'g\'ri mos keladi. O\'zgartirgandan so\'ng albatta "💾 Hammasini saqlash" tugmasini bosing.</div>' +
+      cardsHtml +
+      '<button class="card-btn" id="cat-save" style="margin-top:6px">💾 Hammasini saqlash</button>';
+
+    content.querySelectorAll('.cat-card [data-action="up"]').forEach(function (btn) {
+      btn.onclick = function () {
+        _syncCategoryFormToState();
+        var idx = Number(btn.closest(".cat-card").getAttribute("data-idx"));
+        if (idx <= 0) return;
+        var tmp = catState[idx - 1]; catState[idx - 1] = catState[idx]; catState[idx] = tmp;
+        renderCategoriesTab();
+      };
+    });
+    content.querySelectorAll('.cat-card [data-action="down"]').forEach(function (btn) {
+      btn.onclick = function () {
+        _syncCategoryFormToState();
+        var idx = Number(btn.closest(".cat-card").getAttribute("data-idx"));
+        if (idx >= catState.length - 1) return;
+        var tmp = catState[idx + 1]; catState[idx + 1] = catState[idx]; catState[idx] = tmp;
+        renderCategoriesTab();
+      };
+    });
+    content.querySelectorAll('.cat-card [data-action="clear-color"]').forEach(function (btn) {
+      btn.onclick = function () {
+        var card = btn.closest(".cat-card");
+        var idx = Number(card.getAttribute("data-idx"));
+        card.setAttribute("data-color-cleared", "1");
+        catState[idx].color = null;
+        btn.textContent = "Rang tanlanmagan";
+      };
+    });
+    content.querySelectorAll(".cat-color-input").forEach(function (inp) {
+      inp.oninput = function () {
+        var card = inp.closest(".cat-card");
+        card.setAttribute("data-color-cleared", "0");
+        var idx = Number(card.getAttribute("data-idx"));
+        catState[idx].color = inp.value;
+        var clearBtn = card.querySelector('[data-action="clear-color"]');
+        if (clearBtn) clearBtn.textContent = "❌ Rangni olib tashlash";
+      };
+    });
+
+    document.getElementById("cat-save").onclick = function () {
+      _syncCategoryFormToState();
+      var btn = document.getElementById("cat-save");
+      var payload = catState.map(function (c) {
+        return { name: c.name, color: c.color || null, description: (c.description || "").trim() || null };
+      });
+      btn.disabled = true;
+      btn.textContent = "⏳ Saqlanmoqda...";
+      api("/admin/api/categories", { method: "POST", body: JSON.stringify({ categories: payload }) }).then(function (r2) {
+        btn.disabled = false;
+        btn.textContent = "💾 Hammasini saqlash";
+        if (r2.ok) showToast("Kategoriyalar saqlandi ✅");
+        else showToast("Saqlab bo'lmadi. Qaytadan urinib ko'ring.");
+      });
+    };
   }
 
   function openAddColorForm() {

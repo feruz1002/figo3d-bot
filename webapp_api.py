@@ -63,13 +63,25 @@ async def api_catalog(request: web.Request):
     kichik bo'limlar ro'yxati bilan birga qaytadi - Mini App shu orqali
     2 darajali (Bo'lim -> Kichik bo'lim) navigatsiya quradi. `products`
     ro'yxatidagi har bir mahsulotda ham endi `subcategory` maydoni bor
-    (bo'lmasa - null)."""
+    (bo'lmasa - null).
+    1-sentyabr (foydalanuvchi so'rovi, "kattaloglarni joyini rangini va
+    qisqa desprition qo'shish"): har bir bo'lim endi admin "🏷
+    Kategoriyalar" bo'limida belgilagan TARTIBDA (db.get_categories()
+    ichida hal qilinadi) qaytadi va o'zining `color` (mas. "#2ea6ff",
+    bo'lmasa null) va `description` (qisqa tavsif matni, bo'lmasa null)
+    maydonlari bilan birga keladi."""
     category_names = await db.get_categories()
     categories = []
     products = []
     for cat in category_names:
         subcats = await db.get_subcategories(cat)
-        categories.append({"name": cat, "subcategories": subcats})
+        meta = await db.get_category_by_name(cat)
+        categories.append({
+            "name": cat,
+            "subcategories": subcats,
+            "color": (meta or {}).get("color"),
+            "description": (meta or {}).get("description"),
+        })
         products.extend(await db.get_products_by_category(cat))
     return web.json_response({"categories": categories, "products": products})
 

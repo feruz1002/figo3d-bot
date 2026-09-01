@@ -31,8 +31,23 @@
   .tab {
     flex: none; border: none; border-radius: 999px; padding: 8px 16px;
     background: var(--secondary-bg); color: var(--text); font-size: 14px; font-weight: 500;
+    display: flex; align-items: center; gap: 6px;
   }
   .tab.active { background: var(--button); color: var(--button-text); }
+  /* 1-sentyabr (foydalanuvchi so'rovi): admin har bir bo'limga rang
+     belgilashi mumkin ("🏷 Kategoriyalar", admin.html) - shu rang bu
+     yerda kichik nuqta (dot) sifatida bo'lim nomi oldida ko'rinadi,
+     tanlangan bo'lim esa shu rangda pastki chiziq bilan ajratiladi
+     (rang bo'lmasa - odatdagidek, hech narsa qo'shilmaydi). */
+  .tab-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .tab.has-color:not(.active) { box-shadow: inset 0 -3px 0 0 var(--cat-color); }
+
+  #catdesc { padding: 0 14px 10px; }
+  #catdesc.hidden { display: none; }
+  #catdesc .catdesc-text {
+    font-size: 12.5px; color: var(--hint); line-height: 1.4;
+    border-left: 3px solid var(--cat-color, var(--secondary-bg)); padding-left: 8px;
+  }
 
   /* Kichik bo'limlar (subkategoriya) - bo'lim tugmalaridan bir oz kichikroq,
      shu bilan ikki daraja (Bo'lim / Kichik bo'lim) vizual jihatdan aniq
@@ -197,6 +212,7 @@
     <div id="tabs"></div>
   </header>
   <div id="subtabs"></div>
+  <div id="catdesc"></div>
   <main id="grid"></main>
   <div id="overlay" class="hidden"></div>
 </div>
@@ -557,15 +573,56 @@
     el.innerHTML = "";
     state.categories.forEach(function (cat) {
       var btn = document.createElement("button");
-      btn.className = "tab" + (cat.name === activeCategory ? " active" : "");
-      btn.textContent = cat.name;
+      var isActive = cat.name === activeCategory;
+      btn.className = "tab" + (isActive ? " active" : "") + (cat.color ? " has-color" : "");
+      // 1-sentyabr (foydalanuvchi so'rovi): admin belgilagan rang (bo'lsa)
+      // - tanlangan bo'limda fon sifatida, tanlanmaganda esa pastki
+      // chiziq + kichik nuqta sifatida ko'rinadi (CSS'dagi .has-color'ga
+      // qarang).
+      if (cat.color) {
+        btn.style.setProperty("--cat-color", cat.color);
+        if (isActive) { btn.style.background = cat.color; btn.style.color = _contrastTextColor(cat.color); }
+        var dot = document.createElement("span");
+        dot.className = "tab-dot";
+        dot.style.background = cat.color;
+        btn.appendChild(dot);
+      }
+      var label = document.createElement("span");
+      label.textContent = cat.name;
+      btn.appendChild(label);
       btn.onclick = function () {
         activeCategory = cat.name;
         activeSubcategory = null;
-        renderTabs(); renderSubtabs(); renderGrid();
+        renderTabs(); renderSubtabs(); renderCategoryDescription(); renderGrid();
       };
       el.appendChild(btn);
     });
+  }
+
+  // Rangi och/to'q ekanini taxminan hisoblab, matn oq yoki qora bo'lsa
+  // o'qish qulayroq bo'lishini aniqlaydi (standart luminance formulasi).
+  function _contrastTextColor(hex) {
+    var h = (hex || "").replace("#", "");
+    if (h.length !== 6) return "#ffffff";
+    var r = parseInt(h.substr(0, 2), 16), g = parseInt(h.substr(2, 2), 16), b = parseInt(h.substr(4, 2), 16);
+    var luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.6 ? "#111111" : "#ffffff";
+  }
+
+  // Tanlangan bo'limning admin kiritgan qisqa tavsifini (bo'lsa)
+  // subtab'lar ostida, mahsulot to'ri ustida ko'rsatadi.
+  function renderCategoryDescription() {
+    var el = document.getElementById("catdesc");
+    var cat = currentCategoryObj();
+    var desc = cat && cat.description;
+    if (!desc) {
+      el.classList.add("hidden");
+      el.innerHTML = "";
+      return;
+    }
+    el.classList.remove("hidden");
+    el.style.setProperty("--cat-color", (cat && cat.color) || "");
+    el.innerHTML = '<div class="catdesc-text">' + escapeHtml(desc) + '</div>';
   }
 
   function renderSubtabs() {
@@ -1638,7 +1695,7 @@
   loadCatalog()
     .then(function () {
       activeCategory = state.categories[0] ? state.categories[0].name : null;
-      renderTabs(); renderSubtabs(); renderGrid();
+      renderTabs(); renderSubtabs(); renderCategoryDescription(); renderGrid();
       return loadCart();
     })
     .then(function () { renderGrid(); updateMainButton(); return loadConfig(); })

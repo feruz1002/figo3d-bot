@@ -185,6 +185,14 @@ CREATE TABLE IF NOT EXISTS delivery_prices (
     price INTEGER NOT NULL DEFAULT 0,
     UNIQUE(courier, delivery_type, distance_tier)
 );
+
+CREATE TABLE IF NOT EXISTS categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    position INTEGER NOT NULL DEFAULT 0,
+    color TEXT,
+    description TEXT
+);
 """
 
 
@@ -341,6 +349,35 @@ async def _ensure_schema(conn):
             )
         await conn.commit()
 
+    # 1-sentyabr (foydalanuvchi so'rovi): mijozga ko'rinadigan bo'limlar
+    # (kategoriyalar) uchun endi alohida "categories" jadvali bor - har
+    # birining EKRANDAGI TARTIBI (position), RANGI (color, mas.
+    # "#2ea6ff") va QISQA TAVSIFI (description) shu yerda saqlanadi.
+    # Bo'lim nomlari hamon mahsulot qo'shish/tahrirlash paytida ERKIN
+    # MATN sifatida kiritiladi (products.category, o'zgarmadi) - shu
+    # blok HAR ishga tushishda/qayta ulanishda (SEED_PRODUCTS'dan KEYIN,
+    # aks holda birinchi ishga tushishda ular hali yo'q bo'lardi)
+    # mahsulotlardagi barcha bo'lim nomlarini tekshirib, categories
+    # jadvalida hali yo'q bo'lganlarini ENG OXIRIGA (eng katta
+    # position + 1) avtomatik qo'shib qo'yadi (rangi/tavsifi bo'sh
+    # holda - admin keyin "🏷 Kategoriyalar" bo'limida to'ldiradi).
+    # Alohida qo'shishga `create_product`/`update_product` ichidagi
+    # `_ensure_category_row` ham javobgar - shu sabab yangi bo'lim nomi
+    # darhol (qayta ulanishni kutmasdan) ko'rinadi.
+    cursor = await conn.execute("SELECT DISTINCT category FROM products")
+    _prod_cats = [r[0] for r in await cursor.fetchall()]
+    cursor = await conn.execute("SELECT name, position FROM categories")
+    _existing_cats = {r[0]: r[1] for r in await cursor.fetchall()}
+    _next_pos = (max(_existing_cats.values()) + 1) if _existing_cats else 0
+    for _cat_name in _prod_cats:
+        if _cat_name not in _existing_cats:
+            await conn.execute(
+                "INSERT INTO categories (name, position, color, description) VALUES (?, ?, NULL, NULL)",
+                (_cat_name, _next_pos),
+            )
+            _next_pos += 1
+    await conn.commit()
+
 
 async def init_db():
     """Bot birinchi marta ishga tushganda jadvallarni yaratadi (agar hali
@@ -385,14 +422,103 @@ async def _row_to_product(conn, row) -> dict:
 
 
 async def get_categories() -> list:
-    """Barcha faol bo'limlar ro'yxatini qaytaradi (birinchi qo'shilgan mahsulot
-    tartibida)."""
+    """Barcha faol bo'limlar ro'yxatini qaytaradi. 1-sentyabr (foydalanuvchi
+    so'rovi, "kattaloglarni joyini ... o'zgartirish"): endi birinchi
+    qo'shilgan mahsulot tartibida EMAS, balki admin "🏷 Kategoriyalar"
+    bo'limida belgilagan TARTIBI (categories.position) bo'yicha
+    saralanadi. Hali categories jadvaliga (masalan juda eski, hali qayta
+    ulanmagan nusxada) tushmagan bo'lim nomi bo'lsa - ro'yxat oxiriga
+    (alifbo tartibida) qo'shiladi, hech qaysi bo'lim yo'qolib qolmasin."""
     async with get_db_connection() as conn:
         cursor = await conn.execute(
-            "SELECT category FROM products WHERE active = 1 GROUP BY category ORDER BY MIN(id)"
+            "SELECT DISTINCT category FROM products WHERE active = 1"
+        )
+        active_names = {r[0] for r in await cursor.fetchall()}
+        if not active_names:
+            return []
+        cursor = await conn.execute("SELECT name FROM categories ORDER BY position, id")
+        ordered = [r[0] for r in await cursor.fetchall() if r[0] in active_names]
+        missing = sorted(active_names - set(ordered))
+        return ordered + missing
+
+
+async def get_categories_meta() -> list:
+    """Admin panel ('🏷 Kategoriyalar' bo'limi) uchun: BARCHA bo'limlar
+    (hozircha faol mahsuloti bo'lmasa ham), ekrandagi tartibi (position)
+    bo'yicha saralangan - rangi/tavsifi va nechta faol mahsuloti borligi
+    (product_count, faqat ko'rsatish uchun - foydali kontekst) bilan
+    birga."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT id, name, position, color, description FROM categories ORDER BY position, id"
         )
         rows = await cursor.fetchall()
-        return [r[0] for r in rows]
+        result = []
+        for r in rows:
+            cursor2 = await conn.execute(
+                "SELECT COUNT(*) FROM products WHERE category = ? AND active = 1", (r["name"],)
+            )
+            (cnt,) = await cursor2.fetchone()
+            result.append({
+                "id": r["id"],
+                "name": r["name"],
+                "position": r["position"],
+                "color": r["color"],
+                "description": r["description"],
+                "product_count": cnt,
+            })
+        return result
+
+
+async def get_category_by_name(name: str):
+    """Mijoz Mini App katalogi (webapp_api.api_catalog) uchun: bitta
+    bo'limning rangi/tavsifini oladi. Topilmasa None."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT name, position, color, description FROM categories WHERE name = ?", (name,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "name": row["name"], "position": row["position"],
+            "color": row["color"], "description": row["description"],
+        }
+
+
+async def _ensure_category_row(conn, name: str):
+    """`create_product`/`update_product` ichidan chaqiriladi - admin
+    yangi bo'lim nomini kiritgan zahoti (qayta ulanish/`_ensure_schema`ni
+    kutmasdan) categories jadvalida darhol paydo bo'lishi uchun (aks
+    holda admin "🏷 Kategoriyalar" bo'limini ochganda yangi bo'lim hali
+    ko'rinmagan bo'lardi)."""
+    cursor = await conn.execute("SELECT 1 FROM categories WHERE name = ?", (name,))
+    if await cursor.fetchone():
+        return
+    cursor = await conn.execute("SELECT MAX(position) FROM categories")
+    (maxpos,) = await cursor.fetchone()
+    next_pos = (maxpos + 1) if maxpos is not None else 0
+    await conn.execute(
+        "INSERT INTO categories (name, position, color, description) VALUES (?, ?, NULL, NULL)",
+        (name, next_pos),
+    )
+
+
+async def update_categories_order_and_meta(items: list) -> None:
+    """Admin '🏷 Kategoriyalar' bo'limidagi yagona "💾 Hammasini saqlash"
+    tugmasi uchun (🚚 Yetkazib berish jadvalidagi bilan bir xil naqsh) -
+    items: [{"name", "color", "description"}, ...] RO'YXATDAGI TARTIBI =
+    yangi ekrandagi tartib (position = ro'yxatdagi index, 0 dan
+    boshlab)."""
+    async with get_db_connection() as conn:
+        for idx, item in enumerate(items):
+            color = (item.get("color") or "").strip() or None
+            description = (item.get("description") or "").strip() or None
+            await conn.execute(
+                "UPDATE categories SET position = ?, color = ?, description = ? WHERE name = ?",
+                (idx, color, description, item.get("name")),
+            )
+        await conn.commit()
 
 
 async def get_subcategories(category: str) -> list:
@@ -459,6 +585,7 @@ async def create_product(
 ) -> int:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     async with get_db_connection() as conn:
+        await _ensure_category_row(conn, category)
         cursor = await conn.execute(
             """INSERT INTO products
                (category, subcategory, name, description, price, stl_url,
@@ -495,6 +622,7 @@ async def update_product(
         row = await cursor.fetchone()
         if not row:
             return False
+        await _ensure_category_row(conn, category)
         await conn.execute(
             """UPDATE products SET category = ?, subcategory = ?, name = ?, description = ?,
                price = ?, stl_url = ?, allow_text_customization = ?, max_text_length = ?,
