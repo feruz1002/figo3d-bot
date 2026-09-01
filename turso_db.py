@@ -30,6 +30,7 @@ Ishlash tartibi:
   admin panel - hammasi) to'xtatib qo'yishi mumkin edi.
 """
 import asyncio
+import glob
 import logging
 import os
 
@@ -63,6 +64,21 @@ def set_schema_ensure_hook(hook):
     tekshiriladi/to'ldiriladi - process qayta ishga tushishini kutmasdan."""
     global _schema_ensure_hook
     _schema_ensure_hook = hook
+
+
+def is_cloud_backup_unavailable() -> bool:
+    """1-sentyabr (foydalanuvchi so'rovi, real production hodisasiga
+    javoban): Turso SOZLANGAN, lekin HOZIRGI ulanish shu bulutga
+    ULANOLMAYAPTI (masalan vaqtinchalik tarmoq xatosi yoki yuqoridagi
+    "-info" fayl muammosi kabi holat) bo'lsa - True qaytaradi. db.py
+    shu yerdan foydalanib, SHU HOLATDA bo'sh (mahalliy, hali Turso'dan
+    sinxronlanmagan) products jadvalini "haqiqatan ham bo'sh" deb
+    NOTO'G'RI xulosa chiqarib, uni SEED_PRODUCTS (namuna mahsulotlar)
+    bilan to'ldirib yubormasligi uchun - aks holda haqiqiy mahsulotlar
+    o'rniga vaqtincha soxta namuna mahsulotlar ko'rinib qolar edi, va
+    Turso tiklangach bu soxta yozuvlar hatto bulutga sinxronlanib,
+    haqiqiy ma'lumotlarni "ifloslashi" ham mumkin edi."""
+    return _TURSO_ENABLED and _turso_broken
 
 
 class Row(tuple):
@@ -213,7 +229,18 @@ async def _reset_connection_after_corruption():
         return
 
     deleted_any = False
-    for suffix in ("", "-wal", "-shm", "-journal"):
+    # MUHIM (1-sentyabr, real production hodisasiga javoban): "file is not
+    # a database" xatosidan keyin faqat ASOSIY .db faylini (va -wal/-shm/
+    # -journal'ni) o'chirish YETARLI EMAS ekan - libsql "embedded replica"
+    # rejimida sinxronlash holatini kuzatib turuvchi QO'SHIMCHA "-info"
+    # metadata faylini HAM saqlaydi. Agar shu "-info" fayli QOLIB ketsa
+    # (faqat asosiy fayl o'chirilsa), KEYINGI ulanish "invalid local
+    # state: metadata file exists but db file does not" xatosi bilan
+    # butunlay ULANIB BO'LMAY QOLADI - aynan shu sabab bilan 1-sentyabrda
+    # Turso butunlay uzilib, bot bir muddat Turso'siz ("oddiy mahalliy
+    # fayl", ya'ni bo'sh/sinxronlanmagan holatda) ishlab qolgan edi.
+    known_suffixes = ("", "-wal", "-shm", "-journal", "-info")
+    for suffix in known_suffixes:
         path = DB_PATH + suffix
         try:
             if os.path.exists(path):
@@ -221,6 +248,25 @@ async def _reset_connection_after_corruption():
                 deleted_any = True
         except Exception:
             logger.exception("Buzilgan mahalliy faylni o'chirishda xatolik: %s", path)
+
+    # Qo'shimcha xavfsizlik to'ri: yuqoridagi ANIQ ro'yxatdan tashqari,
+    # DB_PATH bilan boshlanadigan QOLGAN BARCHA yordamchi fayllarni ham
+    # (masalan libsql kelajakda yangi turdagi metadata fayl qo'shib
+    # qo'ysa) tozalaymiz - shunda xuddi shu turdagi uzilish boshqa
+    # noma'lum sidecar fayl tufayli qaytalanmaydi.
+    known_paths = {DB_PATH + s for s in known_suffixes}
+    try:
+        for path in glob.glob(DB_PATH + "*"):
+            if path in known_paths:
+                continue
+            try:
+                os.remove(path)
+                deleted_any = True
+                logger.warning("Qo'shimcha (oldindan kutilmagan) yordamchi fayl ham o'chirildi: %s", path)
+            except Exception:
+                logger.exception("Qo'shimcha yordamchi faylni o'chirishda xatolik: %s", path)
+    except Exception:
+        logger.exception("Yordamchi fayllarni (glob orqali) qidirishda xatolik.")
 
     logger.error(
         "Mahalliy ma'lumotlar bazasi replikasi BUZILGAN edi ('file is not a "

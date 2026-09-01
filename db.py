@@ -31,11 +31,14 @@ Bu yerda jadvallar:
                      so'rovi)
 """
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 
 import delivery
 from products import SEED_PRODUCTS
-from turso_db import get_db_connection, set_schema_ensure_hook
+from turso_db import get_db_connection, is_cloud_backup_unavailable, set_schema_ensure_hook
+
+logger = logging.getLogger("figo3d_bot.db")
 
 CREATE_TABLES_SQL = """
 CREATE TABLE IF NOT EXISTS products (
@@ -337,9 +340,27 @@ async def _ensure_schema(conn):
     # Baza bo'sh bo'lsa (bot birinchi marta ishga tushganda) - namuna
     # mahsulotlar bilan to'ldiramiz, shunda katalog darhol bo'sh bo'lib
     # qolmaydi. Bundan keyingi barcha mahsulotlar /admin orqali qo'shiladi.
+    # MUHIM (1-sentyabr, real production hodisasiga javoban): agar Turso
+    # SOZLANGAN bo'lsa-yu, lekin HOZIR unga ulanib bo'lmayotgan bo'lsa
+    # (`is_cloud_backup_unavailable()`) - bo'sh "products" jadvali
+    # HAQIQATAN HAM bo'sh emas, balki HALI Turso bulutidan sinxronlanmagan
+    # (vaqtinchalik) bo'lishi mumkin. Shunday holatda NAMUNA mahsulotlar
+    # bilan to'ldirishdan BOSH TORTAMIZ - aks holda haqiqiy mahsulotlar
+    # o'rniga soxta namuna mahsulotlar ko'rinib qolar, va Turso tiklangach
+    # bu soxta yozuvlar hatto bulutga sinxronlanib haqiqiy ma'lumotlarni
+    # "ifloslashi" ham mumkin edi. Bunday holatda katalog vaqtincha bo'sh
+    # ko'rinadi (Turso tiklanguncha/qayta deploy qilinguncha) - bu soxta
+    # ma'lumot ko'rsatishdan ancha xavfsizroq.
     cursor = await conn.execute("SELECT COUNT(*) FROM products")
     (count,) = await cursor.fetchone()
-    if count == 0:
+    if count == 0 and is_cloud_backup_unavailable():
+        logger.warning(
+            "products jadvali bo'sh, LEKIN Turso bulutiga hozir ulanib "
+            "bo'lmayapti - bu HAQIQIY bo'sh baza emas, balki vaqtinchalik "
+            "sinxronlash muammosi bo'lishi mumkin, shuning uchun NAMUNA "
+            "mahsulotlar bilan to'ldirishdan bosh tortildi."
+        )
+    elif count == 0:
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         for p in SEED_PRODUCTS:
             await conn.execute(
