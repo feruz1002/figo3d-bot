@@ -1181,21 +1181,53 @@
           var textLine = p.allow_text_customization
             ? '<div class="card-line">✍️ Matn yozdirish: +' + fmtPrice(p.text_price || 0) + " so'm (maks. " + (p.max_text_length || 0) + " belgi)</div>"
             : "";
+          // 1-sentyabr (foydalanuvchi so'rovi): STL havolasi endi ro'yxatda
+          // ham (avval faqat tahrirlash formasi ichida ko'rinardi) - admin
+          // formani ochmasdan turib havolani ko'rishi/nusxalashi/ochishi
+          // uchun. Mahsulotda STL biriktirilmagan bo'lsa - bu qator umuman
+          // chiqmaydi.
+          var stlLine = p.stl_url
+            ? '<div class="card-line" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🧊 STL: ' +
+              '<a href="' + escapeHtml(p.stl_url) + '" target="_blank" rel="noopener">' + escapeHtml(p.stl_url) + '</a></div>'
+            : "";
           return (
             '<div class="card" data-id="' + p.id + '" style="overflow:auto">' +
               img +
               '<div class="card-title">' + escapeHtml(p.name) + '</div>' +
               '<div class="card-line">' + catLine + '</div>' +
               textLine +
-              '<div class="card-actions">' +
+              stlLine +
+              '<div class="card-actions" style="align-items:center">' +
                 '<button class="card-btn" data-action="edit">✏️ Tahrirlash</button>' +
-                '<button class="card-btn danger" data-action="delete">🗑 O\'chirish</button>' +
+                // 1-sentyabr (foydalanuvchi so'rovi): "o'chirish tugmasini
+                // sal kichraytir, bilmasdan o'chirib yubormasligimiz
+                // uchun" - endi ANCHA kichikroq (mahsulot tahrirlashdan
+                // aniq ajralib turadi, tasodifan bosish qiyinroq) VA
+                // bosilganda darhol o'chirmaydi - avval "Ishonchingizmi?"
+                // deb so'raydi, faqat ikkinchi marta bossa o'chiradi.
+                '<button class="card-btn danger" data-action="delete" data-confirm="0" ' +
+                  'style="flex:none;margin-left:auto;padding:5px 10px;font-size:11.5px;opacity:0.75">🗑 O\'chirish</button>' +
               '</div>' +
             '</div>'
           );
         }).join("");
         content.querySelectorAll('[data-action="delete"]').forEach(function (btn) {
           btn.onclick = function () {
+            if (btn.getAttribute("data-confirm") !== "1") {
+              btn.setAttribute("data-confirm", "1");
+              btn.textContent = "❗ Rostdan o'chirilsinmi? (yana bosing)";
+              btn.style.opacity = "1";
+              setTimeout(function () {
+                // 5 soniya ichida ikkinchi marta bosilmasa - bekor bo'ladi
+                // (tasodifiy ikkinchi bosishning oldini olish uchun).
+                if (btn.getAttribute("data-confirm") === "1") {
+                  btn.setAttribute("data-confirm", "0");
+                  btn.textContent = "🗑 O'chirish";
+                  btn.style.opacity = "0.75";
+                }
+              }, 5000);
+              return;
+            }
             var id = btn.closest(".card").getAttribute("data-id");
             btn.disabled = true;
             api("/admin/api/products/" + id + "/delete", { method: "POST" }).then(function (r) {
