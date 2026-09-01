@@ -906,6 +906,52 @@ async def api_admin_categories_update(request: web.Request):
     return web.json_response({"ok": True})
 
 
+async def api_admin_category_delete(request: web.Request):
+    """1-sentyabr (foydalanuvchi so'rovi): "hozir kerak bo'lmaydigan
+    kategoriyalarni o'chirish". Faqat FAOL mahsuloti YO'Q bo'limlar
+    o'chiriladi (db.delete_category'ga qarang) - aks holda mijoz
+    katalogida "yetim" bo'lim qolib ketmasligi uchun 400 va
+    "has_products" xatosi qaytadi, admin panelda buni tushuntiruvchi
+    xabar ko'rsatiladi."""
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        category_id = int(request.match_info["category_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    ok, err = await db.delete_category(category_id)
+    if not ok:
+        status = 404 if err == "not_found" else 400
+        return web.json_response({"error": err}, status=status)
+    return web.json_response({"ok": True})
+
+
+async def api_admin_category_rename(request: web.Request):
+    """1-sentyabr (foydalanuvchi so'rovi): bo'lim nomini tahrirlash.
+    Body: {"name": "Yangi nom"}. DIQQAT: shu bo'limdagi BARCHA
+    mahsulotlar ham avtomatik yangi nomga o'tkaziladi (db.rename_category
+    ichida) - agar yangi nom allaqachon boshqa bo'lim sifatida mavjud
+    bo'lsa, ikkalasi birlashtiriladi."""
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        category_id = int(request.match_info["category_id"])
+    except ValueError:
+        return web.json_response({"error": "bad_request"}, status=400)
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+    new_name = (body.get("name") or "").strip()
+    if not new_name:
+        return web.json_response({"error": "invalid_input"}, status=400)
+    ok, err = await db.rename_category(category_id, new_name)
+    if not ok:
+        status = 404 if err == "not_found" else 400
+        return web.json_response({"error": err}, status=status)
+    return web.json_response({"ok": True})
+
+
 # ---------- Yangiliklar/e'lonlar (28-avgust) ----------
 
 _UZ_MONTHS = [
@@ -1039,6 +1085,8 @@ def register_admin_routes(app: web.Application, admin_index_path: str):
     app.router.add_post("/admin/api/delivery_prices", api_admin_delivery_prices_update)
     app.router.add_get("/admin/api/categories", api_admin_categories_list)
     app.router.add_post("/admin/api/categories", api_admin_categories_update)
+    app.router.add_post("/admin/api/categories/{category_id}/delete", api_admin_category_delete)
+    app.router.add_post("/admin/api/categories/{category_id}/rename", api_admin_category_rename)
     app.router.add_get("/admin/api/stats", api_admin_stats)
     app.router.add_get("/admin/api/announcements", api_admin_announcements)
     app.router.add_post("/admin/api/announcements", api_admin_announcement_create)

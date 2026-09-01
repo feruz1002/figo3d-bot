@@ -521,6 +521,83 @@ async def update_categories_order_and_meta(items: list) -> None:
         await conn.commit()
 
 
+async def get_category_by_id(category_id: int):
+    """Admin '🏷 Kategoriyalar' bo'limida o'chirish/nomini o'zgartirish
+    tugmalari kategoriya ID'sini ishlatadi (nom ichida probel/apostrof
+    bo'lishi mumkinligi uchun URL'da ID ishlatish xavfsizroq - "🌈
+    Ranglar" bo'limidagi rename bilan bir xil naqsh)."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT id, name, position, color, description FROM categories WHERE id = ?", (category_id,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row["id"], "name": row["name"], "position": row["position"],
+            "color": row["color"], "description": row["description"],
+        }
+
+
+async def delete_category(category_id: int) -> tuple[bool, str]:
+    """1-sentyabr (foydalanuvchi so'rovi): "hozir kerak bo'lmaydigan
+    kategoriyalarni o'chirish". XAVFSIZLIK: agar bu bo'limda hali FAOL
+    mahsulot bo'lsa - O'CHIRISHGA RUXSAT BERILMAYDI (mijoz katalogida
+    "yetim" bo'lim qolib ketmasligi uchun) - shunday holatda
+    ("ok"=False, "has_products") qaytadi, admin avval mahsulotlarni
+    boshqa bo'limga o'tkazishi yoki o'chirishi kerak. Muvaffaqiyatli
+    o'chirilsa ("True", "") qaytadi."""
+    async with get_db_connection() as conn:
+        cursor = await conn.execute("SELECT name FROM categories WHERE id = ?", (category_id,))
+        row = await cursor.fetchone()
+        if not row:
+            return False, "not_found"
+        name = row["name"]
+        cursor = await conn.execute(
+            "SELECT COUNT(*) FROM products WHERE category = ? AND active = 1", (name,)
+        )
+        (cnt,) = await cursor.fetchone()
+        if cnt > 0:
+            return False, "has_products"
+        await conn.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+        await conn.commit()
+        return True, ""
+
+
+async def rename_category(category_id: int, new_name: str) -> tuple[bool, str]:
+    """1-sentyabr (foydalanuvchi so'rovi): bo'lim nomini tahrirlash.
+    MUHIM: faqat categories.name'ni emas, shu bo'limdagi BARCHA
+    products.category qiymatlarini ham yangi nomga o'zgartiradi - aks
+    holda mahsulotlar eski nom bilan "yetim" qolib, mijoz katalogida
+    umuman ko'rinmay qolardi. Agar yangi nom ALLAQACHON boshqa bo'lim
+    sifatida mavjud bo'lsa - ikkalasi BIRLASHTIRILADI (mahsulotlar
+    o'sha mavjud bo'limga o'tadi, eski bo'sh yozuv o'chiriladi, maqsad
+    bo'limning rangi/tavsifi/tartibi saqlanib qoladi)."""
+    new_name = (new_name or "").strip()
+    if not new_name:
+        return False, "invalid_input"
+    async with get_db_connection() as conn:
+        cursor = await conn.execute("SELECT name FROM categories WHERE id = ?", (category_id,))
+        row = await cursor.fetchone()
+        if not row:
+            return False, "not_found"
+        old_name = row["name"]
+        if old_name == new_name:
+            return True, ""
+        cursor = await conn.execute("SELECT id FROM categories WHERE name = ?", (new_name,))
+        target = await cursor.fetchone()
+        await conn.execute("UPDATE products SET category = ? WHERE category = ?", (new_name, old_name))
+        if target:
+            # Maqsad nom allaqachon mavjud - birlashtiramiz (mahsulotlar
+            # yuqorida allaqachon o'sha bo'limga o'tkazildi, eski bo'sh
+            # yozuvni shunchaki o'chiramiz).
+            await conn.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+        else:
+            await conn.execute("UPDATE categories SET name = ? WHERE id = ?", (new_name, category_id))
+        await conn.commit()
+        return True, ""
+
+
 async def get_subcategories(category: str) -> list:
     """Berilgan bo'lim ichidagi kichik bo'limlar ro'yxati (faqat kichik bo'limi
     BOR mahsulotlar hisobga olinadi - bo'sh/NULL bo'lganlar bu yerda chiqmaydi,
