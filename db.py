@@ -29,6 +29,12 @@ Bu yerda jadvallar:
                      ro'yxati (mijoz buyurtma qilayotganda shulardan birini
                      yoki "Avtomatik" ni tanlaydi - 30-avgust, foydalanuvchi
                      so'rovi)
+  click_transactions - Click.uz orqali AVTOMATIK hisob to'ldirish
+                     so'rovlari (4-sentabr) - topup_requests'dan farqli
+                     o'laroq, bu yerda admin tasdig'i kerak emas, Click'ning
+                     o'zi to'lovni tasdiqlagach (click_pay.py + webapp_api.py
+                     'dagi Prepare/Complete funksiyalariga qarang) balans
+                     darhol qo'shiladi
 """
 import json
 import logging
@@ -195,6 +201,16 @@ CREATE TABLE IF NOT EXISTS categories (
     position INTEGER NOT NULL DEFAULT 0,
     color TEXT,
     description TEXT
+);
+
+CREATE TABLE IF NOT EXISTS click_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    click_trans_id TEXT,
+    status TEXT NOT NULL DEFAULT 'kutilmoqda',
+    created_at TEXT NOT NULL,
+    confirmed_at TEXT
 );
 """
 
@@ -505,6 +521,31 @@ async def get_category_by_name(name: str):
             "name": row["name"], "position": row["position"],
             "color": row["color"], "description": row["description"],
         }
+
+
+async def create_category(name: str) -> tuple[bool, str]:
+    """2-sentyabr (foydalanuvchi so'rovi: "ism qo'shish tugmasi doim
+    ko'zga tashlanib tursin"): admin "🏷 Kategoriyalar" bo'limidagi ➕
+    tugmasi orqali - mahsulot qo'shishni kutmasdan, to'g'ridan-to'g'ri
+    YANGI (hali mahsuloti yo'q) bo'lim yaratadi. Shu nomdagi bo'lim
+    ALLAQACHON mavjud bo'lsa - ('False', 'exists') qaytaradi (takroriy
+    yaratmaslik uchun)."""
+    name = (name or "").strip()
+    if not name:
+        return False, "invalid_input"
+    async with get_db_connection() as conn:
+        cursor = await conn.execute("SELECT 1 FROM categories WHERE name = ?", (name,))
+        if await cursor.fetchone():
+            return False, "exists"
+        cursor = await conn.execute("SELECT MAX(position) FROM categories")
+        (maxpos,) = await cursor.fetchone()
+        next_pos = (maxpos + 1) if maxpos is not None else 0
+        await conn.execute(
+            "INSERT INTO categories (name, position, color, description) VALUES (?, ?, NULL, NULL)",
+            (name, next_pos),
+        )
+        await conn.commit()
+        return True, ""
 
 
 async def _ensure_category_row(conn, name: str):
@@ -1540,6 +1581,74 @@ async def get_user_topup_history(user_id: int, limit: int = 30) -> list:
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
+
+
+# ---------- CLICK.UZ ORQALI AVTOMATIK HISOB TO'LDIRISH (4-sentabr) ----------
+# topup_requests'dan farqi: bu yerda admin hech narsani qo'lda
+# tasdiqlamaydi - Click'ning o'zi Prepare/Complete so'rovlari orqali
+# tasdiqlaydi (webapp_api.py'dagi api_click_prepare/api_click_complete'ga
+# qarang), shundan so'ng balans DARHOL qo'shiladi.
+#
+# `id` ustuni ikkita rolni bajaradi: (1) Click'ga yuboriladigan
+# "merchant_trans_id" - shu jadvaldagi qatorning o'zini topish uchun, (2)
+# Click'ning rasmiy namunaviy kutubxonasidagi "merchant_prepare_id" ham
+# xuddi shu qiymat sifatida qaytariladi (alohida ustun kerak emas, chunki
+# har bir qatorda faqat bitta Prepare bo'lishi mumkin).
+#
+# status qiymatlari: 'kutilmoqda' (yaratildi, mijoz hali to'lamagan yoki
+# Click hali Prepare yubormagan) -> 'prepared' (Click Prepare so'rovi
+# muvaffaqiyatli o'tdi) -> 'tasdiqlandi' (Click Complete muvaffaqiyatli,
+# balans qo'shildi) yoki 'bekor_qilindi' (Click rad etdi/bekor qildi).
+
+async def create_click_transaction(user_id: int, amount: int) -> int:
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            """INSERT INTO click_transactions (user_id, amount, status, created_at)
+               VALUES (?, ?, 'kutilmoqda', ?)""",
+            (user_id, amount, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+        )
+        await conn.commit()
+        return cursor.lastrowid
+
+
+async def get_click_transaction(transaction_id: int):
+    async with get_db_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT * FROM click_transactions WHERE id = ?", (transaction_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def update_click_transaction_status(
+    transaction_id: int, status: str, click_trans_id: str | None = None, confirmed: bool = False
+):
+    """`click_trans_id` - Click tomonidagi tranzaksiya ID (Prepare
+    bosqichida keladi, keyinchalik idempotentlik/audit uchun saqlanadi).
+    `confirmed=True` bo'lsa, `confirmed_at` vaqti ham yoziladi (faqat
+    Complete muvaffaqiyatli bo'lganda, ya'ni balans qo'shilganda)."""
+    async with get_db_connection() as conn:
+        confirmed_at = datetime.now(timezone.utc).isoformat(timespec="seconds") if confirmed else None
+        if click_trans_id is not None and confirmed_at is not None:
+            await conn.execute(
+                "UPDATE click_transactions SET status = ?, click_trans_id = ?, confirmed_at = ? WHERE id = ?",
+                (status, click_trans_id, confirmed_at, transaction_id),
+            )
+        elif click_trans_id is not None:
+            await conn.execute(
+                "UPDATE click_transactions SET status = ?, click_trans_id = ? WHERE id = ?",
+                (status, click_trans_id, transaction_id),
+            )
+        elif confirmed_at is not None:
+            await conn.execute(
+                "UPDATE click_transactions SET status = ?, confirmed_at = ? WHERE id = ?",
+                (status, confirmed_at, transaction_id),
+            )
+        else:
+            await conn.execute(
+                "UPDATE click_transactions SET status = ? WHERE id = ?", (status, transaction_id)
+            )
+        await conn.commit()
 
 
 # ---------- VAZIFALAR ("🎯 Vazifalar" - tanga/mukofot tizimi, 29-avgust) ----------

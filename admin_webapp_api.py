@@ -862,6 +862,27 @@ async def api_admin_categories_list(request: web.Request):
     return web.json_response({"categories": await db.get_categories_meta()})
 
 
+async def api_admin_category_create(request: web.Request):
+    """2-sentyabr (foydalanuvchi so'rovi: "ism qo'shish tugmasi doim
+    ko'zga tashlanib tursin"): "🏷 Kategoriyalar" bo'limidagi ➕ (FAB)
+    tugmasi orqali - mahsulot qo'shishni kutmasdan, to'g'ridan-to'g'ri
+    yangi (bo'sh) bo'lim yaratadi. Body: {"name": "Bo'lim nomi"}."""
+    if _authed_admin_id(request) is None:
+        return _unauthorized()
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+    name = (body.get("name") or "").strip()
+    if not name:
+        return web.json_response({"error": "invalid_input"}, status=400)
+    ok, err = await db.create_category(name)
+    if not ok:
+        status = 409 if err == "exists" else 400
+        return web.json_response({"error": err}, status=status)
+    return web.json_response({"ok": True})
+
+
 def _is_valid_hex_color(value) -> bool:
     if not isinstance(value, str):
         return False
@@ -1085,6 +1106,7 @@ def register_admin_routes(app: web.Application, admin_index_path: str):
     app.router.add_post("/admin/api/delivery_prices", api_admin_delivery_prices_update)
     app.router.add_get("/admin/api/categories", api_admin_categories_list)
     app.router.add_post("/admin/api/categories", api_admin_categories_update)
+    app.router.add_post("/admin/api/categories/create", api_admin_category_create)
     app.router.add_post("/admin/api/categories/{category_id}/delete", api_admin_category_delete)
     app.router.add_post("/admin/api/categories/{category_id}/rename", api_admin_category_rename)
     app.router.add_get("/admin/api/stats", api_admin_stats)

@@ -250,7 +250,12 @@
   // Yangiliklar - yangi e'lon, Ranglar - yangi filament rangi) - qaysi
   // bo'lim ochiq bo'lsa, o'shanga mos formani ochadi (pastdagi "fab".onclick'ga
   // qarang).
-  var FAB_TABS = { products: true, announcements: true, tasks: true, colors: true };
+  // 2-sentyabr (foydalanuvchi so'rovi: "ism qo'shish tugmasi doim ko'zga
+  // tashlanib tursin"): "categories" ham qo'shildi - endi "🏷
+  // Kategoriyalar" bo'limida ham ➕ tugmasi (doimiy, position:fixed -
+  // pastga aylantirilganda ham yo'qolmaydi) orqali mahsulot qo'shishni
+  // kutmasdan to'g'ridan-to'g'ri yangi bo'lim yaratish mumkin.
+  var FAB_TABS = { products: true, announcements: true, tasks: true, colors: true, categories: true };
 
   // 29-avgust (foydalanuvchi so'rovi): "🎯 Vazifalar" uchun ENDI chatga har
   // bir so'rov uchun alohida xabar kelmaydi (minglab bo'lganda chatni
@@ -1454,7 +1459,7 @@
   function renderCategoriesTab() {
     var content = document.getElementById("content");
     if (!catState.length) {
-      content.innerHTML = '<div class="empty">Hozircha bo\'lim yo\'q. Avval "🗂 Mahsulotlar" bo\'limida mahsulot qo\'shing - bo\'lim nomi shu yerda avtomatik paydo bo\'ladi.</div>';
+      content.innerHTML = '<div class="empty">Hozircha bo\'lim yo\'q. Pastdagi ➕ orqali yangi bo\'lim yarating, yoki "🗂 Mahsulotlar" bo\'limida mahsulot qo\'shing - bo\'lim nomi shu yerda avtomatik paydo bo\'ladi.</div>';
       return;
     }
     var cardsHtml = catState.map(function (c, idx) {
@@ -1564,6 +1569,57 @@
         else showToast("Saqlab bo'lmadi. Qaytadan urinib ko'ring.");
       });
     };
+  }
+
+  // 2-sentyabr (foydalanuvchi so'rovi: "ism qo'shish tugmasi doim ko'zga
+  // tashlanib tursin"): YANGI bo'lim yaratish - avval bo'limlar FAQAT
+  // mahsulot qo'shish orqali (erkin matn kiritilganda) avtomatik paydo
+  // bo'lardi, endi shu doimiy ➕ (FAB) tugmasi orqali mahsulotni
+  // kutmasdan to'g'ridan-to'g'ri (bo'sh) bo'lim yaratish mumkin.
+  function openAddCategoryForm() {
+    var overlay = document.getElementById("overlay");
+    overlay.innerHTML =
+      '<div class="screen">' +
+        '<div class="screen-title">➕ Yangi bo\'lim</div>' +
+        '<div class="form-group"><label class="form-label">Bo\'lim nomi</label>' +
+          '<input class="form-input" id="cat-new-name" placeholder="Masalan: Sovg\'alar"></div>' +
+        '<div class="form-hint">Bo\'lim bo\'sh yaratiladi - keyin "🗂 Mahsulotlar" bo\'limida shu nom bilan mahsulot qo\'shsangiz, unda mahsulotlar chiqadi.</div>' +
+        '<div class="form-error hidden" id="cat-new-error"></div>' +
+        '<button class="card-btn" id="cat-new-submit" style="margin-top:6px">✅ Yaratish</button>' +
+        '<button class="card-btn" id="cat-new-cancel" style="margin-top:8px;background:var(--secondary-bg);color:var(--text)">Bekor qilish</button>' +
+      '</div>';
+    overlay.classList.remove("hidden");
+    if (tg) tg.BackButton.show();
+    document.getElementById("cat-new-cancel").onclick = closeOverlay;
+    document.getElementById("cat-new-submit").onclick = submitNewCategory;
+  }
+
+  function submitNewCategory() {
+    var name = document.getElementById("cat-new-name").value.trim();
+    var errEl = document.getElementById("cat-new-error");
+    if (!name) {
+      errEl.textContent = "Iltimos, bo'lim nomini kiriting.";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    errEl.classList.add("hidden");
+    var submitBtn = document.getElementById("cat-new-submit");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "⏳ Yaratilmoqda...";
+    api("/admin/api/categories/create", { method: "POST", body: JSON.stringify({ name: name }) }).then(function (r) {
+      if (r.ok) {
+        showToast("Bo'lim yaratildi ✅");
+        closeOverlay();
+        loadCategoriesTab();
+      } else {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "✅ Yaratish";
+        errEl.textContent = (r.data && r.data.error === "exists")
+          ? "Bu nomda bo'lim allaqachon mavjud."
+          : "Xatolik yuz berdi. Qaytadan urinib ko'ring.";
+        errEl.classList.remove("hidden");
+      }
+    });
   }
 
   // Bo'lim NOMINI o'zgartirish - "🌈 Ranglar" bo'limidagi rang nomini
@@ -2064,6 +2120,7 @@
     if (activeTab === "announcements") openAddAnnouncementForm();
     else if (activeTab === "tasks") openAddTaskForm();
     else if (activeTab === "colors") openAddColorForm();
+    else if (activeTab === "categories") openAddCategoryForm();
     else openAddProductForm();
   };
   if (tg) tg.BackButton.onClick(closeOverlay);

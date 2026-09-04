@@ -551,6 +551,10 @@
       if (r.ok) {
         state.paymentInfo = (r.data && r.data.payment_info) || "";
         state.contactInfo = (r.data && r.data.contact_info) || "";
+        // 4-sentabr: Click orqali AVTOMATIK hisob to'ldirish yoqilganmi -
+        // admin Render'da 4 ta CLICK_* qiymatni to'ldirmaguncha false
+        // bo'lib turadi (click_pay.is_configured()'ga qarang).
+        state.clickEnabled = !!(r.data && r.data.click_enabled);
       }
     });
   }
@@ -1265,10 +1269,15 @@
         '<div class="form-group"><label class="form-label">Summasi (so\'m)</label>' +
           '<input class="form-input" id="tu-amount" type="number" inputmode="numeric" placeholder="Masalan: 100000" value="' + (prefill ? String(prefill) : "") + '"></div>' +
 
-        '<div class="info-card" style="opacity:0.6">' +
-          '<div class="card-line"><b>⚡ Click orqali</b> — Tez kunda</div>' +
-          '<div class="card-line">Hozircha ishlamaydi. Pastdagi bank kartasi usulidan foydalaning.</div>' +
-        '</div>' +
+        (state.clickEnabled ?
+          '<button class="page-cta" id="tu-click-btn" style="margin-bottom:10px">⚡ Click orqali to\'lash</button>' +
+          '<div class="card-line" style="text-align:center;opacity:0.7;margin-bottom:14px">To\'lagach hamyoningiz operatorni kutmasdan DARHOL to\'ldiriladi</div>'
+        :
+          '<div class="info-card" style="opacity:0.6">' +
+            '<div class="card-line"><b>⚡ Click orqali</b> — Tez kunda</div>' +
+            '<div class="card-line">Hozircha ishlamaydi. Pastdagi bank kartasi usulidan foydalaning.</div>' +
+          '</div>'
+        ) +
 
         '<div class="form-group"><label class="form-label">💳 Bank kartasi rekvizitlari</label>' +
           '<div class="info-card"><div class="card-line">' +
@@ -1296,7 +1305,38 @@
       reader.readAsDataURL(file);
     };
     document.getElementById("tu-submit").onclick = submitTopup;
+    if (state.clickEnabled) {
+      var clickBtn = document.getElementById("tu-click-btn");
+      if (clickBtn) clickBtn.onclick = payWithClick;
+    }
   };
+
+  function payWithClick() {
+    var amountStr = (document.getElementById("tu-amount").value || "").replace(/\s/g, "");
+    var errEl = document.getElementById("tu-error");
+    var amount = parseInt(amountStr, 10);
+    if (!amountStr || isNaN(amount) || amount <= 0) {
+      errEl.textContent = "Iltimos, summani to'g'ri kiriting.";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    errEl.classList.add("hidden");
+    var btn = document.getElementById("tu-click-btn");
+    btn.disabled = true; btn.textContent = "⏳ Yuklanmoqda...";
+    api("/api/topup/click", {
+      method: "POST",
+      body: JSON.stringify({ amount: amount }),
+    }).then(function (r) {
+      btn.disabled = false; btn.textContent = "⚡ Click orqali to'lash";
+      if (r.ok && r.data && r.data.pay_url) {
+        if (tg && tg.openLink) tg.openLink(r.data.pay_url);
+        else window.open(r.data.pay_url, "_blank");
+        showToast("To'lov sahifasi ochildi. To'lagach, hamyoningiz avtomatik to'ldiriladi.");
+      } else {
+        showToast("Click orqali to'lovni boshlab bo'lmadi. Qaytadan urinib ko'ring.");
+      }
+    });
+  }
 
   function submitTopup() {
     var amountStr = (document.getElementById("tu-amount").value || "").replace(/\s/g, "");

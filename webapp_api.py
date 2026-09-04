@@ -7,16 +7,20 @@ bo'lmaydi. Shuning uchun bu yerda serverning o'zi (tokenini oshkor
 qilmasdan) rasmni Telegramdan yuklab, brauzerga uzatib beradi."""
 import base64
 import hashlib
+import logging
 
 from aiogram.types import BufferedInputFile
 from aiohttp import web
 
+import click_pay
 import db
 import delivery
 import order_service
 from admin_notify import notify_admins
 from config import BOT_TOKEN, CONTACT_INFO, PAYMENT_INFO, PAYMENT_PROVIDER_TOKEN
 from webapp_auth import validate_init_data
+
+logger = logging.getLogger("figo3d_bot.webapp_api")
 
 
 def _authed_user_id(request: web.Request):
@@ -276,6 +280,7 @@ async def api_config(request: web.Request):
     va hisob to'ldirish rekvizitlarini bilishi uchun."""
     return web.json_response({
         "card_enabled": bool(PAYMENT_PROVIDER_TOKEN),
+        "click_enabled": click_pay.is_configured(),
         "contact_info": CONTACT_INFO,
         "payment_info": PAYMENT_INFO,
     })
@@ -452,6 +457,179 @@ async def api_topup(request: web.Request):
         await notify_admins(bot, text=caption + "\n\n(Skrinshot yuborilmagan)", reply_markup=topup_admin_keyboard(request_id))
 
     return web.json_response({"ok": True, "request_id": request_id})
+
+
+# ---------- CLICK.UZ ORQALI AVTOMATIK HISOB TO'LDIRISH (4-sentabr) ----------
+# Yuqoridagi api_topup (skrinshot + operator tasdig'i) bilan PARALEL, ALOHIDA
+# yo'l - mijoz Click orqali to'lasa, operator kutmasdan balans DARHOL
+# qo'shiladi. Bu yerdagi ikkita endpoint (`prepare`/`complete`) Telegram
+# Mini App'dan emas, Click'ning O'Z SERVERIDAN chaqiriladi (shuning uchun
+# _authed_user_id/init-data tekshiruvi ISHLATILMAYDI - Click Telegram
+# haqida bilmaydi ham) - o'rniga imzo (sign_string) orqali tekshiriladi
+# (click_pay.verify_sign'ga qarang).
+
+async def api_topup_click_create(request: web.Request):
+    """Mijoz Mini App'da "Click orqali" tugmasini bosganda chaqiriladi -
+    yangi (hali to'lanmagan) tranzaksiya yozuvi yaratadi va Click'ning
+    to'lov sahifasiga olib boradigan havolani qaytaradi."""
+    user_id = _authed_user_id(request)
+    if user_id is None:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    blocked_resp = await _check_not_blocked(user_id)
+    if blocked_resp is not None:
+        return blocked_resp
+
+    if not click_pay.is_configured():
+        return web.json_response({"error": "click_disabled"}, status=400)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+
+    try:
+        amount = int(body.get("amount"))
+    except (TypeError, ValueError):
+        return web.json_response({"error": "invalid_input"}, status=400)
+    if amount <= 0:
+        return web.json_response({"error": "invalid_input"}, status=400)
+
+    transaction_id = await db.create_click_transaction(user_id, amount)
+    pay_url = click_pay.build_pay_url(transaction_id, amount)
+    return web.json_response({"ok": True, "pay_url": pay_url, "transaction_id": transaction_id})
+
+
+async def _parse_click_body(request: web.Request) -> dict:
+    """Click odatda so'rovni "application/x-www-form-urlencoded" ko'rinishda
+    yuboradi (PHP $_POST bilan bir xil) - shuning uchun avval shu usulda,
+    muvaffaqiyatsiz bo'lsa JSON sifatida o'qishga urinamiz."""
+    try:
+        data = await request.post()
+        if data:
+            return dict(data)
+    except Exception:
+        pass
+    try:
+        data = await request.json()
+        return dict(data) if data else {}
+    except Exception:
+        return {}
+
+
+async def _click_validate(data: dict, action: int):
+    """Click'ning rasmiy `request_check()` mantig'iga mos, tekshirish
+    tartibi ATAYLAB shu ketma-ketlikda (avval eng arzon/tezkor
+    tekshiruvlar): to'liqlik -> imzo -> action -> tranzaksiya topilishi ->
+    (Complete uchun) prepare ID mosligi -> allaqachon to'langanmi ->
+    summa mosligi -> bekor qilinganmi -> muvaffaqiyat.
+    Qaytaradi: (xato_kodi, tranzaksiya_dict_yoki_None)."""
+    required = ["click_trans_id", "service_id", "merchant_trans_id", "amount", "action", "sign_time", "sign_string"]
+    if action == 1:
+        required.append("merchant_prepare_id")
+    if any(data.get(f) in (None, "") for f in required):
+        return click_pay.ERR_BAD_REQUEST, None
+
+    if not click_pay.verify_sign(data, action):
+        return click_pay.ERR_SIGN_FAILED, None
+
+    try:
+        incoming_action = int(data.get("action"))
+    except (TypeError, ValueError):
+        return click_pay.ERR_ACTION_NOT_FOUND, None
+    if incoming_action != action:
+        return click_pay.ERR_ACTION_NOT_FOUND, None
+
+    try:
+        transaction_id = int(data.get("merchant_trans_id"))
+    except (TypeError, ValueError):
+        return click_pay.ERR_USER_NOT_FOUND, None
+    txn = await db.get_click_transaction(transaction_id)
+    if not txn:
+        return click_pay.ERR_USER_NOT_FOUND, None
+
+    if action == 1:
+        try:
+            merchant_prepare_id = int(data.get("merchant_prepare_id"))
+        except (TypeError, ValueError):
+            return click_pay.ERR_TRANSACTION_NOT_FOUND, txn
+        if merchant_prepare_id != txn["id"]:
+            return click_pay.ERR_TRANSACTION_NOT_FOUND, txn
+
+    if txn["status"] == "tasdiqlandi":
+        return click_pay.ERR_ALREADY_PAID, txn
+
+    if not click_pay.amounts_match(txn["amount"], data.get("amount")):
+        return click_pay.ERR_AMOUNT, txn
+
+    if txn["status"] == "bekor_qilindi":
+        return click_pay.ERR_CANCELLED, txn
+
+    return click_pay.ERR_SUCCESS, txn
+
+
+def _click_response(data: dict, error: int, txn) -> web.Response:
+    record_id = txn["id"] if txn else 0
+    return web.json_response({
+        "click_trans_id": data.get("click_trans_id"),
+        "merchant_trans_id": data.get("merchant_trans_id"),
+        "merchant_prepare_id": record_id,
+        "merchant_confirm_id": record_id,
+        "error": error,
+        "error_note": click_pay.ERROR_NOTES.get(error, ""),
+    })
+
+
+async def api_click_prepare(request: web.Request):
+    data = await _parse_click_body(request)
+    error, txn = await _click_validate(data, action=0)
+    if error == click_pay.ERR_SUCCESS:
+        await db.update_click_transaction_status(
+            txn["id"], "prepared", click_trans_id=str(data.get("click_trans_id"))
+        )
+    return _click_response(data, error, txn)
+
+
+async def api_click_complete(request: web.Request):
+    data = await _parse_click_body(request)
+    error, txn = await _click_validate(data, action=1)
+
+    try:
+        incoming_error = int(data.get("error", 0) or 0)
+    except (TypeError, ValueError):
+        incoming_error = 0
+
+    if incoming_error < 0:
+        # Click o'zi bu to'lovni bekor qilgan/rad etgan - biz ham shunga mos
+        # javob qaytaramiz va (agar hali to'lanmagan bo'lsa) bekor qilingan
+        # deb belgilaymiz. Balans HECH QACHON bu shoxobchada qo'shilmaydi.
+        if error not in (click_pay.ERR_ALREADY_PAID, click_pay.ERR_CANCELLED):
+            error = click_pay.ERR_CANCELLED
+        if txn and txn["status"] != "tasdiqlandi":
+            await db.update_click_transaction_status(
+                txn["id"], "bekor_qilindi", click_trans_id=str(data.get("click_trans_id"))
+            )
+    elif error == click_pay.ERR_SUCCESS:
+        # MUHIM: balans FAQAT shu yerda, FAQAT bir marta qo'shiladi (Click
+        # ba'zan bir xil so'rovni takror yuborishi mumkin - shuning uchun
+        # avval status'ni tekshiramiz, ikkinchi marta kelsa qayta qo'shilmaydi).
+        if txn["status"] != "tasdiqlandi":
+            new_balance = await db.adjust_balance(txn["user_id"], txn["amount"])
+            await db.update_click_transaction_status(
+                txn["id"], "tasdiqlandi", click_trans_id=str(data.get("click_trans_id")), confirmed=True
+            )
+            bot = request.app.get("bot")
+            if bot is not None:
+                try:
+                    from handlers.catalog import format_price
+                    await bot.send_message(
+                        txn["user_id"],
+                        "✅ Hamyoningiz Click orqali " + format_price(txn["amount"]) + " so'mga to'ldirildi!\n"
+                        "Joriy balans: " + format_price(new_balance) + " so'm.",
+                    )
+                except Exception:
+                    logger.exception("Click to'lovi haqida mijozga xabar yuborib bo'lmadi (txn #%s)", txn["id"])
+
+    return _click_response(data, error, txn)
 
 
 # ---------- VAZIFALAR ("🎯 Vazifalar" - tanga/mukofot tizimi, 29-avgust) ----------
@@ -873,6 +1051,9 @@ def register_webapp_routes(app: web.Application, webapp_index_path: str):
     app.router.add_get("/api/orders", api_orders)
     app.router.add_post("/api/custom_order", api_custom_order)
     app.router.add_post("/api/topup", api_topup)
+    app.router.add_post("/api/topup/click", api_topup_click_create)
+    app.router.add_post("/click/prepare", api_click_prepare)
+    app.router.add_post("/click/complete", api_click_complete)
     app.router.add_get("/api/tasks", api_tasks)
     app.router.add_post("/api/task_submit", api_task_submit)
     app.router.add_post("/api/promo/check", api_promo_check)

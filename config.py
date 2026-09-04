@@ -136,6 +136,23 @@ PAYMENT_PROVIDER_TOKEN = os.getenv("PAYMENT_PROVIDER_TOKEN", "").strip() or None
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip() or None
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001").strip()
 
+# Click.uz orqali hamyonni AVTOMATIK to'ldirish (4-sentabr) - mijoz
+# to'lagach, balans operator kutmasdan darhol qo'shiladi. Click bilan
+# shartnoma tuzganingizdan so'ng beriladigan 4 ta qiymatni Render'ning
+# Environment Variables bo'limiga QUYIDAGI NOMLAR bilan qo'shing (hech
+# qachon bu qiymatlarni chatda yoki kodda YOZMANG - faqat Render sozlamalarida):
+#   CLICK_SERVICE_ID       - Click bergan "Service ID"
+#   CLICK_MERCHANT_ID      - Click bergan "Merchant ID"
+#   CLICK_SECRET_KEY       - Click bergan maxfiy kalit ("Secret Key")
+#   CLICK_MERCHANT_USER_ID - Click bergan "Merchant user ID"
+# To'rttasi ham to'ldirilmaguncha bu funksiya O'CHIQ turadi - mijozlarga
+# "Click orqali" tugmasi ko'rinmaydi, hamyonni faqat bank kartasi
+# usulida (skrinshot yuborib) to'ldirish imkoniyati qoladi (avvalgidek).
+CLICK_SERVICE_ID = os.getenv("CLICK_SERVICE_ID", "").strip() or None
+CLICK_MERCHANT_ID = os.getenv("CLICK_MERCHANT_ID", "").strip() or None
+CLICK_SECRET_KEY = os.getenv("CLICK_SECRET_KEY", "").strip() or None
+CLICK_MERCHANT_USER_ID = os.getenv("CLICK_MERCHANT_USER_ID", "").strip() or None
+
 # "☎️ Aloqa" tugmasida mijozlarga ko'rsatiladigan matn (chatda).
 # Render'ning Environment Variables bo'limida CONTACT_INFO nomi bilan
 # qo'shing - masalan: "@figo3d_support yoki +998 90 123 45 67".
